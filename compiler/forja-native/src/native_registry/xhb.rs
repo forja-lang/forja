@@ -195,7 +195,7 @@ pub fn xml_escapar(s: &str) -> String {
 
 pub fn val_to_str(vm: &dyn Anfitrion, val: ValorFast) -> String {
     if val.es_texto() {
-        vm.get_str(val.indice_texto()).to_string()
+        vm.obtener_texto(val.indice_texto()).to_string()
     } else if val.es_entero() {
         val.a_entero().to_string()
     } else if val.es_flotante() {
@@ -235,12 +235,12 @@ pub fn nativo_xhb_serializar(
             if let Some(ver_mapa) = vm.mapa_monticulo().get(ver_mapa_indice) {
                 if let Some(&v) = ver_mapa.get("file") {
                     if v.es_texto() {
-                        version = vm.get_str(v.indice_texto()).to_string();
+                        version = vm.obtener_texto(v.indice_texto()).to_string();
                     }
                 }
                 if let Some(&d) = ver_mapa.get("date") {
                     if d.es_texto() {
-                        date = vm.get_str(d.indice_texto()).to_string();
+                        date = vm.obtener_texto(d.indice_texto()).to_string();
                     }
                 }
             }
@@ -313,9 +313,9 @@ pub fn nativo_xhb_serializar(
             if sec_val.es_arreglo() {
                 let arr_idx = sec_val.indice_arreglo() as usize;
                 if let Some(items) = vm.arreglo_monticulo().get(arr_idx).cloned() {
-                    for item in items {
-                        if item.es_mapa() {
-                            let elemento_mapa_indice = item.indice_mapa() as usize;
+                    for elemento in items {
+                        if elemento.es_mapa() {
+                            let elemento_mapa_indice = elemento.indice_mapa() as usize;
                             if let Some(item_map) = vm.mapa_monticulo().get(elemento_mapa_indice) {
                                 salida.push_str(&format!("<{}", tag_name));
                                 for &attr in attr_order {

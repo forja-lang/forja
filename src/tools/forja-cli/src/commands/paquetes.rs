@@ -29,8 +29,8 @@ pub(crate) fn cmd_nuevo(args: &[String]) {
         process::exit(1);
     });
     // Archivo de configuración completo con ForjaConfig
-    let config = ForjaConfig::new(nombre, "0.1.0");
-    if let Err(e) = config.save(&directorio.join("forja.json")) {
+    let config = ForjaConfig::nuevo(nombre, "0.1.0");
+    if let Err(e) = config.guardar(&directorio.join("forja.json")) {
         eprintln!("Error escribiendo forja.json: {}", e);
         process::exit(1);
     }
@@ -50,15 +50,15 @@ pub(crate) fn cmd_add() {
 
     let ruta_config = Path::new("forja.json");
     let mut config = if ruta_config.exists() {
-        ForjaConfig::load(ruta_config).unwrap_or_else(|_| ForjaConfig::new("app", "0.1.0"))
+        ForjaConfig::load(ruta_config).unwrap_or_else(|_| ForjaConfig::nuevo("app", "0.1.0"))
     } else {
-        ForjaConfig::new("app", "0.1.0")
+        ForjaConfig::nuevo("app", "0.1.0")
     };
 
     config
         .dependencias
         .insert(nombre.to_string(), version.to_string());
-    if let Err(e) = config.save(ruta_config) {
+    if let Err(e) = config.guardar(ruta_config) {
         eprintln!("Error guardando forja.json: {}", e);
         return;
     }
@@ -95,7 +95,7 @@ pub(crate) fn cmd_quitar() {
         return;
     }
 
-    if let Err(e) = config.save(ruta_config) {
+    if let Err(e) = config.guardar(ruta_config) {
         eprintln!("Error guardando forja.json: {}", e);
         return;
     }
@@ -126,7 +126,7 @@ pub(crate) fn cmd_install() {
 
     let directorio_proyecto =
         std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-    let mut resolver = PaqueteResolver::new(&directorio_proyecto);
+    let mut resolver = PaqueteResolver::nuevo(&directorio_proyecto);
 
     println!("📦 Instalando dependencias...");
     for (nombre, version) in &config.dependencias {

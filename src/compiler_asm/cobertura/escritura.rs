@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn escribir_sin_argumentos_emite_salto_de_linea() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.compilar_escribir(&[]);
         assert!(c.output.contains("nl"), "{t:?}");
         assert!(!c.rdata.is_empty(), "{t:?}: el literal va a .rodata");
@@ -16,7 +16,7 @@ fn escribir_sin_argumentos_emite_salto_de_linea() {
 #[test]
 fn escribir_literales() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         // Literal de texto con escapes: ejercita el escapado del `.asciz`.
         c.compilar_escribir_expr(&txt("línea\ncon\ttab y \"comillas\" \\"));
         // Enteros: se convierten a texto en tiempo de compilación.
@@ -48,7 +48,7 @@ fn escribir_identificadores_por_tipo() {
             for nombre in ["ent", "txt", "bool", "dec", "obj"] {
                 let mut c = con_variables(t);
                 if en_registro {
-                    c.alloc_var_reg(nombre);
+                    c.reservar_variable_reg(nombre);
                 }
                 c.compilar_escribir_expr(&id(nombre));
                 assert!(!c.output.is_empty(), "{t:?}/{nombre}/{en_registro}");
@@ -94,7 +94,7 @@ fn escribir_binarias_y_concatenacion() {
 
 #[test]
 fn expr_es_texto_clasifica_cada_forma() {
-    let c = con_variables(TargetArch::X86_64Linux);
+    let c = con_variables(DestinoArch::X86_64Linux);
     assert!(c.expr_es_texto(&txt("x")));
     assert!(c.expr_es_texto(&id("txt")));
     assert!(!c.expr_es_texto(&id("ent")));

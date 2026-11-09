@@ -42,12 +42,12 @@ impl ForjaFast {
     pub fn ejecutar_ops_objetos(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             Opcode::NuevoObjeto(c) => {
-                let clase_sym = self.runtime.tabla_simbolos.internar(c.as_ref());
+                let clase_sym = self.simbolo_para_ip(self.ip, c);
                 self.runtime
                     .class_descriptors
                     .entry(clase_sym)
                     .or_insert_with(|| {
-                        let forma = FormaCampos::new();
+                        let forma = FormaCampos::nuevo();
 
                         DescriptorClase {
                             nombre: clase_sym,
@@ -58,7 +58,7 @@ impl ForjaFast {
                         }
                     });
                 let forma_id = self.runtime.registro_formas.obtener_o_crear(clase_sym);
-                let obj = ObjVal::new(clase_sym, forma_id);
+                let obj = ObjVal::nuevo(clase_sym, forma_id);
                 let idx = self.reservar_objeto(obj);
                 self.empujar_valor(ValorFast::objeto(idx));
                 self.ip += 1;
@@ -68,8 +68,8 @@ impl ForjaFast {
                 let obj_val = *self.peek_valor(0);
                 if obj_val.es_objeto() {
                     let obj_idx = obj_val.indice_objeto();
-                    let field_sym = self.runtime.tabla_simbolos.internar(c.as_ref());
                     let ip = self.ip;
+                    let campo_sym = self.simbolo_para_ip(ip, c);
                     let cache = self.ic_setfield[ip];
                     if !matches!(cache, Pic::Mega) {
                         let clase_actual = self.runtime.obj_heap[obj_idx as usize].clase;
@@ -96,8 +96,8 @@ impl ForjaFast {
                         );
                     }
                     if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
-                        let shape_idx = desc.forma.obtener_indice(field_sym);
-                        if let Some(sidx) = shape_idx {
+                        let forma_indice = desc.forma.obtener_indice(campo_sym);
+                        if let Some(sidx) = forma_indice {
                             // Campo conocido en el forma — asignar directamente
                             if self.show_bytecode {
                                 eprintln!(
@@ -119,14 +119,14 @@ impl ForjaFast {
                             }
                             let desc_mut =
                                 self.runtime.class_descriptors.get_mut(&clase_sym).unwrap();
-                            let sidx = desc_mut.forma.agregar_campo(field_sym);
+                            let sidx = desc_mut.forma.agregar_campo(campo_sym);
                             // Transición de forma del objeto (RegistroFormas) para
                             // inline caches basados en IdForma.
                             let forma_id = self.runtime.formas_objeto[obj_idx as usize];
                             let (nuevo_shape, _) = self
                                 .runtime
                                 .registro_formas
-                                .agregar_campo_dinamico(forma_id, field_sym);
+                                .agregar_campo_dinamico(forma_id, campo_sym);
                             self.runtime.formas_objeto[obj_idx as usize] = nuevo_shape;
                             self.runtime.obj_heap[obj_idx as usize].forma_id = nuevo_shape;
                             if sidx < self.runtime.obj_heap[obj_idx as usize].campos_vec.len() {
@@ -142,11 +142,11 @@ impl ForjaFast {
                         if self.show_bytecode {
                             eprintln!("[SetField] no class descriptor, using raw field_sym");
                         }
-                        if (field_sym.0 as usize)
+                        if (campo_sym.0 as usize)
                             < self.runtime.obj_heap[obj_idx as usize].campos_vec.len()
                         {
                             self.runtime.obj_heap[obj_idx as usize].campos_vec
-                                [field_sym.0 as usize] = v;
+                                [campo_sym.0 as usize] = v;
                         } else {
                             self.runtime.obj_heap[obj_idx as usize].campos_vec.push(v);
                         }
@@ -197,8 +197,8 @@ impl ForjaFast {
                     );
                 }
                 if obj_val.es_objeto() {
-                    let field_sym = self.runtime.tabla_simbolos.internar(c.as_ref());
                     let ip = self.ip;
+                    let campo_sym = self.simbolo_para_ip(ip, c);
                     let cache = self.ic_getfield[ip];
                     if let Pic::Mega = cache {
                         // Megamórfico: ir directo al fallback
@@ -223,11 +223,11 @@ impl ForjaFast {
                         let clase_str = self.runtime.tabla_simbolos.texto(clase_sym);
                         eprintln!(
                             "[GetField] FALLBACK obj_idx={}, clase={}, field_sym={:?}",
-                            idx, clase_str, field_sym
+                            idx, clase_str, campo_sym
                         );
                     }
                     let valor = if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
-                        if let Some(sidx) = desc.forma.obtener_indice(field_sym) {
+                        if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
                             if sidx < self.runtime.obj_heap[idx as usize].campos_vec.len() {
                                 self.runtime.obj_heap[idx as usize].campos_vec[sidx]
                             } else {
@@ -243,7 +243,7 @@ impl ForjaFast {
                     // Actualizar PIC
                     let ip = self.ip;
                     if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
-                        if let Some(sidx) = desc.forma.obtener_indice(field_sym) {
+                        if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
                             self.ic_getfield[ip] =
                                 self.ic_getfield[ip].record_miss(clase_sym, sidx);
                         }
@@ -251,9 +251,9 @@ impl ForjaFast {
                 } else if obj_val.es_mapa() {
                     let mapa_obj = self.desapilar_valor()?;
                     let midx = mapa_obj.indice_mapa();
-                    let key_str = c.as_ref();
+                    let clave_texto = c.as_ref();
                     let valor = self.runtime.map_heap[midx as usize]
-                        .get(key_str)
+                        .get(clave_texto)
                         .cloned()
                         .unwrap_or_else(ValorFast::nulo);
                     self.empujar_valor(valor);

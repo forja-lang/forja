@@ -105,7 +105,7 @@ fn corpus_completo_por_ir_sin_fallback() {
 // ─── → divergencias conocidas AST vs IR ─────────────────────
 
 /// Ejemplos deterministas cuya salida **difiere** entre el backend AST y el IR
-/// (la ruta canónica). En todos los inspeccionados el IR da el valor correcto y
+/// (la ruta canónica). En todos los inspeccionados el IR da el valor ok y
 /// el AST imprime valores corruptos (`nulo`, `"nulonulo"`, fragmentos), salvo
 /// `400_exacto_minimal` (el AST imprime `nulo` y el IR calcula en coma flotante
 /// en vez de `Exacto`).
@@ -115,7 +115,7 @@ fn corpus_completo_por_ir_sin_fallback() {
 /// Contenido actual (2026-10-30):
 ///
 /// * `167_estadistica`: el **AST** imprime `nulo` en `Desviación Estándar`
-///   (raíz cuadrada por Newton con decimales); el IR da el valor correcto. Es
+///   (raíz cuadrada por Newton con decimales); el IR da el valor ok. Es
 ///   un bug del backend AST, que sólo se usa como comparación.
 ///
 /// `210_sistema` ya converge (el formato de las nativas de sistema se unificó).
@@ -153,7 +153,7 @@ const NO_DETERMINISTAS: &[&str] = &[
 ];
 
 fn ejecutar_bytecode(bc: Vec<forja::bytecode::Opcode>) -> Result<Vec<String>, String> {
-    let mut vm = forja::vm_fast::ForjaFast::new();
+    let mut vm = forja::vm_fast::ForjaFast::nuevo();
     // Tope de instrucciones: los ejemplos que lo alcanzan se comparan como
     // «ambos Limite» y no cuentan como divergencia.
     vm.fijar_max_inst(300_000);

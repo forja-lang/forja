@@ -99,7 +99,7 @@ fn valor_forja_a_sqlite(vm: &dyn Anfitrion, val: ValorFast) -> Box<dyn rusqlite:
     } else if val.es_flotante() {
         Box::new(val.a_flotante())
     } else if val.es_texto() {
-        let s = vm.get_str(val.indice_texto()).to_string();
+        let s = vm.obtener_texto(val.indice_texto()).to_string();
         Box::new(s)
     } else if val.es_booleano() {
         Box::new(val.a_booleano() as i64)

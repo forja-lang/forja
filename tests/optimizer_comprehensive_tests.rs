@@ -6,18 +6,18 @@ use forja::parser::Parser;
 fn optimizar(fuente: &str) -> Vec<Declaracion> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut opt = Optimizer::new();
+    let mut opt = Optimizer::nuevo();
     opt.optimizar(&programa).declaraciones
 }
 
 fn dce(fuente: &str) -> Vec<Declaracion> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut d = DeadCodeEliminator::new();
+    let mut d = DeadCodeEliminator::nuevo();
     d.eliminar(&programa).declaraciones
 }
 

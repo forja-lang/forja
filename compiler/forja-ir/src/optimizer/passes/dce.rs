@@ -14,12 +14,12 @@ pub struct DeadCodeEliminator {
 
 impl Default for DeadCodeEliminator {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl DeadCodeEliminator {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         DeadCodeEliminator {
             eliminados: 0,
             variables_usadas: HashSet::new(),

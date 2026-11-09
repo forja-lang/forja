@@ -11,18 +11,18 @@ use std::sync::mpsc;
 // ─── Tipos DAP básicos (solo los que necesitamos) ──────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
-struct Source {
+struct Fuente {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    ruta: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct DAPBreakpoint {
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<usize>,
-    line: usize,
+    linea: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     verified: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,13 +30,13 @@ struct DAPBreakpoint {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct DAPStackFrame {
+struct DAPPilaFrame {
     id: usize,
     name: String,
-    line: usize,
+    linea: usize,
     column: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<Source>,
+    fuente: Option<Fuente>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -49,7 +49,7 @@ struct DAPScope {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct DAPVariable {
     name: String,
-    value: String,
+    valor: String,
     #[serde(rename = "type")]
     tipo: String,
     variablesReference: usize,
@@ -68,7 +68,7 @@ struct Capabilities {
 // ─── Mensajes JSON-RPC ────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
-struct RPCRequest {
+struct RPCPeticion {
     #[serde(default)]
     seq: i64,
     command: String,
@@ -79,12 +79,12 @@ struct RPCRequest {
 }
 
 #[derive(serde::Serialize)]
-struct RPCResponse {
+struct RPCRespuesta {
     seq: i64,
     r#type: String,
-    request_seq: i64,
+    peticion_seq: i64,
     command: String,
-    success: bool,
+    exito: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     body: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -92,27 +92,27 @@ struct RPCResponse {
 }
 
 #[derive(serde::Serialize)]
-struct RPCErrorResponse {
+struct RPCErrorRespuesta {
     seq: i64,
     r#type: String,
-    request_seq: i64,
+    peticion_seq: i64,
     command: String,
-    success: bool,
+    exito: bool,
     message: String,
 }
 
 #[derive(serde::Serialize)]
-struct RPCEvent {
+struct RPCEvento {
     seq: i64,
     r#type: String,
-    event: String,
+    evento: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     body: Option<serde_json::Value>,
 }
 
 // ─── Estado del servidor DAP ──────────────────────────────────────────
 
-enum DebugCommand {
+enum DepuracionCommand {
     Continue,
     Next,
     StepIn,
@@ -127,17 +127,17 @@ struct DAPState {
     breakpoint_counter: usize,
     paused: bool,
     terminated: bool,
-    cmd_rx: mpsc::Receiver<DebugCommand>,
-    cmd_tx: mpsc::Sender<DebugCommand>,
+    cmd_rx: mpsc::Receiver<DepuracionCommand>,
+    cmd_tx: mpsc::Sender<DepuracionCommand>,
     disconnect_requested: bool,
-    source_file: Option<String>,
+    fuente_archivo: Option<String>,
 }
 
 impl DAPState {
-    fn new() -> Self {
+    fn nuevo() -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         DAPState {
-            debugger: forja::debugger::Debugger::new(),
+            debugger: forja::debugger::Debugger::nuevo(),
             next_seq: 1,
             breakpoint_counter: 0,
             paused: false,
@@ -145,7 +145,7 @@ impl DAPState {
             cmd_rx,
             cmd_tx,
             disconnect_requested: false,
-            source_file: None,
+            fuente_archivo: None,
         }
     }
 
@@ -168,9 +168,9 @@ fn main() {
         return;
     }
 
-    forja::selfrun::shadow_copy();
+    forja::selfrun::shadow_copia();
 
-    let mut state = DAPState::new();
+    let mut state = DAPState::nuevo();
     let stdin = io::stdin();
     let _stdout = io::stdout();
 
@@ -178,15 +178,15 @@ fn main() {
     let _cmd_tx = state.cmd_tx.clone();
 
     // Loop principal: recibe requests DAP y las procesa
-    for line in stdin.lock().lines() {
-        let line = match line {
+    for linea in stdin.lock().lines() {
+        let linea = match linea {
             Ok(l) => l,
             Err(_) => break,
         };
 
         // DAP usa Content-Length headers como LSP
-        if line.starts_with("Content-Length: ") {
-            let len: usize = line
+        if linea.starts_with("Content-Length: ") {
+            let len: usize = linea
                 .strip_prefix("Content-Length: ")
                 .unwrap_or_default()
                 .trim()
@@ -200,36 +200,38 @@ fn main() {
             if io::stdin().read_exact(&mut content).is_err() {
                 break;
             }
-            let msg_str = String::from_utf8_lossy(&content);
-            if let Ok(req) = serde_json::from_str::<RPCRequest>(&msg_str) {
+            let mensaje_texto = String::from_utf8_lossy(&content);
+            if let Ok(req) = serde_json::from_str::<RPCPeticion>(&mensaje_texto) {
                 let seq = req.seq;
                 let cmd = req.command.clone();
                 let args = req.arguments;
 
                 match cmd.as_str() {
-                    "initialize" => handle_initialize(&mut state, seq),
-                    "launch" => handle_launch(&mut state, seq, args),
-                    "setBreakpoints" => handle_set_breakpoints(&mut state, seq, args),
-                    "setExceptionBreakpoints" => handle_set_exception_breakpoints(&mut state, seq),
-                    "configurationDone" => handle_configuration_done(&mut state, seq),
-                    "continue" => handle_continue(&mut state, seq),
-                    "next" => handle_next(&mut state, seq),
-                    "stepIn" => handle_step_in(&mut state, seq),
-                    "stepOut" => handle_step_out(&mut state, seq),
-                    "pause" => handle_pause(&mut state, seq),
-                    "stackTrace" => handle_stack_trace(&mut state, seq, args),
-                    "scopes" => handle_scopes(&mut state, seq, args),
-                    "variables" => handle_variables(&mut state, seq, args),
-                    "evaluate" => handle_evaluate(&mut state, seq, args),
-                    "disconnect" => handle_disconnect(&mut state, seq),
+                    "initialize" => manejar_initialize(&mut state, seq),
+                    "launch" => manejar_launch(&mut state, seq, args),
+                    "setBreakpoints" => manejar_fijar_breakpoints(&mut state, seq, args),
+                    "setExceptionBreakpoints" => {
+                        manejar_fijar_exception_breakpoints(&mut state, seq)
+                    }
+                    "configurationDone" => manejar_configuration_done(&mut state, seq),
+                    "continue" => manejar_continue(&mut state, seq),
+                    "next" => manejar_siguiente(&mut state, seq),
+                    "stepIn" => manejar_step_in(&mut state, seq),
+                    "stepOut" => manejar_step_out(&mut state, seq),
+                    "pause" => manejar_pause(&mut state, seq),
+                    "stackTrace" => manejar_pila_traza(&mut state, seq, args),
+                    "scopes" => manejar_scopes(&mut state, seq, args),
+                    "variables" => manejar_variables(&mut state, seq, args),
+                    "evaluate" => manejar_evaluate(&mut state, seq, args),
+                    "disconnect" => manejar_disconnect(&mut state, seq),
                     _ => {
                         // Command not recognized - respond error
-                        let resp = RPCErrorResponse {
+                        let resp = RPCErrorRespuesta {
                             seq: state.next_seq(),
                             r#type: "response".into(),
-                            request_seq: seq,
+                            peticion_seq: seq,
                             command: cmd.clone(),
-                            success: false,
+                            exito: false,
                             message: format!("comando '{}' no implementado", cmd),
                         };
                         send_json(&resp);
@@ -247,7 +249,7 @@ fn main() {
 
 // ─── Handlers ─────────────────────────────────────────────────────────
 
-fn handle_initialize(state: &mut DAPState, seq: i64) {
+fn manejar_initialize(state: &mut DAPState, seq: i64) {
     let caps = Capabilities {
         supportsConfigurationDoneRequest: true,
         supportsFunctionBreakpoints: false,
@@ -256,43 +258,43 @@ fn handle_initialize(state: &mut DAPState, seq: i64) {
         supportTerminateDebuggee: true,
         supportsSetVariable: false,
     };
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "initialize".into(),
-        success: true,
+        exito: true,
         body: Some(serde_json::to_value(&caps).unwrap_or_default()),
         message: None,
     };
     send_json(&resp);
 
     // Enviar InitializedEvent
-    let evt = RPCEvent {
+    let evt = RPCEvento {
         seq: state.next_seq(),
         r#type: "event".into(),
-        event: "initialized".into(),
+        evento: "initialized".into(),
         body: None,
     };
     send_json(&evt);
 }
 
-fn handle_launch(state: &mut DAPState, seq: i64, args: serde_json::Value) {
+fn manejar_launch(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     // Extraer programa a ejecutar de args
     let mut program = String::new();
-    let mut source_path = None;
+    let mut fuente_ruta = None;
 
     if let Some(prog) = args.get("program").and_then(|v| v.as_str()) {
         program = prog.to_string();
     }
     if let Some(src) = args.get("__sessionId").and_then(|v| v.as_str()) {
-        source_path = Some(src.to_string());
+        fuente_ruta = Some(src.to_string());
     }
 
     // Si no hay program en args, intentar leer de source file
     if program.is_empty() {
-        program = if let Some(ref path) = source_path {
-            std::fs::read_to_string(path).unwrap_or_default()
+        program = if let Some(ref ruta) = fuente_ruta {
+            std::fs::read_to_string(ruta).unwrap_or_default()
         } else {
             String::new()
         };
@@ -302,12 +304,12 @@ fn handle_launch(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     let bytecode = match forja::compilar_pipeline_completa(&program) {
         Ok((bc, _contratos)) => bc,
         Err(e) => {
-            let resp = RPCErrorResponse {
+            let resp = RPCErrorRespuesta {
                 seq: state.next_seq(),
                 r#type: "response".into(),
-                request_seq: seq,
+                peticion_seq: seq,
                 command: "launch".into(),
-                success: false,
+                exito: false,
                 message: format!("Error de compilación: {}", e),
             };
             send_json(&resp);
@@ -323,28 +325,28 @@ fn handle_launch(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     }
 
     state.debugger.cargar_bytecode(bytecode);
-    state.source_file = source_path;
+    state.fuente_archivo = fuente_ruta;
 
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "launch".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
     send_json(&resp);
 }
 
-fn handle_set_breakpoints(state: &mut DAPState, seq: i64, args: serde_json::Value) {
+fn manejar_fijar_breakpoints(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     // Extraer breakpoints del argumento
     let mut breakpoints_resp: Vec<DAPBreakpoint> = Vec::new();
 
     if let Some(bps) = args.get("breakpoints").and_then(|v| v.as_array()) {
         for bp in bps {
-            if let Some(line) = bp.get("line").and_then(|v| v.as_u64()) {
-                let line_usize = line as usize;
+            if let Some(linea) = bp.get("line").and_then(|v| v.as_u64()) {
+                let linea_usize = linea as usize;
                 // soportar breakpoints condicionales. El campo `condition`
                 // es opcional; si está presente y no vacío, el breakpoint solo
                 // se activa cuando la expresión evalúa a verdadero.
@@ -355,11 +357,11 @@ fn handle_set_breakpoints(state: &mut DAPState, seq: i64, args: serde_json::Valu
                     .filter(|s| !s.is_empty());
                 state
                     .debugger
-                    .set_breakpoint_condicional(line_usize, condicion);
+                    .fijar_breakpoint_condicional(linea_usize, condicion);
                 state.breakpoint_counter += 1;
                 breakpoints_resp.push(DAPBreakpoint {
                     id: Some(state.breakpoint_counter),
-                    line: line_usize,
+                    linea: linea_usize,
                     verified: Some(true),
                     message: None,
                 });
@@ -367,12 +369,12 @@ fn handle_set_breakpoints(state: &mut DAPState, seq: i64, args: serde_json::Valu
         }
     }
 
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "setBreakpoints".into(),
-        success: true,
+        exito: true,
         body: Some(serde_json::json!({
             "breakpoints": breakpoints_resp
         })),
@@ -381,27 +383,27 @@ fn handle_set_breakpoints(state: &mut DAPState, seq: i64, args: serde_json::Valu
     send_json(&resp);
 }
 
-fn handle_set_exception_breakpoints(state: &mut DAPState, seq: i64) {
-    let resp = RPCResponse {
+fn manejar_fijar_exception_breakpoints(state: &mut DAPState, seq: i64) {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "setExceptionBreakpoints".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
     send_json(&resp);
 }
 
-fn handle_configuration_done(state: &mut DAPState, seq: i64) {
+fn manejar_configuration_done(state: &mut DAPState, seq: i64) {
     // Responder primero
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "configurationDone".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
@@ -416,17 +418,17 @@ fn ejecutar_programa(state: &mut DAPState) {
     // hacen return. Se reemplaza por un bloque simple.
     {
         // Verificar comandos pendientes
-        if let Ok(DebugCommand::Disconnect) = state.cmd_rx.try_recv() {
+        if let Ok(DepuracionCommand::Disconnect) = state.cmd_rx.try_recv() {
             state.disconnect_requested = true;
             return;
         }
 
         if state.debugger.vm.ip >= state.debugger.vm.bytecode.len() {
             // Programa esta_terminado
-            let evt = RPCEvent {
+            let evt = RPCEvento {
                 seq: state.next_seq(),
                 r#type: "event".into(),
-                event: "terminated".into(),
+                evento: "terminated".into(),
                 body: None,
             };
             send_json(&evt);
@@ -436,51 +438,51 @@ fn ejecutar_programa(state: &mut DAPState) {
 
         // Ejecutar un paso
         match state.debugger.ejecutar_hasta_evento() {
-            Ok(event) => match event {
-                forja::debugger::DebugEvent::Breakpoint { line } => {
-                    let evt = RPCEvent {
+            Ok(evento) => match evento {
+                forja::debugger::DepuracionEvento::Breakpoint { line } => {
+                    let evt = RPCEvento {
                         seq: state.next_seq(),
                         r#type: "event".into(),
-                        event: "stopped".into(),
+                        evento: "stopped".into(),
                         body: Some(serde_json::json!({
                             "reason": "breakpoint",
                             "threadId": 1,
-                            "description": format!("Breakpoint en línea {}", line),
+                            "description": format!("Breakpoint en línea {}", linea),
                         })),
                     };
                     send_json(&evt); // Esperar otro comando del usuario
                 }
-                forja::debugger::DebugEvent::StepCompletado { line } => {
-                    let evt = RPCEvent {
+                forja::debugger::DepuracionEvento::StepCompletado { line } => {
+                    let evt = RPCEvento {
                         seq: state.next_seq(),
                         r#type: "event".into(),
-                        event: "stopped".into(),
+                        evento: "stopped".into(),
                         body: Some(serde_json::json!({
                             "reason": "step",
                             "threadId": 1,
-                            "description": format!("Pausado en línea {}", line),
+                            "description": format!("Pausado en línea {}", linea),
                         })),
                     };
                     send_json(&evt);
                 }
-                forja::debugger::DebugEvent::Pausado { line } => {
-                    let evt = RPCEvent {
+                forja::debugger::DepuracionEvento::Pausado { line } => {
+                    let evt = RPCEvento {
                         seq: state.next_seq(),
                         r#type: "event".into(),
-                        event: "stopped".into(),
+                        evento: "stopped".into(),
                         body: Some(serde_json::json!({
                             "reason": "pause",
                             "threadId": 1,
-                            "description": format!("Pausado en línea {}", line),
+                            "description": format!("Pausado en línea {}", linea),
                         })),
                     };
                     send_json(&evt);
                 }
-                forja::debugger::DebugEvent::Terminado => {
-                    let evt = RPCEvent {
+                forja::debugger::DepuracionEvento::Terminado => {
+                    let evt = RPCEvento {
                         seq: state.next_seq(),
                         r#type: "event".into(),
-                        event: "terminated".into(),
+                        evento: "terminated".into(),
                         body: None,
                     };
                     send_json(&evt);
@@ -489,10 +491,10 @@ fn ejecutar_programa(state: &mut DAPState) {
             },
             Err(e) => {
                 // Error de ejecución
-                let evt = RPCEvent {
+                let evt = RPCEvento {
                     seq: state.next_seq(),
                     r#type: "event".into(),
-                    event: "stopped".into(),
+                    evento: "stopped".into(),
                     body: Some(serde_json::json!({
                         "reason": "exception",
                         "threadId": 1,
@@ -505,14 +507,14 @@ fn ejecutar_programa(state: &mut DAPState) {
     }
 }
 
-fn handle_continue(state: &mut DAPState, seq: i64) {
+fn manejar_continue(state: &mut DAPState, seq: i64) {
     // Responder inmediatamente
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "continue".into(),
-        success: true,
+        exito: true,
         body: Some(serde_json::json!({
             "allThreadsContinued": true
         })),
@@ -524,13 +526,13 @@ fn handle_continue(state: &mut DAPState, seq: i64) {
     ejecutar_programa(state);
 }
 
-fn handle_next(state: &mut DAPState, seq: i64) {
-    let resp = RPCResponse {
+fn manejar_siguiente(state: &mut DAPState, seq: i64) {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "next".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
@@ -538,10 +540,10 @@ fn handle_next(state: &mut DAPState, seq: i64) {
 
     // Step over
     if state.debugger.step_over().is_err() {
-        let evt = RPCEvent {
+        let evt = RPCEvento {
             seq: state.next_seq(),
             r#type: "event".into(),
-            event: "terminated".into(),
+            evento: "terminated".into(),
             body: None,
         };
         send_json(&evt);
@@ -550,10 +552,10 @@ fn handle_next(state: &mut DAPState, seq: i64) {
     }
 
     // Enviar stopped event si step_over retornó inmediatamente
-    let evt = RPCEvent {
+    let evt = RPCEvento {
         seq: state.next_seq(),
         r#type: "event".into(),
-        event: "stopped".into(),
+        evento: "stopped".into(),
         body: Some(serde_json::json!({
             "reason": "step",
             "threadId": 1,
@@ -563,23 +565,23 @@ fn handle_next(state: &mut DAPState, seq: i64) {
     send_json(&evt);
 }
 
-fn handle_step_in(state: &mut DAPState, seq: i64) {
-    let resp = RPCResponse {
+fn manejar_step_in(state: &mut DAPState, seq: i64) {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "stepIn".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
     send_json(&resp);
 
     if state.debugger.step_into().is_err() {
-        let evt = RPCEvent {
+        let evt = RPCEvento {
             seq: state.next_seq(),
             r#type: "event".into(),
-            event: "terminated".into(),
+            evento: "terminated".into(),
             body: None,
         };
         send_json(&evt);
@@ -587,10 +589,10 @@ fn handle_step_in(state: &mut DAPState, seq: i64) {
         return;
     }
 
-    let evt = RPCEvent {
+    let evt = RPCEvento {
         seq: state.next_seq(),
         r#type: "event".into(),
-        event: "stopped".into(),
+        evento: "stopped".into(),
         body: Some(serde_json::json!({
             "reason": "step",
             "threadId": 1,
@@ -600,23 +602,23 @@ fn handle_step_in(state: &mut DAPState, seq: i64) {
     send_json(&evt);
 }
 
-fn handle_step_out(state: &mut DAPState, seq: i64) {
-    let resp = RPCResponse {
+fn manejar_step_out(state: &mut DAPState, seq: i64) {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "stepOut".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
     send_json(&resp);
 
     if state.debugger.step_out().is_err() {
-        let evt = RPCEvent {
+        let evt = RPCEvento {
             seq: state.next_seq(),
             r#type: "event".into(),
-            event: "terminated".into(),
+            evento: "terminated".into(),
             body: None,
         };
         send_json(&evt);
@@ -624,10 +626,10 @@ fn handle_step_out(state: &mut DAPState, seq: i64) {
         return;
     }
 
-    let evt = RPCEvent {
+    let evt = RPCEvento {
         seq: state.next_seq(),
         r#type: "event".into(),
-        event: "stopped".into(),
+        evento: "stopped".into(),
         body: Some(serde_json::json!({
             "reason": "step",
             "threadId": 1,
@@ -637,51 +639,51 @@ fn handle_step_out(state: &mut DAPState, seq: i64) {
     send_json(&evt);
 }
 
-fn handle_pause(state: &mut DAPState, seq: i64) {
-    let resp = RPCResponse {
+fn manejar_pause(state: &mut DAPState, seq: i64) {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "pause".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };
     send_json(&resp);
 }
 
-fn handle_stack_trace(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
-    let frames = state.debugger.get_stack_trace();
-    let stack_frames: Vec<DAPStackFrame> = frames
+fn manejar_pila_traza(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
+    let frames = state.debugger.obtener_pila_traza();
+    let pila_frames: Vec<DAPPilaFrame> = frames
         .iter()
-        .map(|f| DAPStackFrame {
+        .map(|f| DAPPilaFrame {
             id: f.id,
             name: f.name.clone(),
-            line: f.line,
+            linea: f.linea,
             column: 1,
-            source: state.source_file.as_ref().map(|path| Source {
-                name: Some(path.rsplit('/').next().unwrap_or(path).to_string()),
-                path: Some(path.clone()),
+            fuente: state.fuente_archivo.as_ref().map(|ruta| Fuente {
+                name: Some(ruta.rsplit('/').next().unwrap_or(ruta).to_string()),
+                ruta: Some(ruta.clone()),
             }),
         })
         .collect();
 
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "stackTrace".into(),
-        success: true,
+        exito: true,
         body: Some(serde_json::json!({
-            "stackFrames": stack_frames,
-            "totalFrames": stack_frames.len(),
+            "stackFrames": pila_frames,
+            "totalFrames": pila_frames.len(),
         })),
         message: None,
     };
     send_json(&resp);
 }
 
-fn handle_scopes(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
+fn manejar_scopes(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
     let scopes = vec![
         DAPScope {
             name: "Locales".into(),
@@ -695,12 +697,12 @@ fn handle_scopes(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
         },
     ];
 
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "scopes".into(),
-        success: true,
+        exito: true,
         body: Some(serde_json::json!({
             "scopes": scopes
         })),
@@ -709,14 +711,14 @@ fn handle_scopes(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
     send_json(&resp);
 }
 
-fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
+fn manejar_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     let vars_ref = args
         .get("variablesReference")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     let variables: Vec<DAPVariable> = if vars_ref == 1 {
         // Variables locales del frame actual
-        let frames = state.debugger.get_stack_trace();
+        let frames = state.debugger.obtener_pila_traza();
         frames
             .first()
             .map(|f| {
@@ -724,7 +726,7 @@ fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
                     .iter()
                     .map(|v| DAPVariable {
                         name: v.name.clone(),
-                        value: v.value.clone(),
+                        valor: v.valor.clone(),
                         tipo: v.tipo.clone(),
                         variablesReference: 0,
                     })
@@ -739,7 +741,7 @@ fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
             .iter()
             .map(|v| DAPVariable {
                 name: v.name.clone(),
-                value: v.value.clone(),
+                valor: v.valor.clone(),
                 tipo: v.tipo.clone(),
                 variablesReference: 0,
             })
@@ -748,12 +750,12 @@ fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
         Vec::new()
     };
 
-    let resp = RPCResponse {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "variables".into(),
-        success: true,
+        exito: true,
         body: Some(serde_json::json!({
             "variables": variables
         })),
@@ -762,23 +764,23 @@ fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     send_json(&resp);
 }
 
-fn handle_evaluate(state: &mut DAPState, seq: i64, args: serde_json::Value) {
+fn manejar_evaluate(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     let expr = args
         .get("expression")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let result = state.debugger.evaluar(expr);
+    let resultado = state.debugger.evaluar(expr);
 
-    match result {
+    match resultado {
         Ok(var) => {
-            let resp = RPCResponse {
+            let resp = RPCRespuesta {
                 seq: state.next_seq(),
                 r#type: "response".into(),
-                request_seq: seq,
+                peticion_seq: seq,
                 command: "evaluate".into(),
-                success: true,
+                exito: true,
                 body: Some(serde_json::json!({
-                    "result": var.value,
+                    "result": var.valor,
                     "type": var.tipo,
                     "variablesReference": 0,
                 })),
@@ -787,12 +789,12 @@ fn handle_evaluate(state: &mut DAPState, seq: i64, args: serde_json::Value) {
             send_json(&resp);
         }
         Err(e) => {
-            let resp = RPCResponse {
+            let resp = RPCRespuesta {
                 seq: state.next_seq(),
                 r#type: "response".into(),
-                request_seq: seq,
+                peticion_seq: seq,
                 command: "evaluate".into(),
-                success: false,
+                exito: false,
                 message: Some(e),
                 body: None,
             };
@@ -801,13 +803,13 @@ fn handle_evaluate(state: &mut DAPState, seq: i64, args: serde_json::Value) {
     }
 }
 
-fn handle_disconnect(state: &mut DAPState, seq: i64) {
-    let resp = RPCResponse {
+fn manejar_disconnect(state: &mut DAPState, seq: i64) {
+    let resp = RPCRespuesta {
         seq: state.next_seq(),
         r#type: "response".into(),
-        request_seq: seq,
+        peticion_seq: seq,
         command: "disconnect".into(),
-        success: true,
+        exito: true,
         body: None,
         message: None,
     };

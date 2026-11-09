@@ -15,7 +15,7 @@ proptest! {
         // Verificar que el parser nunca crashea con cualquier entrada
         let mut lexer = forja::lexer::Lexer::new(&s);
         if let Ok(tokens) = lexer.tokenize() {
-            let mut parser = forja::parser::Parser::new(tokens);
+            let mut parser = forja::parser::Parser::nuevo(tokens);
             let _ = parser.parse();
         }
     }
@@ -29,13 +29,13 @@ proptest! {
     fn parsear_formato_parsear_estable(s in "\\PC*") {
         let mut lexer = forja::lexer::Lexer::new(&s);
         if let Ok(tokens) = lexer.tokenize() {
-            let mut parser = forja::parser::Parser::new(tokens);
+            let mut parser = forja::parser::Parser::nuevo(tokens);
             if let Ok(programa1) = parser.parse() {
-                let mut formatter = forja::formatter::Formatter::new();
+                let mut formatter = forja::formatter::Formatter::nuevo();
                 let formateado = formatter.formatear(&programa1);
                 let mut lexer2 = forja::lexer::Lexer::new(&formateado);
                 if let Ok(tokens2) = lexer2.tokenize() {
-                    let mut parser2 = forja::parser::Parser::new(tokens2);
+                    let mut parser2 = forja::parser::Parser::nuevo(tokens2);
                     // El segundo parse debe ser exitoso (ciclo estable)
                     assert!(parser2.parse().is_ok(),
                         "El código formateado debe poder parsearse de nuevo");

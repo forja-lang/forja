@@ -589,7 +589,7 @@ pub fn nativo_ws_handshake_aceptar(
 
     let concatenado = format!("{}{}", clave.trim(), WS_GUID);
     let hash = crate::hash::Sha256::digest(concatenado.as_bytes());
-    let accept = crate::base64::b64_encode(&hash);
+    let accept = crate::base64::b64_codificar(&hash);
 
     let indice = vm.reservar_texto(Arc::from(accept.as_str()));
     Ok(ValorFast::texto(indice))

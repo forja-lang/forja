@@ -126,7 +126,8 @@ NO_TOCAR = {
     "stop", "run", "close", "open", "free", "copy", "move", "mark", "apply", "process",
     "execute", "compile", "generate", "decode", "encode", "serialize", "show", "hide",
     "draw", "capacity", "truncate", "reserve", "as_str", "as_slice", "as_ref", "as_mut",
-    "unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default", "chars", "bytes",
+    "ok", "err", "new", "unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default",
+    "chars", "bytes",
     "starts_with", "ends_with", "split_whitespace", "to_vec", "to_owned", "begin", "finish",
 }
 
@@ -228,9 +229,9 @@ def planificar(datos: dict) -> tuple[dict[str, str], list[str]]:
         mapa[nombre] = destino
     # colisiones: destino ya existente en la crate o dos orígenes al mismo destino
     for nombre, destino in list(mapa.items()):
-        # colisión de crate sólo para ítems; un local se valida por archivo (ver `main`)
-        choque = es_item(nombre, datos) and destino in datos["presentes"] and destino != nombre
-        if choque or destinos[destino] > 1:
+        # la colisión se valida archivo por archivo (ver `main`): el mismo nombre puede
+        # convivir en archivos distintos sin pisarse
+        if destinos[destino] > 1:
             saltados.append(nombre)
             del mapa[nombre]
     return mapa, saltados
@@ -240,9 +241,11 @@ def main(argv: list[str]) -> int:
     if "--ruta" not in argv:
         print(__doc__)
         return 2
-    objetivo = RAIZ / argv[argv.index("--ruta") + 1]
+    rutas = [RAIZ / parte for parte in argv[argv.index("--ruta") + 1].split(",")]
     aplicar = "--aplicar" in argv
-    archivos = sorted(objetivo.rglob("*.rs")) if objetivo.is_dir() else [objetivo]
+    archivos: list[Path] = []
+    for objetivo in rutas:
+        archivos.extend(sorted(objetivo.rglob("*.rs")) if objetivo.is_dir() else [objetivo])
     datos = recolectar(archivos)
     mapa, saltados = planificar(datos)
     total = 0
@@ -250,9 +253,7 @@ def main(argv: list[str]) -> int:
         codigo = ruta.read_text(encoding="utf-8", errors="ignore")
         sin_texto = "".join(t for t, es_codigo in renombrar.segmentar(codigo) if es_codigo)
         presentes = set(RE_IDENT.findall(sin_texto))
-        mapa_archivo = {
-            k: v for k, v in mapa.items() if v not in presentes or es_item(k, datos)
-        }
+        mapa_archivo = {k: v for k, v in mapa.items() if v not in presentes}
         total += renombrar.procesar(
             ruta,
             mapa_archivo,

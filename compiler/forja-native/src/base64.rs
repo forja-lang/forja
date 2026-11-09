@@ -16,7 +16,7 @@ const fn dec_lut() -> [i8; 256] {
 }
 
 /// Codifica bytes a Base64 (RFC 4648)
-pub fn b64_encode(datos: &[u8]) -> String {
+pub fn b64_codificar(datos: &[u8]) -> String {
     if datos.is_empty() {
         return String::new();
     }
@@ -59,7 +59,7 @@ pub fn b64_encode(datos: &[u8]) -> String {
 }
 
 /// Decodifica Base64 a bytes. Retorna Err si el input es inválido.
-pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
+pub fn b64_decodificar(texto: &str) -> Result<Vec<u8>, &'static str> {
     let bytes = texto.as_bytes();
     let len = bytes.len();
     if len == 0 {
@@ -132,25 +132,25 @@ mod tests {
             "cualquier texto con ñandú".as_bytes(),
         ];
         for input in inputs {
-            let encoded = b64_encode(input);
-            let decoded = b64_decode(&encoded).unwrap();
+            let encoded = b64_codificar(input);
+            let decoded = b64_decodificar(&encoded).unwrap();
             assert_eq!(&decoded[..], *input, "falló roundtrip para: {:?}", input);
         }
     }
 
     #[test]
     fn test_b64_known() {
-        assert_eq!(b64_encode(b"Man"), "TWFu");
-        assert_eq!(b64_encode(b"Ma"), "TWE=");
-        assert_eq!(b64_encode(b"M"), "TQ==");
-        assert_eq!(b64_decode("TWFu").unwrap(), b"Man");
-        assert_eq!(b64_decode("TWE=").unwrap(), b"Ma");
-        assert_eq!(b64_decode("TQ==").unwrap(), b"M");
+        assert_eq!(b64_codificar(b"Man"), "TWFu");
+        assert_eq!(b64_codificar(b"Ma"), "TWE=");
+        assert_eq!(b64_codificar(b"M"), "TQ==");
+        assert_eq!(b64_decodificar("TWFu").unwrap(), b"Man");
+        assert_eq!(b64_decodificar("TWE=").unwrap(), b"Ma");
+        assert_eq!(b64_decodificar("TQ==").unwrap(), b"M");
     }
 
     #[test]
     fn test_b64_invalido() {
-        assert!(b64_decode("!!!").is_err());
-        assert!(b64_decode("AAAA").is_ok());
+        assert!(b64_decodificar("!!!").is_err());
+        assert!(b64_decodificar("AAAA").is_ok());
     }
 }

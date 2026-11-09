@@ -112,8 +112,8 @@ pub(crate) fn cmd_diagram(args: &[String]) {
     let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => {
-            for err in errors {
+        Err(errores) => {
+            for err in errores {
                 eprintln!("{}", err);
             }
             process::exit(1);
@@ -121,11 +121,11 @@ pub(crate) fn cmd_diagram(args: &[String]) {
     };
 
     // Parser
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => {
-            for err in errors {
+        Err(errores) => {
+            for err in errores {
                 eprintln!("{}", err);
             }
             process::exit(1);
@@ -133,7 +133,7 @@ pub(crate) fn cmd_diagram(args: &[String]) {
     };
 
     // Generar diagrama Mermaid
-    let mut gen = diagrama::DiagramGenerator::new();
+    let mut gen = diagrama::DiagramGenerator::nuevo();
     let mmd = gen.generar(&programa);
 
     if let Some(out) = ruta_salida {
@@ -184,19 +184,19 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => {
+        Err(errores) => {
             eprintln!("{}", error::archivo(input_path));
-            mostrar_errores(&fuente, &errors, error::json_mode());
+            mostrar_errores(&fuente, &errores, error::json_mode());
             process::exit(1);
         }
     };
 
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => {
+        Err(errores) => {
             eprintln!("{}", error::archivo(input_path));
-            mostrar_errores(&fuente, &errors, error::json_mode());
+            mostrar_errores(&fuente, &errores, error::json_mode());
             process::exit(1);
         }
     };
@@ -235,7 +235,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     // FASE 4: Type Checker + Type Inference
-    let mut verificador = semantics::TipoChecker::new();
+    let mut verificador = semantics::TipoChecker::nuevo();
     let _ = verificador.analizar(&programa);
     // FASE 4b: Borrow Checker — verifica ownership y préstamos
     // (con los nuevos fixes de scope tracking ya no hay falsos positivos)
@@ -244,17 +244,17 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     let _ = prestamo_checker.analizar(&programa);
 
     // FASE 5: Transpilador
-    let mut transpiler = transpiler::Transpiler::new();
+    let mut transpiler = transpiler::Transpiler::nuevo();
     let rust_code = match transpiler.transpilar(&programa) {
         Ok(codigo) => codigo,
-        Err(errors) => {
+        Err(errores) => {
             if error::json_mode() {
-                for err in &errors {
+                for err in &errores {
                     eprintln!("{}", err.to_json());
                 }
             } else {
                 eprintln!("{}", error::archivo(input_path));
-                mostrar_errores(&fuente, &errors, false);
+                mostrar_errores(&fuente, &errores, false);
             }
             process::exit(1);
         }
@@ -439,21 +439,21 @@ edition = "2021"
 }
 
 /// Nombre del gcc que necesita un target cruzado para enlazar su assembly.
-pub(crate) fn compilador_cruzado(destino: compiler_asm::TargetArch) -> &'static str {
+pub(crate) fn compilador_cruzado(destino: compiler_asm::DestinoArch) -> &'static str {
     match destino {
-        compiler_asm::TargetArch::AArch64 => "aarch64-linux-gnu-gcc",
-        compiler_asm::TargetArch::RiscV64 => "riscv64-linux-gnu-gcc",
+        compiler_asm::DestinoArch::AArch64 => "aarch64-linux-gnu-gcc",
+        compiler_asm::DestinoArch::RiscV64 => "riscv64-linux-gnu-gcc",
         _ => "gcc",
     }
 }
 
 /// forja llvm <archivo.fa> [salida.ll]
 pub(crate) fn cmd_llvm(args: &[String]) {
-    let Some(path) = args.first() else {
+    let Some(ruta) = args.first() else {
         eprintln!("Uso: forja llvm <archivo.fa> [salida.ll]");
         process::exit(1);
     };
-    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(ruta, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{e}");
@@ -465,7 +465,7 @@ pub(crate) fn cmd_llvm(args: &[String]) {
             let out = args
                 .get(1)
                 .cloned()
-                .unwrap_or_else(|| path.replace(".fa", ".ll"));
+                .unwrap_or_else(|| ruta.replace(".fa", ".ll"));
             if let Err(e) = fs::write(&out, ir) {
                 eprintln!("No se pudo escribir {out}: {e}");
                 process::exit(1);

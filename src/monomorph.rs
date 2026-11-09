@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 /// Representa un tipo concreto para monomorfización
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ConcreteType {
+pub enum ConcreteTipo {
     Entero,
     Decimal,
     Texto,
@@ -31,28 +31,28 @@ pub enum ConcreteType {
     Nulo,
     Exacto,
     Clase(String),
-    Arreglo(Box<ConcreteType>),
-    Resultado(Box<ConcreteType>, Box<ConcreteType>),
-    Opcion(Box<ConcreteType>),
+    Arreglo(Box<ConcreteTipo>),
+    Resultado(Box<ConcreteTipo>, Box<ConcreteTipo>),
+    Opcion(Box<ConcreteTipo>),
 }
 
-impl ConcreteType {
+impl ConcreteTipo {
     /// Convierte un Tipo AST a un ConcreteType
     pub fn from_tipo(tipo: &Tipo) -> Option<Self> {
         match tipo {
-            Tipo::Entero => Some(ConcreteType::Entero),
-            Tipo::Decimal => Some(ConcreteType::Decimal),
-            Tipo::Texto => Some(ConcreteType::Texto),
-            Tipo::Booleano => Some(ConcreteType::Booleano),
-            Tipo::Nulo => Some(ConcreteType::Nulo),
-            Tipo::Exacto => Some(ConcreteType::Exacto),
-            Tipo::Clase(nombre) => Some(ConcreteType::Clase(nombre.clone())),
-            Tipo::Arreglo(inner) => Some(ConcreteType::Arreglo(Box::new(Self::from_tipo(inner)?))),
-            Tipo::Resultado(ok, err) => Some(ConcreteType::Resultado(
+            Tipo::Entero => Some(ConcreteTipo::Entero),
+            Tipo::Decimal => Some(ConcreteTipo::Decimal),
+            Tipo::Texto => Some(ConcreteTipo::Texto),
+            Tipo::Booleano => Some(ConcreteTipo::Booleano),
+            Tipo::Nulo => Some(ConcreteTipo::Nulo),
+            Tipo::Exacto => Some(ConcreteTipo::Exacto),
+            Tipo::Clase(nombre) => Some(ConcreteTipo::Clase(nombre.clone())),
+            Tipo::Arreglo(inner) => Some(ConcreteTipo::Arreglo(Box::new(Self::from_tipo(inner)?))),
+            Tipo::Resultado(ok, err) => Some(ConcreteTipo::Resultado(
                 Box::new(Self::from_tipo(ok)?),
                 Box::new(Self::from_tipo(err)?),
             )),
-            Tipo::Opcion(inner) => Some(ConcreteType::Opcion(Box::new(Self::from_tipo(inner)?))),
+            Tipo::Opcion(inner) => Some(ConcreteTipo::Opcion(Box::new(Self::from_tipo(inner)?))),
             Tipo::Funcion(_, _) => None, // No monomorfizamos funciones como tipo
             Tipo::RasgoObjeto(_) => None,
             Tipo::Parametro(_) => None, // Parámetro genérico sin resolver
@@ -62,16 +62,18 @@ impl ConcreteType {
     /// Nombre legible para generar identificadores únicos
     pub fn name(&self) -> String {
         match self {
-            ConcreteType::Entero => "Entero".to_string(),
-            ConcreteType::Decimal => "Decimal".to_string(),
-            ConcreteType::Texto => "Texto".to_string(),
-            ConcreteType::Booleano => "Booleano".to_string(),
-            ConcreteType::Nulo => "Nulo".to_string(),
-            ConcreteType::Exacto => "Exacto".to_string(),
-            ConcreteType::Clase(n) => n.clone(),
-            ConcreteType::Arreglo(inner) => format!("Arr_{}", inner.name()),
-            ConcreteType::Resultado(ok, err) => format!("Result_{}_{}", ok.name(), err.name()),
-            ConcreteType::Opcion(inner) => format!("Opt_{}", inner.name()),
+            ConcreteTipo::Entero => "Entero".to_string(),
+            ConcreteTipo::Decimal => "Decimal".to_string(),
+            ConcreteTipo::Texto => "Texto".to_string(),
+            ConcreteTipo::Booleano => "Booleano".to_string(),
+            ConcreteTipo::Nulo => "Nulo".to_string(),
+            ConcreteTipo::Exacto => "Exacto".to_string(),
+            ConcreteTipo::Clase(n) => n.clone(),
+            ConcreteTipo::Arreglo(inner) => format!("Arr_{}", inner.name()),
+            ConcreteTipo::Resultado(ok, err) => {
+                format!("Result_{}_{}", ok.name(), err.name())
+            }
+            ConcreteTipo::Opcion(inner) => format!("Opt_{}", inner.name()),
         }
     }
 }
@@ -82,7 +84,7 @@ pub struct GenericInstantiation {
     /// Nombre original de la función/clase genérica
     pub original_name: String,
     /// Parámetros genéricos con sus tipos concretos
-    pub type_args: Vec<(String, ConcreteType)>,
+    pub type_args: Vec<(String, ConcreteTipo)>,
     /// Nombre especializado resultante
     pub specialized_name: String,
 }
@@ -136,7 +138,7 @@ fn tipo_usa_parametro(tipo: &Tipo, param_name: &str) -> bool {
 }
 
 impl Monomorphizer {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Monomorphizer {
             generic_functions: HashMap::new(),
             generic_classes: HashMap::new(),
@@ -193,27 +195,27 @@ impl Monomorphizer {
     }
 
     /// Fase 2: Recolectar instanciaciones concretas usadas en el programa
-    pub fn collect_instantiations(&mut self, programa: &Programa) {
+    pub fn recolectar_instantiations(&mut self, programa: &Programa) {
         for declaracion in &programa.declaraciones {
-            self.collect_from_decl(declaracion);
+            self.recolectar_from_decl(declaracion);
         }
     }
 
-    fn collect_from_decl(&mut self, declaracion: &Declaracion) {
+    fn recolectar_from_decl(&mut self, declaracion: &Declaracion) {
         match declaracion {
             Declaracion::Variable {
                 valor: Some(expresion),
                 ..
-            } => self.collect_from_expr(expresion),
+            } => self.recolectar_from_expresion(expresion),
             Declaracion::Funcion { cuerpo, .. } => {
                 for d in cuerpo {
-                    self.collect_from_decl(d);
+                    self.recolectar_from_decl(d);
                 }
             }
             Declaracion::Clase { metodos, .. } => {
                 for m in metodos {
                     for d in &m.cuerpo {
-                        self.collect_from_decl(d);
+                        self.recolectar_from_decl(d);
                     }
                 }
             }
@@ -221,17 +223,17 @@ impl Monomorphizer {
         }
     }
 
-    fn collect_from_expr(&mut self, expresion: &Expresion) {
+    fn recolectar_from_expresion(&mut self, expresion: &Expresion) {
         match expresion {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 // Recolectar argumentos recursivamente
                 for arg in argumentos {
-                    self.collect_from_expr(arg);
+                    self.recolectar_from_expresion(arg);
                 }
                 // Detectar si la función es genérica y crear instanciación
                 if let Some(generic) = self.generic_functions.get(nombre) {
                     if !generic.parametros_tipo.is_empty() {
-                        let type_args = self.infer_type_args_for_fn(generic, argumentos);
+                        let type_args = self.infer_tipo_args_for_fn(generic, argumentos);
                         if !type_args.is_empty() {
                             let specialized_name = format!(
                                 "{}_{}",
@@ -261,12 +263,12 @@ impl Monomorphizer {
             Expresion::Instanciacion { clase, argumentos } => {
                 // Recolectar argumentos recursivamente
                 for arg in argumentos {
-                    self.collect_from_expr(arg);
+                    self.recolectar_from_expresion(arg);
                 }
                 // Detectar si la clase es genérica y crear instanciación
                 if let Some(generic_class) = self.generic_classes.get(clase) {
                     if !generic_class.parametros_tipo.is_empty() {
-                        let type_args = self.infer_type_args_for_class(generic_class, argumentos);
+                        let type_args = self.infer_tipo_args_for_clase(generic_class, argumentos);
                         if !type_args.is_empty() {
                             let specialized_name = format!(
                                 "{}_{}",
@@ -296,35 +298,35 @@ impl Monomorphizer {
             Expresion::Binaria {
                 izquierda, derecha, ..
             } => {
-                self.collect_from_expr(izquierda);
-                self.collect_from_expr(derecha);
+                self.recolectar_from_expresion(izquierda);
+                self.recolectar_from_expresion(derecha);
             }
             Expresion::Unaria { expr, .. } => {
-                self.collect_from_expr(expr);
+                self.recolectar_from_expresion(expr);
             }
             Expresion::Ternario {
                 condicion,
                 si_verdadero,
                 si_falso,
             } => {
-                self.collect_from_expr(condicion);
-                self.collect_from_expr(si_verdadero);
-                self.collect_from_expr(si_falso);
+                self.recolectar_from_expresion(condicion);
+                self.recolectar_from_expresion(si_verdadero);
+                self.recolectar_from_expresion(si_falso);
             }
             Expresion::Arreglo(elementos) => {
                 for elem in elementos {
-                    self.collect_from_expr(elem);
+                    self.recolectar_from_expresion(elem);
                 }
             }
             Expresion::Index { objeto, indice } => {
-                self.collect_from_expr(objeto);
-                self.collect_from_expr(indice);
+                self.recolectar_from_expresion(objeto);
+                self.recolectar_from_expresion(indice);
             }
             Expresion::AccesoMiembro { objeto, .. } => {
-                self.collect_from_expr(objeto);
+                self.recolectar_from_expresion(objeto);
             }
             Expresion::Grupo(inner) => {
-                self.collect_from_expr(inner);
+                self.recolectar_from_expresion(inner);
             }
             _ => {}
         }
@@ -332,11 +334,11 @@ impl Monomorphizer {
 
     /// Infiere tipos concretos para los parámetros de tipo de una función genérica,
     /// basándose en los argumentos concretos pasados en la llamada.
-    fn infer_type_args_for_fn(
+    fn infer_tipo_args_for_fn(
         &self,
         generic: &FuncionGenerica,
         argumentos: &[Expresion],
-    ) -> Vec<(String, ConcreteType)> {
+    ) -> Vec<(String, ConcreteTipo)> {
         let mut type_args = Vec::new();
         // Para cada parámetro de tipo, intentar inferir su tipo concreto
         for param_tipo in &generic.parametros_tipo {
@@ -359,11 +361,11 @@ impl Monomorphizer {
     }
 
     /// Infiere tipos concretos para los parámetros de tipo de una clase genérica.
-    fn infer_type_args_for_class(
+    fn infer_tipo_args_for_clase(
         &self,
         generic: &ClaseGenerica,
         argumentos: &[Expresion],
-    ) -> Vec<(String, ConcreteType)> {
+    ) -> Vec<(String, ConcreteTipo)> {
         let mut type_args = Vec::new();
         // Para construcciones de clase, intentar inferir de los campos
         // Simplificación: si solo hay un parámetro de tipo, infiere del primer argumento
@@ -390,19 +392,19 @@ impl Monomorphizer {
     /// Intenta inferir un ConcreteType a partir de una expresión.
     /// Funciona directamente para literales; para variables y otras expresiones
     /// retorna None (requiere type checker para inferencia completa).
-    fn infer_concrete_from_expr(&self, expresion: &Expresion) -> Option<ConcreteType> {
+    fn infer_concrete_from_expr(&self, expresion: &Expresion) -> Option<ConcreteTipo> {
         match expresion {
-            Expresion::LiteralNumero(_) => Some(ConcreteType::Entero),
-            Expresion::LiteralDecimal(_) => Some(ConcreteType::Decimal),
-            Expresion::LiteralTexto(_) => Some(ConcreteType::Texto),
-            Expresion::LiteralBooleano(_) => Some(ConcreteType::Booleano),
-            Expresion::LiteralNulo => Some(ConcreteType::Nulo),
-            Expresion::LiteralExacto(_, _) => Some(ConcreteType::Exacto),
+            Expresion::LiteralNumero(_) => Some(ConcreteTipo::Entero),
+            Expresion::LiteralDecimal(_) => Some(ConcreteTipo::Decimal),
+            Expresion::LiteralTexto(_) => Some(ConcreteTipo::Texto),
+            Expresion::LiteralBooleano(_) => Some(ConcreteTipo::Booleano),
+            Expresion::LiteralNulo => Some(ConcreteTipo::Nulo),
+            Expresion::LiteralExacto(_, _) => Some(ConcreteTipo::Exacto),
             Expresion::Arreglo(elementos) => {
                 // Inferir tipo del primer elemento
                 if let Some(first) = elementos.first() {
                     let inner = self.infer_concrete_from_expr(first)?;
-                    Some(ConcreteType::Arreglo(Box::new(inner)))
+                    Some(ConcreteTipo::Arreglo(Box::new(inner)))
                 } else {
                     None
                 }
@@ -417,35 +419,35 @@ impl Monomorphizer {
         let instantiations = self.instantiations.clone();
         for inst in &instantiations {
             if let Some(generic_fn) = self.generic_functions.get(&inst.original_name) {
-                let specialized = self.specialize_function(generic_fn, inst);
+                let specialized = self.specialize_funcion(generic_fn, inst);
                 self.specialized_functions.push(specialized);
             }
             if let Some(generic_cls) = self.generic_classes.get(&inst.original_name) {
-                let specialized = self.specialize_class(generic_cls, inst);
+                let specialized = self.specialize_clase(generic_cls, inst);
                 self.specialized_classes.push(specialized);
             }
         }
     }
 
-    fn specialize_function(
+    fn specialize_funcion(
         &self,
         generic: &FuncionGenerica,
         inst: &GenericInstantiation,
     ) -> Declaracion {
         // Reemplazar parámetros de tipo por tipos concretos
-        let new_params: Vec<Parametro> = generic
+        let nuevo_params: Vec<Parametro> = generic
             .parametros
             .iter()
             .map(|p| {
-                let new_tipo = p
+                let nuevo_tipo = p
                     .tipo
                     .as_ref()
-                    .and_then(|t| self.replace_type_params(t, &inst.type_args));
+                    .and_then(|t| self.reemplazar_tipo_params(t, &inst.type_args));
                 Parametro {
                     nombre: p.nombre.clone(),
                     prestado: p.prestado,
                     mutable: p.mutable,
-                    tipo: new_tipo,
+                    tipo: nuevo_tipo,
                 }
             })
             .collect();
@@ -453,11 +455,11 @@ impl Monomorphizer {
         Declaracion::Funcion {
             nombre: inst.specialized_name.clone(),
             parametros_tipo: Vec::new(), // Sin parámetros de tipo
-            parametros: new_params,
+            parametros: nuevo_params,
             tipo_retorno: generic
                 .tipo_retorno
                 .as_ref()
-                .and_then(|t| self.replace_type_params(t, &inst.type_args)),
+                .and_then(|t| self.reemplazar_tipo_params(t, &inst.type_args)),
             cuerpo: generic.cuerpo.clone(), // Simplificación: cuerpo sin reemplazo de tipos
             externa: false,
             asincrona: false,
@@ -469,22 +471,22 @@ impl Monomorphizer {
         }
     }
 
-    fn specialize_class(
+    fn specialize_clase(
         &self,
         generic: &ClaseGenerica,
         inst: &GenericInstantiation,
     ) -> Declaracion {
-        let new_campos: Vec<VariableClase> = generic
+        let nuevo_campos: Vec<VariableClase> = generic
             .campos
             .iter()
             .map(|c| {
-                let new_tipo = c
+                let nuevo_tipo = c
                     .tipo
                     .as_ref()
-                    .and_then(|t| self.replace_type_params(t, &inst.type_args));
+                    .and_then(|t| self.reemplazar_tipo_params(t, &inst.type_args));
                 VariableClase {
                     nombre: c.nombre.clone(),
-                    tipo: new_tipo,
+                    tipo: nuevo_tipo,
                 }
             })
             .collect();
@@ -492,17 +494,17 @@ impl Monomorphizer {
         Declaracion::Clase {
             nombre: inst.specialized_name.clone(),
             parametros_tipo: Vec::new(),
-            campos: new_campos,
+            campos: nuevo_campos,
             metodos: generic.metodos.clone(),
             atributos: Vec::new(),
             invariantes: Vec::new(),
         }
     }
 
-    fn replace_type_params(
+    fn reemplazar_tipo_params(
         &self,
         tipo: &Tipo,
-        type_args: &[(String, ConcreteType)],
+        type_args: &[(String, ConcreteTipo)],
     ) -> Option<Tipo> {
         match tipo {
             Tipo::Parametro(nombre) => {
@@ -515,35 +517,35 @@ impl Monomorphizer {
                 Some(tipo.clone())
             }
             Tipo::Arreglo(inner) => Some(Tipo::Arreglo(Box::new(
-                self.replace_type_params(inner, type_args)?,
+                self.reemplazar_tipo_params(inner, type_args)?,
             ))),
             Tipo::Opcion(inner) => Some(Tipo::Opcion(Box::new(
-                self.replace_type_params(inner, type_args)?,
+                self.reemplazar_tipo_params(inner, type_args)?,
             ))),
             _ => Some(tipo.clone()),
         }
     }
 
-    fn concrete_to_tipo(&self, concrete: &ConcreteType) -> Tipo {
+    fn concrete_to_tipo(&self, concrete: &ConcreteTipo) -> Tipo {
         match concrete {
-            ConcreteType::Entero => Tipo::Entero,
-            ConcreteType::Decimal => Tipo::Decimal,
-            ConcreteType::Texto => Tipo::Texto,
-            ConcreteType::Booleano => Tipo::Booleano,
-            ConcreteType::Nulo => Tipo::Nulo,
-            ConcreteType::Exacto => Tipo::Exacto,
-            ConcreteType::Clase(n) => Tipo::Clase(n.clone()),
-            ConcreteType::Arreglo(inner) => Tipo::Arreglo(Box::new(self.concrete_to_tipo(inner))),
-            ConcreteType::Resultado(ok, err) => Tipo::Resultado(
+            ConcreteTipo::Entero => Tipo::Entero,
+            ConcreteTipo::Decimal => Tipo::Decimal,
+            ConcreteTipo::Texto => Tipo::Texto,
+            ConcreteTipo::Booleano => Tipo::Booleano,
+            ConcreteTipo::Nulo => Tipo::Nulo,
+            ConcreteTipo::Exacto => Tipo::Exacto,
+            ConcreteTipo::Clase(n) => Tipo::Clase(n.clone()),
+            ConcreteTipo::Arreglo(inner) => Tipo::Arreglo(Box::new(self.concrete_to_tipo(inner))),
+            ConcreteTipo::Resultado(ok, err) => Tipo::Resultado(
                 Box::new(self.concrete_to_tipo(ok)),
                 Box::new(self.concrete_to_tipo(err)),
             ),
-            ConcreteType::Opcion(inner) => Tipo::Opcion(Box::new(self.concrete_to_tipo(inner))),
+            ConcreteTipo::Opcion(inner) => Tipo::Opcion(Box::new(self.concrete_to_tipo(inner))),
         }
     }
 
     /// Retorna las especializaciones generadas como declaraciones
-    pub fn get_specializations(&self) -> Vec<Declaracion> {
+    pub fn obtener_specializations(&self) -> Vec<Declaracion> {
         let mut resultado = Vec::new();
         resultado.extend(self.specialized_classes.clone());
         resultado.extend(self.specialized_functions.clone());
@@ -553,7 +555,7 @@ impl Monomorphizer {
 
 impl Default for Monomorphizer {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -562,33 +564,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_concrete_type_from_tipo() {
+    fn test_concrete_tipo_from_tipo() {
         assert_eq!(
-            ConcreteType::from_tipo(&Tipo::Entero),
-            Some(ConcreteType::Entero)
+            ConcreteTipo::from_tipo(&Tipo::Entero),
+            Some(ConcreteTipo::Entero)
         );
         assert_eq!(
-            ConcreteType::from_tipo(&Tipo::Texto),
-            Some(ConcreteType::Texto)
+            ConcreteTipo::from_tipo(&Tipo::Texto),
+            Some(ConcreteTipo::Texto)
         );
         assert_eq!(
-            ConcreteType::from_tipo(&Tipo::Booleano),
-            Some(ConcreteType::Booleano)
+            ConcreteTipo::from_tipo(&Tipo::Booleano),
+            Some(ConcreteTipo::Booleano)
         );
     }
 
     #[test]
-    fn test_concrete_type_name() {
-        assert_eq!(ConcreteType::Entero.name(), "Entero");
+    fn test_concrete_tipo_name() {
+        assert_eq!(ConcreteTipo::Entero.name(), "Entero");
         assert_eq!(
-            ConcreteType::Arreglo(Box::new(ConcreteType::Entero)).name(),
+            ConcreteTipo::Arreglo(Box::new(ConcreteTipo::Entero)).name(),
             "Arr_Entero"
         );
     }
 
     #[test]
-    fn test_extract_generic_function() {
-        let mut mono = Monomorphizer::new();
+    fn test_extraer_generic_funcion() {
+        let mut mono = Monomorphizer::nuevo();
         let params_tipo = vec![ParametroTipo {
             nombre: "T".to_string(),
         }];
@@ -622,8 +624,8 @@ mod tests {
     }
 
     #[test]
-    fn test_specialize_function() {
-        let mut mono = Monomorphizer::new();
+    fn test_specialize_funcion() {
+        let mut mono = Monomorphizer::nuevo();
         mono.generic_functions.insert(
             "doble".to_string(),
             FuncionGenerica {
@@ -643,7 +645,7 @@ mod tests {
         );
         let inst = GenericInstantiation {
             original_name: "doble".to_string(),
-            type_args: vec![("T".to_string(), ConcreteType::Entero)],
+            type_args: vec![("T".to_string(), ConcreteTipo::Entero)],
             specialized_name: "doble_Entero".to_string(),
         };
         mono.instantiations.push(inst);
@@ -660,11 +662,11 @@ mod tests {
     }
 
     #[test]
-    fn test_replace_type_params() {
-        let mono = Monomorphizer::new();
+    fn test_reemplazar_tipo_params() {
+        let mono = Monomorphizer::nuevo();
         let tipo = Tipo::Parametro("T".to_string());
-        let argumentos = vec![("T".to_string(), ConcreteType::Entero)];
-        let resultado = mono.replace_type_params(&tipo, &argumentos);
+        let argumentos = vec![("T".to_string(), ConcreteTipo::Entero)];
+        let resultado = mono.reemplazar_tipo_params(&tipo, &argumentos);
         assert_eq!(resultado, Some(Tipo::Entero));
     }
 }

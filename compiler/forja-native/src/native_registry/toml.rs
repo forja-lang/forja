@@ -259,7 +259,7 @@ fn escribir_tabla(vm: &dyn Anfitrion, indice: u32, prefijo: &str, salida: &mut S
 
 fn valor_toml(vm: &dyn Anfitrion, v: &ValorFast) -> String {
     if v.es_texto() {
-        let s = vm.get_str(v.indice_texto());
+        let s = vm.obtener_texto(v.indice_texto());
         return format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
     }
     if v.es_booleano() {

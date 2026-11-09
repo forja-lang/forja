@@ -23,7 +23,7 @@ impl ForjaFast {
                 // siempre. Nulo se propaga (misma regla que en la ruta de uops).
                 let n: Option<i64> = if v.es_texto() {
                     let idx = v.indice_texto();
-                    let s = self.get_str(idx);
+                    let s = self.obtener_texto(idx);
                     Some(s.parse::<i64>().unwrap_or(0))
                 } else if v.es_entero() {
                     Some(v.a_entero())

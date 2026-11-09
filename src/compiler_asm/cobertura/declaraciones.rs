@@ -12,22 +12,22 @@ fn variables_en_registro_por_tipo() {
             Some(Tipo::Clase("C".into())),
             Some(Tipo::Booleano),
         ] {
-            let mut c = CompilerAsm::with_target(t);
+            let mut c = CompilerAsm::con_destino(t);
             c.compilar_declaracion(&decl_variable("v", tipo.clone(), Some(num(1))));
             assert!(
-                c.var_reg_map.contains_key("v"),
+                c.variable_reg_mapa.contains_key("v"),
                 "{t:?}/{tipo:?}: debía asignarse un registro"
             );
         }
         // Sin valor inicial también se reserva el registro.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.compilar_declaracion(&decl_variable("v", Some(Tipo::Entero), None));
-        assert!(c.var_reg_map.contains_key("v"));
+        assert!(c.variable_reg_mapa.contains_key("v"));
     }
 }
 
 #[test]
-fn variables_en_stack_por_tipo() {
+fn variables_en_pila_por_tipo() {
     for t in TARGETS {
         for tipo in [
             Some(Tipo::Entero),
@@ -37,7 +37,7 @@ fn variables_en_stack_por_tipo() {
             Some(Tipo::Booleano),
             None,
         ] {
-            let mut c = CompilerAsm::with_target(t);
+            let mut c = CompilerAsm::con_destino(t);
             llenar_pool(&mut c);
             c.compilar_declaracion(&decl_variable("v", tipo.clone(), Some(num(1))));
             assert!(
@@ -45,7 +45,7 @@ fn variables_en_stack_por_tipo() {
                 "{t:?}/{tipo:?}: la variable debe quedar registrada"
             );
             assert!(
-                !c.var_reg_map.contains_key("v"),
+                !c.variable_reg_mapa.contains_key("v"),
                 "{t:?}/{tipo:?}: sin registros libres va a stack"
             );
         }
@@ -53,12 +53,12 @@ fn variables_en_stack_por_tipo() {
 }
 
 #[test]
-fn asignacion_a_variable_en_registro_y_en_stack() {
+fn asignacion_a_variable_en_registro_y_en_pila() {
     for t in TARGETS {
         // Camino registro: un tipo por arm del match.
         for nombre in ["ent", "txt", "obj", "bool"] {
             let mut c = con_variables(t);
-            c.alloc_var_reg(nombre);
+            c.reservar_variable_reg(nombre);
             c.compilar_declaracion(&decl_asignacion(nombre, num(7)));
             assert!(!c.output.is_empty(), "{t:?}/{nombre}");
         }
@@ -66,7 +66,7 @@ fn asignacion_a_variable_en_registro_y_en_stack() {
         // Rama defensiva: un decimal nunca recibe registro, pero si el mapa lo
         // tuviera el compilador no debe emitir nada (no hay registro de FP).
         let mut c = con_variables(t);
-        c.alloc_var_reg("dec");
+        c.reservar_variable_reg("dec");
         c.compilar_declaracion(&decl_asignacion("dec", num(7)));
         // El único asm emitido es el del valor: no hay store a registro.
         let mut control = con_variables(t);
@@ -124,11 +124,11 @@ fn asignacion_a_miembro_con_y_sin_registro_libre() {
 }
 
 #[test]
-fn asignacion_por_indice_en_registro_stack_e_inexistente() {
+fn asignacion_por_indice_en_registro_pila_e_inexistente() {
     for t in TARGETS {
         // Array en registro.
         let mut c = con_variables(t);
-        c.alloc_var_reg("ent");
+        c.reservar_variable_reg("ent");
         c.compilar_declaracion(&Declaracion::AsignacionIndex {
             nombre: "ent".into(),
             indice: Box::new(num(1)),
@@ -163,10 +163,10 @@ fn asignacion_por_indice_en_registro_stack_e_inexistente() {
 }
 
 #[test]
-fn funciones_con_parametros_en_registro_y_en_stack() {
+fn funciones_con_parametros_en_registro_y_en_pila() {
     for t in TARGETS {
         // Parámetros de tipos que viven en registro.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.compilar_declaracion(&decl_funcion(
             "f",
             vec![
@@ -188,7 +188,7 @@ fn funciones_con_parametros_en_registro_y_en_stack() {
         assert!(c.output.contains("f:"));
 
         // Parámetros decimales: van a stack (no hay registros de FP).
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.compilar_declaracion(&decl_funcion(
             "g",
             vec![
@@ -201,7 +201,7 @@ fn funciones_con_parametros_en_registro_y_en_stack() {
 
         // Más parámetros que registros de argumentos: los extra se ignoran en
         // el prólogo (no hay soporte de paso por stack en el prólogo).
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let params: Vec<Parametro> = (0..9).map(|i| param(&format!("p{i}"), None)).collect();
         c.compilar_declaracion(&decl_funcion("h", params, vec![retornar(None)]));
         assert!(c.output.contains("h:"));
@@ -212,7 +212,7 @@ fn funciones_con_parametros_en_registro_y_en_stack() {
 fn funciones_externas_y_con_contratos() {
     for t in TARGETS {
         // Función externa: solo directivas, sin cuerpo.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let mut externa = decl_funcion("puts", vec![param("s", Some(Tipo::Texto))], vec![]);
         if let Declaracion::Funcion { externa: e, .. } = &mut externa {
             *e = true;
@@ -223,7 +223,7 @@ fn funciones_externas_y_con_contratos() {
 
         // Precondiciones con y sin mensaje + postcondiciones sin retorno
         // explícito (emite el salto al label de fin).
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let mut f = decl_funcion(
             "contratada",
             vec![param("a", None)],
@@ -258,7 +258,7 @@ fn funciones_externas_y_con_contratos() {
         assert!(c.output.contains("Postcondición falló"), "{t:?}");
 
         // Retorno sin valor dentro de una función con postcondiciones.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let mut f = decl_funcion("vacia", vec![], vec![retornar(None)]);
         if let Declaracion::Funcion {
             postcondiciones, ..
@@ -277,7 +277,7 @@ fn funciones_externas_y_con_contratos() {
 #[test]
 fn declaraciones_sin_emision_y_control_de_flujo() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         // Declaraciones que el backend reconoce pero no emite.
         c.compilar_declaracion(&decl_clase("Vacia", vec![], vec![]));
         c.compilar_declaracion(&Declaracion::Rasgo {
@@ -382,16 +382,16 @@ fn clases_recolectadas_por_tipo_de_campo() {
         casos.iter().map(|(n, t)| campo(n, t.clone())).collect(),
         vec![metodo("m", vec![], vec![])],
     )]);
-    let info = c.clases.get("Completa").expect("clase recolectada");
-    assert_eq!(info.campos.len(), casos.len());
-    assert_eq!(info.offsets.len(), casos.len());
-    assert!(info.size > 0);
-    assert_eq!(info.metodos, vec!["m".to_string()]);
+    let informacion = c.clases.get("Completa").expect("clase recolectada");
+    assert_eq!(informacion.campos.len(), casos.len());
+    assert_eq!(informacion.offsets.len(), casos.len());
+    assert!(informacion.tamano > 0);
+    assert_eq!(informacion.metodos, vec!["m".to_string()]);
 
     // Clase sin campos: el tamaño mínimo es 8 bytes.
     let mut c = CompilerAsm::new();
     c.recolectar_clases(&[decl_clase("Vacia", vec![], vec![])]);
-    assert_eq!(c.clases.get("Vacia").unwrap().size, 8);
+    assert_eq!(c.clases.get("Vacia").unwrap().tamano, 8);
 
     // `generar_clases_asm` documenta el layout en el asm generado.
     let mut c = CompilerAsm::new();

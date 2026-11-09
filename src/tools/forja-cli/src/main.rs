@@ -39,15 +39,15 @@ fn main() {
     if selfrun::try_selfrun().is_some() {
         return;
     }
-    selfrun::shadow_copy();
+    selfrun::shadow_copia();
 
     let args: Vec<String> = env::args().collect();
 
     // Reportes de fallo locales (solo si el usuario activó la telemetría).
     let panico_anterior = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        forja::actualizar::registrar_fallo("panic", &info.to_string());
-        panico_anterior(info);
+    std::panic::set_hook(Box::new(move |informacion| {
+        forja::actualizar::registrar_fallo("panic", &informacion.to_string());
+        panico_anterior(informacion);
     }));
 
     // Configuración: `forja.yaml` en el directorio de ejecución. Si no existe
@@ -96,7 +96,7 @@ fn main() {
             | "ayuda"
             | "help"
     ) {
-        forja::actualizar::avisar_update();
+        forja::actualizar::avisar_actualizar();
         forja::actualizar::auto_si_habilitado();
     }
 

@@ -203,7 +203,7 @@ pub struct TablaDinamica {
 }
 
 impl TablaDinamica {
-    pub fn new(max_tamano: usize) -> Self {
+    pub fn nuevo(max_tamano: usize) -> Self {
         Self {
             entries: Vec::new(),
             max_tamano,
@@ -587,7 +587,7 @@ struct HuffmanNodo {
 }
 
 impl HuffmanNodo {
-    fn new() -> Self {
+    fn nuevo() -> Self {
         Self {
             children: [None, None],
             valor: None,
@@ -599,7 +599,7 @@ impl HuffmanNodo {
         for i in (0..len).rev() {
             let bit = ((code >> (len - 1 - i)) & 1) as usize;
             if nodo.children[bit].is_none() {
-                nodo.children[bit] = Some(Box::new(HuffmanNodo::new()));
+                nodo.children[bit] = Some(Box::new(HuffmanNodo::nuevo()));
             }
             nodo = nodo.children[bit].as_mut().unwrap();
         }
@@ -608,7 +608,7 @@ impl HuffmanNodo {
 }
 
 fn construir_huffman_arbol() -> HuffmanNodo {
-    let mut raiz = HuffmanNodo::new();
+    let mut raiz = HuffmanNodo::nuevo();
     for (i, &(code, len)) in HUFFMAN_TABLE.iter().enumerate() {
         if len > 0 {
             raiz.insert(code, len, i as u8);
@@ -1145,13 +1145,13 @@ pub fn hpack_decodificar(
 
 /// Helper: decodifica Base64 a Vec<u8>
 fn b64_decodificar(texto: &str) -> Result<Vec<u8>, ErrFast> {
-    crate::base64::b64_decode(texto)
+    crate::base64::b64_decodificar(texto)
         .map_err(|_| ErrFast::TipoInv("h2_b64_error: base64 inválido".into()))
 }
 
 /// Helper: codifica Vec<u8> a Base64 String
 fn b64_codificar(datos: &[u8]) -> String {
-    crate::base64::b64_encode(datos)
+    crate::base64::b64_codificar(datos)
 }
 
 /// Helper: escribe raw bytes a un socket TCP
@@ -1322,7 +1322,7 @@ pub fn nativo_hpack_codificar(
     }
     let cabeceras_texto = obtener_texto(vm, args[0])?;
     let cabeceras = texto_a_cabeceras(&cabeceras_texto);
-    let mut tabla = TablaDinamica::new(4096);
+    let mut tabla = TablaDinamica::nuevo(4096);
     let bloque = hpack_codificar(&cabeceras, &mut tabla);
     let resultado_b64 = b64_codificar(&bloque);
     Ok(ValorFast::texto(vm.reservar_texto(resultado_b64.into())))
@@ -1345,7 +1345,7 @@ pub fn nativo_hpack_decodificar(
     }
     let hpack_b64 = obtener_texto(vm, args[0])?;
     let bloque = b64_decodificar(&hpack_b64)?;
-    let mut tabla = TablaDinamica::new(4096);
+    let mut tabla = TablaDinamica::nuevo(4096);
     let cabeceras = hpack_decodificar(&bloque, &mut tabla)
         .ok_or_else(|| ErrFast::TipoInv("hpack_error: fallo al decodificar".into()))?;
     let resultado = cabeceras_a_texto(&cabeceras);

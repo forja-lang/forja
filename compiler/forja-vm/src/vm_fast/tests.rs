@@ -16,17 +16,17 @@ fn compilar_programa(fuente: &str) -> Vec<bytecode::Opcode> {
 
     let mut lexer = crate::lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize().expect("el programa debe tokenizar");
-    let mut parser = crate::parser::Parser::new(tokens);
+    let mut parser = crate::parser::Parser::nuevo(tokens);
     let programa = parser.parse().expect("el programa debe parsear");
 
-    let mut tipo_checker = crate::semantics::TipoChecker::new();
+    let mut tipo_checker = crate::semantics::TipoChecker::nuevo();
     tipo_checker
         .analizar(&programa)
         .expect("el programa debe pasar el type checker");
     let tipos_inferidos = tipo_checker.obtener_tipos_inferidos();
     let funciones_overload = tipo_checker.obtener_funciones();
 
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     gen.fijar_tipos_inferidos(tipos_inferidos);
     gen.fijar_funciones_overload(funciones_overload);
     let bytecode = gen
@@ -53,7 +53,7 @@ fn compilar_programa(fuente: &str) -> Vec<bytecode::Opcode> {
 /// (`None` = modo automático). Retorna (output, fast_math_activo).
 fn ejecutar_con_fast_math(fuente: &str, fast_math: Option<bool>) -> (Vec<String>, bool) {
     let bytecode = compilar_programa(fuente);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     if let Some(b) = fast_math {
         vm.fijar_fast_math(b);
     }
@@ -204,7 +204,7 @@ fn dump_bytecode_post_quickening() {
     use std::io::Write;
     for (nombre, contenido) in [("lb50", LB50_SRC), ("leibniz_test", LEIBNIZ_TEST_SRC)] {
         let bc = compilar_programa(contenido);
-        let mut vm = ForjaFast::new();
+        let mut vm = ForjaFast::nuevo();
         vm.show_bytecode = true;
         vm.cargar_bytecode(bc);
         let mut out = String::new();
@@ -228,7 +228,7 @@ fn dump_bytecode_post_quickening() {
 fn traza_lb50_vs_leibniz_test() {
     for (nombre, contenido) in [("lb50", LB50_SRC), ("leibniz_test", LEIBNIZ_TEST_SRC)] {
         let bc = compilar_programa(contenido);
-        let mut vm = ForjaFast::new();
+        let mut vm = ForjaFast::nuevo();
         vm.show_bytecode = true;
         vm.cargar_bytecode(bc);
         eprintln!("===== {} =====", nombre);
@@ -248,7 +248,7 @@ fn errores_estrictos_division_por_cero() {
     // en runtime lanza `ErrFast::DivCero` en lugar de devolver nulo.
     let src = "funcion cero() {\n    retornar 0\n}\n\nfuncion dividir(a, b) {\n    retornar a / b\n}\n\nvariable r = dividir(10, cero())\nescribir(r)\n";
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_errores_estrictos(true);
     vm.cargar_bytecode(bc);
     let r = vm.ejecutar();
@@ -264,7 +264,7 @@ fn errores_estrictos_division_por_cero_desactivado_devuelve_nulo() {
     // Sin modo estricto, el comportamiento por defecto se conserva: nulo.
     let src = "funcion cero() {\n    retornar 0\n}\n\nfuncion dividir(a, b) {\n    retornar a / b\n}\n\nvariable r = dividir(10, cero())\nescribir(r)\n";
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bc);
     let r = vm.ejecutar();
     assert!(r.is_ok(), "sin modo estricto no debe fallar: {:?}", r);
@@ -277,7 +277,7 @@ fn errores_estrictos_indice_fuera_de_rango() {
     // rango lanza `ErrFast::IdxOut` en lugar de devolver nulo.
     let src = "variable arr = [1, 2, 3]\nvariable i = 99\nescribir(arr[i])\n";
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_errores_estrictos(true);
     vm.cargar_bytecode(bc);
     let r = vm.ejecutar();
@@ -291,7 +291,7 @@ fn errores_estrictos_indice_fuera_de_rango() {
 #[test]
 fn fast_math_override_manual_persiste_despues_de_reiniciar() {
     let bytecode = compilar_programa("escribir(1)\n");
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_fast_math(true);
     vm.cargar_bytecode(bytecode);
     assert!(vm.fast_math());
@@ -321,7 +321,7 @@ funcion fib(n) {
 variable r = fib(20)
 "#;
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_max_inst(1_000_000_000);
     vm.cargar_bytecode(bc);
     vm.habilitar_pgo();
@@ -351,7 +351,7 @@ variable r = fib(20)
 fn pgo_aplica_perfil_pre_especializando_ips_calientes() {
     let src = "variable s = 0\nvariable i = 0\nmientras (i < 10000) {\n    s = s + i\n    i = i + 1\n}\nescribir(s)\n";
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_max_inst(1_000_000_000);
     vm.cargar_bytecode(bc);
     vm.habilitar_pgo();
@@ -360,7 +360,7 @@ fn pgo_aplica_perfil_pre_especializando_ips_calientes() {
 
     // Nueva VM: aplicar el perfil pre-especializa los IPs calientes
     let bc2 = compilar_programa(src);
-    let mut vm2 = ForjaFast::new();
+    let mut vm2 = ForjaFast::nuevo();
     vm2.fijar_max_inst(1_000_000_000);
     vm2.cargar_bytecode(bc2);
     let longitud_antes = vm2.contador_especializacion.len();
@@ -405,7 +405,7 @@ coincidir (res) {
 }
 "#;
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_max_inst(1_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().expect("el programa debe ejecutar");
@@ -436,7 +436,7 @@ coincidir (res) {
 }
 "#;
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_max_inst(1_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().expect("el programa debe ejecutar");
@@ -471,7 +471,7 @@ coincidir (res) {
 }
 "#;
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_max_inst(1_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().expect("el programa debe ejecutar");
@@ -506,7 +506,7 @@ funcion main() {
 main()
 "#;
     let bc = compilar_programa(src);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.fijar_max_inst(1_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().expect("el programa debe ejecutar");

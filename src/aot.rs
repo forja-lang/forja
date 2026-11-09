@@ -17,18 +17,19 @@ impl AOTCompiler {
         gui: bool,
         con_consola: bool,
     ) -> Result<(), String> {
-        let source = fs::read_to_string(entrada)
+        let fuente = fs::read_to_string(entrada)
             .map_err(|e| format!("Error leyendo '{}': {}", entrada, e))?;
-        let entrada_path = std::path::Path::new(entrada);
-        let base_dir = entrada_path.parent().unwrap_or(std::path::Path::new("."));
-        let (codigos, _contratos) = crate::compilar_pipeline_completa_desde(&source, base_dir)?;
+        let entrada_ruta = std::path::Path::new(entrada);
+        let base_directorio = entrada_ruta.parent().unwrap_or(std::path::Path::new("."));
+        let (codigos, _contratos) =
+            crate::compilar_pipeline_completa_desde(&fuente, base_directorio)?;
         let codigos = bytecode::sanitizar_para_serializacion(&codigos);
         let fbc_data = bytecode::serializar_bytecode(&codigos);
         forja_driver::aot::generar_ejecutable(&fbc_data, salida, gui, con_consola)?;
-        let label = if gui { "🎨 GUI" } else { "⚡" };
+        let etiqueta = if gui { "🎨 GUI" } else { "⚡" };
         println!(
             "✅ {} Ejecutable generado: {} ({} bytes de bytecode)",
-            label,
+            etiqueta,
             salida,
             fbc_data.len()
         );

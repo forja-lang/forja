@@ -13,7 +13,7 @@ pub struct ForjaConfig {
     pub autor: String,
     #[serde(default)]
     pub descripcion: String,
-    #[serde(default = "default_entry")]
+    #[serde(default = "predeterminado_entrada")]
     pub entry: String,
     #[serde(default)]
     pub modulos: Vec<String>,
@@ -24,32 +24,32 @@ pub struct ForjaConfig {
     pub dev_dependencias: HashMap<String, String>,
 }
 
-fn default_entry() -> String {
+fn predeterminado_entrada() -> String {
     "main.fa".to_string()
 }
 
 impl ForjaConfig {
-    pub fn load(path: &Path) -> Result<Self, String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Error leyendo {}: {}", path.display(), e))?;
+    pub fn load(ruta: &Path) -> Result<Self, String> {
+        let content = fs::read_to_string(ruta)
+            .map_err(|e| format!("Error leyendo {}: {}", ruta.display(), e))?;
         serde_json::from_str(&content)
-            .map_err(|e| format!("Error parseando {}: {}", path.display(), e))
+            .map_err(|e| format!("Error parseando {}: {}", ruta.display(), e))
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    pub fn guardar(&self, ruta: &Path) -> Result<(), String> {
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Error serializando config: {}", e))?;
-        fs::write(path, content).map_err(|e| format!("Error escribiendo {}: {}", path.display(), e))
+        fs::write(ruta, content).map_err(|e| format!("Error escribiendo {}: {}", ruta.display(), e))
     }
 
-    pub fn new(nombre: &str, version: &str) -> Self {
+    pub fn nuevo(nombre: &str, version: &str) -> Self {
         ForjaConfig {
             nombre: nombre.to_string(),
             version: version.to_string(),
             forja: "0.1.0".to_string(),
             autor: String::new(),
             descripcion: String::new(),
-            entry: default_entry(),
+            entry: predeterminado_entrada(),
             modulos: vec!["std".to_string()],
             dependencias: HashMap::new(),
             dev_dependencias: HashMap::new(),

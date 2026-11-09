@@ -177,7 +177,7 @@ impl REPL {
                             if parece {
                                 println!(
                                     "{}",
-                                    error::info(
+                                    error::informacion(
                                         "Los comandos van con '/' (ej. /salir). Ver /ayuda"
                                     )
                                 );
@@ -211,7 +211,10 @@ impl REPL {
                             "motor" => {
                                 let pedido = argumento.to_lowercase();
                                 if pedido.is_empty() {
-                                    println!("{}", error::info("Usá: /motor vm | /motor jit"));
+                                    println!(
+                                        "{}",
+                                        error::informacion("Usá: /motor vm | /motor jit")
+                                    );
                                     continue;
                                 }
                                 let canonico = match pedido.as_str() {
@@ -228,7 +231,7 @@ impl REPL {
                                     }
                                     None => println!(
                                         "{}",
-                                        error::info(
+                                        error::informacion(
                                             "Motor desconocido. Usá: /motor vm | /motor jit"
                                         )
                                     ),
@@ -268,7 +271,7 @@ impl REPL {
                                                     continue;
                                                 }
                                             };
-                                            let mut parser = Parser::new(tokens);
+                                            let mut parser = Parser::nuevo(tokens);
                                             let programa = match parser.parse() {
                                                 Ok(p) => p,
                                                 Err(e) => {
@@ -282,7 +285,7 @@ impl REPL {
                                                     continue;
                                                 }
                                             };
-                                            let mut gen = GeneradorBytecode::new();
+                                            let mut gen = GeneradorBytecode::nuevo();
                                             let bytecode = match gen.generar(&programa) {
                                                 Ok(b) => b,
                                                 Err(_) => {
@@ -349,7 +352,7 @@ impl REPL {
                                                 continue;
                                             }
                                         };
-                                        let mut gen = GeneradorBytecode::new();
+                                        let mut gen = GeneradorBytecode::nuevo();
                                         let modulo_bytecode =
                                             match gen.generar_para_modulo(&programa, modulo_sym) {
                                                 Ok(mbc) => mbc,
@@ -367,7 +370,7 @@ impl REPL {
                                         let version = vm
                                             .module_registry
                                             .get(&modulo_sym)
-                                            .map(|info| info.version)
+                                            .map(|informacion| informacion.version)
                                             .unwrap_or(0);
                                         // Hacer hot-swap en la VM
                                         match vm.hot_swap_modulo(modulo_sym, &modulo_bytecode) {
@@ -403,7 +406,7 @@ impl REPL {
                             otro => {
                                 println!(
                                     "{}",
-                                    error::info(&format!(
+                                    error::informacion(&format!(
                                         "Comando desconocido: /{otro}. Ver /ayuda"
                                     ))
                                 );
@@ -456,7 +459,7 @@ impl REPL {
         // VM nueva por entrada: la persistencia de variables la da recompilar
         // el source acumulado. Reusar la VM dejaba índices del heap apuntando a
         // la corrida anterior (panic de índice fuera de rango en la 3ª línea).
-        let mut vm = forja_driver::vm_fast::ForjaFast::new();
+        let mut vm = forja_driver::vm_fast::ForjaFast::nuevo();
         vm.show_bytecode = self.show_bytecode;
         vm.verificar_contratos = self.verificar_contratos;
         vm.fijar_fast_math(self.matematica_rapida);
@@ -546,7 +549,10 @@ impl REPL {
     fn mostrar_variables(&self) {
         let nombres = variables_declaradas(&self.fuente_acumulado);
         if nombres.is_empty() {
-            println!("{}", error::info("No hay variables declaradas todavía"));
+            println!(
+                "{}",
+                error::informacion("No hay variables declaradas todavía")
+            );
             return;
         }
 
@@ -561,7 +567,7 @@ impl REPL {
         // Si el sondeo no compila o falla, al menos se listan los nombres.
         let valores = || -> Option<Vec<String>> {
             let (bytecode, contratos) = forja::compilar_pipeline_completa(&sonda).ok()?;
-            let mut vm = forja_driver::vm_fast::ForjaFast::new();
+            let mut vm = forja_driver::vm_fast::ForjaFast::nuevo();
             vm.contratos = contratos;
             vm.verificar_contratos = self.verificar_contratos;
             vm.fijar_fast_math(self.matematica_rapida);
@@ -600,7 +606,7 @@ fn variables_declaradas(fuente: &str) -> Vec<String> {
     let Ok(tokens) = lexer.tokenize() else {
         return Vec::new();
     };
-    let Ok(programa) = Parser::new(tokens).parse() else {
+    let Ok(programa) = Parser::nuevo(tokens).parse() else {
         return Vec::new();
     };
     let mut nombres = Vec::new();
@@ -957,7 +963,7 @@ variable n = 7
 "
         );
         let (bc, contratos) = forja::compilar_pipeline_completa(&sondeo).expect("compila");
-        let mut vm = forja_driver::vm_fast::ForjaFast::new();
+        let mut vm = forja_driver::vm_fast::ForjaFast::nuevo();
         vm.contratos = contratos;
         vm.cargar_bytecode(bc);
         vm.ejecutar().expect("ejecuta");

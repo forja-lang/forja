@@ -115,6 +115,11 @@ pub struct ForjaFast {
     ic_mapget: Vec<bool>,
     ic_mapset: Vec<bool>,
 
+    // Caché de IdSimbolo por IP: el nombre que usa un opcode (`Llamar`,
+    // `ObtenerCampo`, `NuevoObjeto`, ...) es constante para ese IP, así que se
+    // interna una sola vez en vez de pagar `Arc::from` + hash en cada ejecución.
+    sym_por_ip: Vec<Option<IdSimbolo>>,
+
     // Cache de IdSimbolo para builtins comunes (comparaciones O(1))
     sym_escribir: IdSimbolo,
     sym_retornar: IdSimbolo,
@@ -233,7 +238,7 @@ pub struct ForjaFast {
 
 impl Default for ForjaFast {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -242,7 +247,7 @@ impl ForjaFast {
     /// no afectar a programas cortos (el GC solo se dispara en presión sostenida).
     pub const GC_PRESSURE_THRESHOLD_DEFECTO: usize = 250_000;
 
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         let mut vm = ForjaFast {
             ip: 0,
             stack: Vec::with_capacity(256),
@@ -283,6 +288,7 @@ impl ForjaFast {
             ic_arrayset: Vec::new(),
             ic_mapget: Vec::new(),
             ic_mapset: Vec::new(),
+            sym_por_ip: Vec::new(),
             sym_escribir: IdSimbolo(0),
             sym_retornar: IdSimbolo(0),
             sym_longitud: IdSimbolo(0),
@@ -326,17 +332,17 @@ impl ForjaFast {
             hay_op_forzado: false,
             uop_forzado: None,
             hay_uop_forzado: false,
-            runtime: forja_runtime::Runtime::new(),
+            runtime: forja_runtime::Runtime::nuevo(),
             native_registry: {
-                let mut reg = NativoRegistro::new();
+                let mut reg = NativoRegistro::nuevo();
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::natives_vm::registrar_hot_reload(&mut reg);
                 reg
             },
             nombre_local: HashMap::new(),
-            sandbox: crate::sandbox::SandboxRed::new(), // todo permitido por defecto
-            sandbox_fs: crate::sandbox::SandboxFilesystem::new(), // todo permitido por defecto
-            sandbox_proc: crate::sandbox::SandboxProceso::new(), // todo permitido por defecto
+            sandbox: crate::sandbox::SandboxRed::nuevo(), // todo permitido por defecto
+            sandbox_fs: crate::sandbox::SandboxFilesystem::nuevo(), // todo permitido por defecto
+            sandbox_proc: crate::sandbox::SandboxProceso::nuevo(), // todo permitido por defecto
             // Canales mpsc
             // Threads
             // Hot Reload: Function Table
@@ -351,7 +357,7 @@ impl ForjaFast {
             module_registry: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
             #[cfg(not(target_arch = "wasm32"))]
-            module_resolver: ModuloResolver::new("."),
+            module_resolver: ModuloResolver::nuevo("."),
             global_var_persist: Vec::new(),
             global_var_inited: std::collections::HashSet::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -414,7 +420,7 @@ impl ForjaFast {
     /// siguiente corrida).
     pub fn habilitar_pgo(&mut self) {
         let len = self.bytecode.len().max(1);
-        self.perfil_pgo = Some(crate::pgo::ProfileData::new());
+        self.perfil_pgo = Some(crate::pgo::ProfileData::nuevo());
         self.instrumenter_pgo = Some(crate::pgo::Instrumenter::con_sample_rate(len, 8));
     }
 
@@ -939,6 +945,25 @@ impl ForjaFast {
         self.ic_arrayset = vec![None; len];
         self.ic_mapget = vec![false; len];
         self.ic_mapset = vec![false; len];
+        // el bytecode puede cambiar (hot reload): los IPs apuntan a otros nombres.
+        self.sym_por_ip.clear();
+    }
+
+    /// Devuelve el `IdSimbolo` del nombre que acompaña al opcode en `ip`,
+    /// internándolo la primera vez. El nombre de un IP no cambia mientras el
+    /// bytecode sea el mismo; `inicializar_ic` limpia la caché al recargarlo.
+    #[inline]
+    pub(crate) fn simbolo_para_ip(&mut self, ip: usize, nombre: &Arc<str>) -> IdSimbolo {
+        if let Some(id) = self.sym_por_ip.get(ip).copied().flatten() {
+            return id;
+        }
+        let id = self.runtime.tabla_simbolos.internar_arco(nombre);
+        let len = self.bytecode.len().max(ip + 1);
+        if self.sym_por_ip.len() < len {
+            self.sym_por_ip.resize(len, None);
+        }
+        self.sym_por_ip[ip] = Some(id);
+        id
     }
 
     pub fn cargar_bytecode(&mut self, bc: Vec<Opcode>) {
@@ -1251,7 +1276,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub fn get_str(&self, idx: u32) -> &Arc<str> {
+    pub fn obtener_texto(&self, idx: u32) -> &Arc<str> {
         &self.runtime.str_heap[idx as usize]
     }
 
@@ -1333,7 +1358,7 @@ impl ForjaFast {
             return a.a_flotante() == b.a_flotante();
         }
         if a.es_texto() && b.es_texto() {
-            return self.get_str(a.indice_texto()) == self.get_str(b.indice_texto());
+            return self.obtener_texto(a.indice_texto()) == self.obtener_texto(b.indice_texto());
         }
         if a.es_booleano() && b.es_booleano() {
             return a.a_booleano() == b.a_booleano();
@@ -1377,7 +1402,7 @@ impl ForjaFast {
             return v.a_flotante().to_string();
         }
         if v.es_texto() {
-            return self.get_str(v.indice_texto()).to_string();
+            return self.obtener_texto(v.indice_texto()).to_string();
         }
         if v.es_booleano() {
             return (if v.a_booleano() { "verdadero" } else { "falso" }).to_string();

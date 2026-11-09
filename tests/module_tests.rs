@@ -6,15 +6,15 @@ use forja::vm_fast::ForjaFast;
 fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     let bytecode = gen
         .generar(&programa)
         .map_err(|_| "Error bytecode".to_string())?;
     let bytecode = optimizar_indices(&bytecode);
     let bytecode = fusionar_opcodes(&bytecode);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_salida().to_vec())
@@ -29,7 +29,7 @@ fn test_repl_compila() {
 
 #[test]
 fn test_formatter_disponible() {
-    let mut f = forja::formatter::Formatter::new();
+    let mut f = forja::formatter::Formatter::nuevo();
     let prog = forja::ast::Programa {
         spans: Vec::new(),
         nombres: Vec::new(),
@@ -43,13 +43,13 @@ fn test_formatter_disponible() {
 
 #[test]
 fn test_vm_limites() {
-    let vm = ForjaFast::new();
+    let vm = ForjaFast::nuevo();
     assert!(vm.obtener_salida().is_empty());
 }
 
 #[test]
 fn test_error_con_contexto() {
-    let err = forja::error::ErrorForja::new(
+    let err = forja::error::ErrorForja::nuevo(
         forja::error::ErrorTipo::ErrorSintactico,
         1,
         5,

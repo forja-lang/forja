@@ -8,17 +8,17 @@ fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     let bytecode = gen
         .generar(&programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
     let bytecode = optimizar_indices(&bytecode);
     let bytecode = fusionar_opcodes(&bytecode);
 
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
 
@@ -395,12 +395,12 @@ fn assert_format_roundtrip(fuente: &str) {
     let tokens1 = lexer1
         .tokenize()
         .unwrap_or_else(|e| panic!("Lexer error: {:?}", e));
-    let mut parser1 = Parser::new(tokens1);
+    let mut parser1 = Parser::nuevo(tokens1);
     let ast1 = parser1
         .parse()
         .unwrap_or_else(|e| panic!("Parser error: {:?}", e));
 
-    let mut fmt = forja::formatter::Formatter::new();
+    let mut fmt = forja::formatter::Formatter::nuevo();
     let formatted = fmt.formatear(&ast1);
 
     // Format second time to test stability (idempotency)
@@ -408,12 +408,12 @@ fn assert_format_roundtrip(fuente: &str) {
     let tokens2 = lexer2
         .tokenize()
         .unwrap_or_else(|e| panic!("Lexer error on formatted: {:?}\nCode:\n{}", e, formatted));
-    let mut parser2 = Parser::new(tokens2);
+    let mut parser2 = Parser::nuevo(tokens2);
     let ast2 = parser2
         .parse()
         .unwrap_or_else(|e| panic!("Parser error on formatted: {:?}\nCode:\n{}", e, formatted));
 
-    let mut fmt2 = forja::formatter::Formatter::new();
+    let mut fmt2 = forja::formatter::Formatter::nuevo();
     let formatted2 = fmt2.formatear(&ast2);
 
     assert_eq!(
@@ -637,7 +637,7 @@ escribir(p.edad)
 /// motor de ejecución utilizable.
 fn ejecutar_todos_los_motores(fuente: &str) -> Vec<String> {
     fn correr_vm(bc: Vec<forja::bytecode::Opcode>) -> Vec<String> {
-        let mut vm = ForjaFast::new();
+        let mut vm = ForjaFast::nuevo();
         vm.fijar_max_inst(2_000_000);
         vm.cargar_bytecode(bc);
         vm.ejecutar().expect("vm");

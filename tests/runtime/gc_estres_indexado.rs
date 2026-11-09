@@ -14,8 +14,8 @@ use forja::vm_fast::ForjaFast;
 fn ejecutar_con_vm(fuente: &str, umbral_gc: usize) -> ForjaFast {
     let (bytecode, _contratos) =
         forja::compilar_pipeline_completa(fuente).unwrap_or_else(|e| panic!("no compiló: {e}"));
-    let mut vm = ForjaFast::new();
-    vm.set_gc_pressure_threshold(umbral_gc);
+    let mut vm = ForjaFast::nuevo();
+    vm.fijar_gc_pressure_threshold(umbral_gc);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().unwrap_or_else(|e| panic!("no ejecutó: {e}"));
     vm

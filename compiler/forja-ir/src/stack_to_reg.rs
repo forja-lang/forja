@@ -9,7 +9,7 @@ use forja_bytecode::Opcode;
 
 /// Convierte bytecode stack-based a IR register-based
 pub fn pila_to_reg(ops: &[Opcode]) -> RegProgram {
-    let mut prog = RegProgram::new();
+    let mut prog = RegProgram::nuevo();
     let mut pila: Vec<(VirtReg, RegClase)> = Vec::new();
     let mut actual_block = BloqueBasico {
         etiqueta: 0,

@@ -266,7 +266,7 @@ impl ForjaFast {
                 // `StrAppend`: el buffer del builder sólo se materializaba en
                 // `Return` y `LoadIdx` no lo consultaba, así que acumular texto
                 // dentro de un bucle perdía lo concatenado. Se deja el `Add`
-                // genérico, que es correcto.
+                // genérico, que es ok.
 
                 // ── Opcodes de comparación ──
                 Opcode::Igual => {
@@ -317,7 +317,7 @@ impl ForjaFast {
                 // cuando sea posible, eliminando el hash lookup.
                 Opcode::Llamar(nombre, nargs) => {
                     let sym = self.runtime.tabla_simbolos.internar(nombre.as_ref());
-                    // Buscar por índice usando sym_to_func_idx (mapeo correcto a function_table)
+                    // Buscar por índice usando sym_to_func_idx (mapeo ok a function_table)
                     if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
                         self.bytecode[i] = Opcode::LlamarDirecto(func_idx, nargs);
                     } else if sym == self.sym_escribir {

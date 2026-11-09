@@ -58,7 +58,7 @@ const LABEL_BASE_DIFERIDO: usize = 1_000_000;
 
 impl ConversorABytecode {
     /// Crea el conversor con la tabla de símbolos del programa IR.
-    pub fn new(simbolos: TablaSimbolosIr) -> Self {
+    pub fn nuevo(simbolos: TablaSimbolosIr) -> Self {
         ConversorABytecode {
             valor_to_variable: HashMap::new(),
             next_var: 0,
@@ -782,10 +782,10 @@ mod tests {
     /// referencian por variables correctas (no todas `0`) y que hay `Add`.
     #[test]
     fn test_valor_to_variable_no_todo_cero() {
-        let mut simbolos = TablaSimbolosIr::new();
+        let mut simbolos = TablaSimbolosIr::nuevo();
         let nombre_funcion = simbolos.internar("doble");
 
-        let mut builder = ConstructorIr::new();
+        let mut builder = ConstructorIr::nuevo();
         builder.simbolos = simbolos.clone();
         let entrada = builder.nuevo_bloque();
         let param0 = builder.emitir_parametro(0); // v0
@@ -794,7 +794,7 @@ mod tests {
 
         let funcion = builder.construir_funcion(nombre_funcion, TipoIr::Entero, vec![]);
 
-        let mut conversor = ConversorABytecode::new(simbolos);
+        let mut conversor = ConversorABytecode::nuevo(simbolos);
         let bytecode = conversor.convert_funcion(&funcion, true);
 
         assert!(bytecode.iter().any(|op| matches!(op, Opcode::Sumar)));
@@ -814,10 +814,10 @@ mod tests {
 
     #[test]
     fn test_const_generation() {
-        let mut simbolos = TablaSimbolosIr::new();
+        let mut simbolos = TablaSimbolosIr::nuevo();
         let nombre_funcion = simbolos.internar("test");
 
-        let mut builder = ConstructorIr::new();
+        let mut builder = ConstructorIr::nuevo();
         builder.simbolos = simbolos.clone();
         let entrada = builder.nuevo_bloque();
         let _v0 = builder.emitir_const_entero(42);
@@ -827,7 +827,7 @@ mod tests {
 
         let funcion = builder.construir_funcion(nombre_funcion, TipoIr::Vacio, vec![]);
 
-        let mut conversor = ConversorABytecode::new(simbolos);
+        let mut conversor = ConversorABytecode::nuevo(simbolos);
         let bytecode = conversor.convert_funcion(&funcion, true);
 
         assert!(bytecode
@@ -845,9 +845,9 @@ mod tests {
     /// a mano: debe emitir `Label`, `Jump`, `JumpSiFalso` y `Print`.
     #[test]
     fn test_bucle_emite_labels_y_jumps() {
-        let mut simbolos = TablaSimbolosIr::new();
+        let mut simbolos = TablaSimbolosIr::nuevo();
         let nombre_funcion = simbolos.internar("main");
-        let mut builder = ConstructorIr::new();
+        let mut builder = ConstructorIr::nuevo();
         builder.simbolos = simbolos.clone();
         let entrada = builder.nuevo_bloque();
 
@@ -882,7 +882,7 @@ mod tests {
 
         let funcion = builder.construir_funcion(nombre_funcion, TipoIr::Vacio, vec![]);
         // Usar la tabla de símbolos del builder (que ya incluye "escribir").
-        let mut conversor = ConversorABytecode::new(builder.simbolos.clone());
+        let mut conversor = ConversorABytecode::nuevo(builder.simbolos.clone());
         let bytecode = conversor.convert_funcion(&funcion, true);
 
         assert!(bytecode.iter().any(|op| matches!(op, Opcode::Etiqueta(_))));

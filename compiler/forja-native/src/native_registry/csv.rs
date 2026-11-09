@@ -77,7 +77,7 @@ pub fn nativo_csv_generar(
         let campos = _vm.obtener_arr(f_idx as u32).clone();
         let linea: Vec<String> = campos
             .iter()
-            .map(|c| _vm.get_str(c.indice_texto()).to_string())
+            .map(|c| _vm.obtener_texto(c.indice_texto()).to_string())
             .collect();
         salida.push_str(&linea.join(","));
         salida.push('\n');
@@ -103,7 +103,7 @@ pub fn nativo_csv_generar_con_cabeceras(
         let campos = _vm.obtener_arr(f_idx as u32).clone();
         let linea: Vec<String> = campos
             .iter()
-            .map(|c| _vm.get_str(c.indice_texto()).to_string())
+            .map(|c| _vm.obtener_texto(c.indice_texto()).to_string())
             .collect();
         salida.push_str(&linea.join(","));
         salida.push('\n');

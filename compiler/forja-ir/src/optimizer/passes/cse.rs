@@ -22,7 +22,7 @@ pub struct CsePasada {
 }
 
 impl CsePasada {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         CsePasada { cse_realizados: 0 }
     }
 
@@ -300,6 +300,6 @@ impl CsePasada {
 
 impl Default for CsePasada {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }

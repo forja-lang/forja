@@ -40,7 +40,7 @@ pub struct ProfileData {
 }
 
 impl ProfileData {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ProfileData::default()
     }
 
@@ -240,7 +240,7 @@ pub struct Instrumenter {
 }
 
 impl Instrumenter {
-    pub fn new(bytecode_len: usize) -> Self {
+    pub fn nuevo(bytecode_len: usize) -> Self {
         Instrumenter {
             counters: vec![0; bytecode_len],
             sample_rate: 1,
@@ -302,7 +302,7 @@ pub struct ProfileManager {
 }
 
 impl ProfileManager {
-    pub fn new(project_dir: &std::path::Path) -> Self {
+    pub fn nuevo(project_dir: &std::path::Path) -> Self {
         ProfileManager {
             project_dir: project_dir.to_path_buf(),
         }
@@ -314,7 +314,7 @@ impl ProfileManager {
     }
 
     /// Guarda un perfil a disco
-    pub fn save(&self, profile: &ProfileData) -> Result<(), std::io::Error> {
+    pub fn guardar(&self, profile: &ProfileData) -> Result<(), std::io::Error> {
         let data = profile.serialize();
         std::fs::write(self.profile_ruta(), data)
     }
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_profile_call_recording() {
-        let mut profile = ProfileData::new();
+        let mut profile = ProfileData::nuevo();
         profile.record_call("main");
         profile.record_call("main");
         profile.record_call("foo");
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_profile_branch() {
-        let mut profile = ProfileData::new();
+        let mut profile = ProfileData::nuevo();
         for _ in 0..90 {
             profile.record_branch(&"block0".to_string(), true);
         }
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_hottest_funcion() {
-        let mut profile = ProfileData::new();
+        let mut profile = ProfileData::nuevo();
         profile.record_call("foo"); // 1
         for _ in 0..10 {
             profile.record_call("bar"); // 10
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_hot_functions() {
-        let mut profile = ProfileData::new();
+        let mut profile = ProfileData::nuevo();
         profile.record_call("cold");
         for _ in 0..100 {
             profile.record_call("hot");
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_serializar_deserialize() {
-        let mut profile = ProfileData::new();
+        let mut profile = ProfileData::nuevo();
         profile.record_call("main");
         profile.record_branch(&"b0".to_string(), true);
 
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_pgo_decisions() {
-        let mut profile = ProfileData::new();
+        let mut profile = ProfileData::nuevo();
         for _ in 0..5000 {
             profile.record_call("hot_fn");
         }
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_instrumenter() {
-        let mut inst = Instrumenter::new(100);
+        let mut inst = Instrumenter::nuevo(100);
         inst.record(5);
         inst.record(5);
         inst.record(10);

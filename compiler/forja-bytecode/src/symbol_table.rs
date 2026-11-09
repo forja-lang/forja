@@ -31,7 +31,7 @@ pub struct TablaSimbolos {
 
 impl Default for TablaSimbolos {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -40,7 +40,7 @@ impl TablaSimbolos {
     ///
     /// # Devuelve
     /// Una tabla sin ningún texto internado.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self {
             textos: Vec::new(),
             indice_por_texto: HashMap::new(),

@@ -5,9 +5,9 @@ use forja::parser::Parser;
 fn formatear(fuente: &str) -> String {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut fmt = Formatter::new();
+    let mut fmt = Formatter::nuevo();
     fmt.formatear(&programa)
 }
 
@@ -185,7 +185,7 @@ escribir(r)
 fn primer_literal_texto(fuente: &str) -> String {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
     for decl in &programa.declaraciones {
         if let forja::ast::Declaracion::Variable {
@@ -252,10 +252,10 @@ fn test_fmt_round_trip_exacto() {
 fn formatear_con_comentarios(fuente: &str) -> String {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
     let comentarios = forja::lexer::extraer_comentarios(fuente);
-    let mut fmt = Formatter::new();
+    let mut fmt = Formatter::nuevo();
     fmt.formatear_con_comentarios(&programa, &comentarios)
 }
 

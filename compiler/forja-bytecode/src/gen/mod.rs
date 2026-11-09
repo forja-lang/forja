@@ -112,12 +112,12 @@ pub struct GeneradorBytecode {
 
 impl Default for GeneradorBytecode {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl GeneradorBytecode {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         GeneradorBytecode {
             codigos: Vec::new(),
             contador_etiquetas: 0,

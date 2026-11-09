@@ -118,12 +118,12 @@ pub struct Formatter {
 
 impl Default for Formatter {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Formatter {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Formatter {
             salida: String::new(),
             sangria: 0,
@@ -1008,9 +1008,9 @@ mod tests {
     fn formatear(fuente: &str) -> String {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().expect("el lexer no debe fallar");
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().expect("el parser no debe fallar");
-        let mut fmt = Formatter::new();
+        let mut fmt = Formatter::nuevo();
         fmt.formatear(&programa)
     }
 

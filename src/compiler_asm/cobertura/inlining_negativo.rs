@@ -9,7 +9,7 @@ fn retorno_con_valor_en_funcion_contratada() {
     // Con postcondiciones activas, `retornar <expr>` guarda el valor en el
     // slot del frame y salta al label de fin.
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let mut f = decl_funcion("con_retorno", vec![], vec![retornar(Some(num(7)))]);
         if let Declaracion::Funcion {
             postcondiciones, ..
@@ -29,7 +29,7 @@ fn retorno_con_valor_en_funcion_contratada() {
 fn lectura_de_booleano_en_registro() {
     for t in TARGETS {
         let mut c = con_variables(t);
-        c.alloc_var_reg("bool");
+        c.reservar_variable_reg("bool");
         let _ = c.compilar_expresion_asm(&id("bool"));
         // El valor booleano se mueve usando la mitad de 32 bits.
         assert!(

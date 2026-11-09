@@ -350,7 +350,7 @@ pub fn nativo_ffi_llamar_texto(
         .iter()
         .map(|v| {
             let idx = v.indice_texto();
-            let s = vm.get_str(idx);
+            let s = vm.obtener_texto(idx);
             s.to_string()
         })
         .collect();
@@ -461,7 +461,7 @@ pub fn nativo_ffi_llamar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<V
     let mut crudos: Vec<u64> = Vec::with_capacity(valores.len());
     for v in &valores {
         if v.es_texto() {
-            let s = vm.get_str(v.indice_texto()).to_string();
+            let s = vm.obtener_texto(v.indice_texto()).to_string();
             let c = CString::new(s)
                 .map_err(|_| ErrFast::TipoInv("argumento FFI contiene un byte nulo".into()))?;
             crudos.push(c.as_ptr() as u64);

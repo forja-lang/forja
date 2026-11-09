@@ -15,8 +15,8 @@ impl forja_runtime::Anfitrion for ForjaFast {
     fn reservar_texto(&mut self, s: Arc<str>) -> u32 {
         self.reservar_texto(s)
     }
-    fn get_str(&self, idx: u32) -> &Arc<str> {
-        self.get_str(idx)
+    fn obtener_texto(&self, idx: u32) -> &Arc<str> {
+        self.obtener_texto(idx)
     }
     fn reservar_arr(&mut self, v: Vec<ValorFast>) -> u32 {
         self.reservar_arr(v)

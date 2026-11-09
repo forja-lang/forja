@@ -54,12 +54,12 @@ pub struct FlotantePerfiladorData {
 
 impl Default for FlotantePerfiladorData {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl FlotantePerfiladorData {
-    pub const fn new() -> Self {
+    pub const fn nuevo() -> Self {
         FlotantePerfiladorData {
             push_decimal: AtomicU64::new(0),
             add_float: AtomicU64::new(0),
@@ -130,7 +130,7 @@ impl FlotantePerfiladorData {
     }
 }
 
-pub static PROFILER_DATA: FlotantePerfiladorData = FlotantePerfiladorData::new();
+pub static PROFILER_DATA: FlotantePerfiladorData = FlotantePerfiladorData::nuevo();
 
 /// Imprime el reporte del profiler
 pub fn imprimir_perfilador_report() {

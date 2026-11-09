@@ -26,7 +26,7 @@ pub struct FormaCampos {
 
 impl Default for FormaCampos {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -35,7 +35,7 @@ impl FormaCampos {
     ///
     /// # Devuelve
     /// Una forma sin campos.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self {
             campo_a_indice: HashMap::new(),
             indice_a_campo: Vec::new(),

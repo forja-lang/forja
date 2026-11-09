@@ -9,7 +9,7 @@ use forja::bytecode::Opcode;
 use forja::vm_fast::ForjaFast;
 
 fn ejecutar(bytecode: Vec<Opcode>) -> Vec<String> {
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
@@ -454,8 +454,8 @@ fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
     let fuente = "funcion suma(n: Entero) -> Entero {\n    variable s = 0\n    variable i = 0\n    mientras (i < n) {\n        s = s + i\n        i = i + 1\n    }\n    retornar s\n}\nescribir(suma(4))";
     let mut lexer = forja::lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let programa = forja::parser::Parser::new(tokens).parse().unwrap();
-    let mut ctor = ConstructorDesdeAst::new();
+    let programa = forja::parser::Parser::nuevo(tokens).parse().unwrap();
+    let mut ctor = ConstructorDesdeAst::nuevo();
     let ir = ctor.programa_a_ir(&programa);
     assert!(ctor.soportado);
 

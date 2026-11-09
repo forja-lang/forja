@@ -20,7 +20,7 @@ use crate::ast::*;
 use std::collections::HashMap;
 
 /// Helper: escribe una línea con sangría
-macro_rules! line {
+macro_rules! linea {
     ($dst:expr, $($arg:tt)*) => {{
         use std::fmt::Write;
         let _ = write!($dst, "  ");
@@ -49,16 +49,16 @@ pub struct LlvmBackend {
     // Design by Contract
     postcondiciones_activas: bool,
     retval_ptr: Option<String>,
-    end_label: Option<String>,
-    anterior_map: HashMap<String, String>, // key -> temporary register for anterior() snapshot
-    anterior_count: u64,
+    end_etiqueta: Option<String>,
+    anterior_mapa: HashMap<String, String>, // key -> temporary register for anterior() snapshot
+    anterior_cantidad: u64,
 }
 
 impl LlvmBackend {
-    pub fn new(_ctx: &str, module: &str) -> Self {
+    pub fn nuevo(_ctx: &str, modulo: &str) -> Self {
         let mut o = String::new();
-        raw!(o, "; LLVM IR - Forja (fa) - Modulo: {}", module);
-        let target_triple = if cfg!(target_os = "windows") {
+        raw!(o, "; LLVM IR - Forja (fa) - Modulo: {}", modulo);
+        let destino_triple = if cfg!(target_os = "windows") {
             "x86_64-pc-windows-msvc"
         } else if cfg!(target_os = "linux") {
             "x86_64-unknown-linux-gnu"
@@ -67,7 +67,7 @@ impl LlvmBackend {
         } else {
             "x86_64-unknown-linux-gnu"
         };
-        raw!(o, "target triple = \"{}\"", target_triple);
+        raw!(o, "target triple = \"{}\"", destino_triple);
         raw!(o, "");
         raw!(o, "declare i32 @printf(i8*, ...)");
         raw!(o, "declare i8* @malloc(i64)");
@@ -84,9 +84,9 @@ impl LlvmBackend {
             texto_vars: std::collections::HashSet::new(),
             postcondiciones_activas: false,
             retval_ptr: None,
-            end_label: None,
-            anterior_map: HashMap::new(),
-            anterior_count: 0,
+            end_etiqueta: None,
+            anterior_mapa: HashMap::new(),
+            anterior_cantidad: 0,
         }
     }
 
@@ -125,7 +125,7 @@ impl LlvmBackend {
             }
         }
         if !has_main {
-            self.auto_main(decls)?;
+            self.auto_principal(decls)?;
         } else if hay_nivel_superior {
             // TODO(Fase 3): inyectar el init de globals al inicio del `main` del usuario.
             return Err(
@@ -143,11 +143,11 @@ impl LlvmBackend {
     /// API pública del backend legacy retenida por compatibilidad; no se
     /// usa internamente pero se conserva como superficie del módulo.
     #[allow(dead_code)]
-    pub fn emit_ir_text(&self, path: &str) -> Result<(), String> {
-        std::fs::write(path, &self.out).map_err(|e| format!("Error: {}", e))
+    pub fn emitir_ir_texto(&self, ruta: &str) -> Result<(), String> {
+        std::fs::write(ruta, &self.out).map_err(|e| format!("Error: {}", e))
     }
 
-    pub fn emit_ir(&self) -> String {
+    pub fn emitir_ir(&self) -> String {
         self.out.clone()
     }
 
@@ -169,24 +169,24 @@ impl LlvmBackend {
     }
     fn alloca(&mut self, name: &str) -> String {
         let ptr = format!("%a.{}", name.replace('.', "_"));
-        line!(self.out, "{} = alloca i64", ptr);
+        linea!(self.out, "{} = alloca i64", ptr);
         self.vars.insert(name.to_string(), ptr.clone());
         ptr
     }
     fn load(&mut self, name: &str) -> Option<String> {
         let p = self.vars.get(name)?.clone();
         let r = self.r();
-        line!(self.out, "{} = load i64, i64* {}", r, p);
+        linea!(self.out, "{} = load i64, i64* {}", r, p);
         Some(r)
     }
     fn store(&mut self, ptr: &str, val: &str) {
-        line!(self.out, "store i64 {}, i64* {}", val, ptr);
+        linea!(self.out, "store i64 {}, i64* {}", val, ptr);
     }
 
     // ── Design by Contract helpers ──
 
     /// Genera una constante string global y retorna un GEP pointer a ella.
-    fn generar_string_constante(&mut self, s: &str) -> String {
+    fn generar_texto_constante(&mut self, s: &str) -> String {
         let name = format!(".str.contract.{}", self.sc);
         self.sc += 1;
         let esc = s
@@ -203,7 +203,7 @@ impl LlvmBackend {
             esc
         );
         let r = self.r();
-        line!(
+        linea!(
             self.out,
             "{} = getelementptr inbounds ([{} x i8], [{} x i8]* @{}, i64 0, i64 0)",
             r,
@@ -219,13 +219,13 @@ impl LlvmBackend {
     fn recolectar_anterior_temps(&mut self, expr: &Expresion) -> Result<(), String> {
         match expr {
             Expresion::Anterior(inner) => {
-                let key = format!("anterior_{}", self.anterior_count);
-                self.anterior_count += 1;
+                let clave = format!("anterior_{}", self.anterior_cantidad);
+                self.anterior_cantidad += 1;
                 let val_reg = match inner.as_ref() {
                     Expresion::Identificador { nombre: name, .. } => {
                         if let Some(p) = self.vars.get(name).cloned() {
                             let r = self.r();
-                            line!(
+                            linea!(
                                 self.out,
                                 "{} = load i64, i64* {} ; anterior snapshot of {}",
                                 r,
@@ -237,16 +237,16 @@ impl LlvmBackend {
                             r
                         } else {
                             let r = self.r();
-                            line!(self.out, "{} = add i64 0, 0", r);
+                            linea!(self.out, "{} = add i64 0, 0", r);
                             r
                         }
                     }
                     _ => self.expr(inner)?,
                 };
                 let ptr = self.r();
-                line!(self.out, "{} = alloca i64", ptr);
-                line!(self.out, "store i64 {}, i64* {}", val_reg, ptr);
-                self.anterior_map.insert(key, ptr);
+                linea!(self.out, "{} = alloca i64", ptr);
+                linea!(self.out, "store i64 {}, i64* {}", val_reg, ptr);
+                self.anterior_mapa.insert(clave, ptr);
                 Ok(())
             }
             Expresion::Binaria {
@@ -314,13 +314,13 @@ impl LlvmBackend {
             Expresion::Resultado => Ok(ret_val.to_string()),
             Expresion::Anterior(inner) => {
                 // Collect all anterior ptrs first to avoid borrow issues
-                let anterior_ptrs: Vec<String> = self.anterior_map.values().cloned().collect();
+                let anterior_ptrs: Vec<String> = self.anterior_mapa.values().cloned().collect();
                 match inner.as_ref() {
                     Expresion::Identificador { nombre: name, .. } => {
                         if !anterior_ptrs.is_empty() {
                             let ptr = &anterior_ptrs[0];
                             let r = self.r();
-                            line!(
+                            linea!(
                                 self.out,
                                 "{} = load i64, i64* {} ; anterior({})",
                                 r,
@@ -343,9 +343,9 @@ impl LlvmBackend {
             Expresion::LiteralNumero(n) => Ok(format!("{}", n)),
             Expresion::LiteralDecimal(d) => {
                 let r = self.r();
-                line!(self.out, "{} = fadd double 0.0, {:e}", r, d);
+                linea!(self.out, "{} = fadd double 0.0, {:e}", r, d);
                 let i = self.r();
-                line!(self.out, "{} = bitcast double {} to i64", i, r);
+                linea!(self.out, "{} = bitcast double {} to i64", i, r);
                 Ok(i)
             }
             Expresion::LiteralTexto(s) => {
@@ -366,7 +366,7 @@ impl LlvmBackend {
                     esc
                 );
                 let r = self.r();
-                line!(
+                linea!(
                     self.out,
                     "{} = getelementptr [{} x i8], [{} x i8]* @{}, i64 0, i64 0",
                     r,
@@ -375,7 +375,7 @@ impl LlvmBackend {
                     lbl
                 );
                 let i = self.r();
-                line!(self.out, "{} = ptrtoint i8* {} to i64", i, r);
+                linea!(self.out, "{} = ptrtoint i8* {} to i64", i, r);
                 Ok(i)
             }
             Expresion::LiteralBooleano(b) => Ok(if *b { "1" } else { "0" }.into()),
@@ -389,7 +389,7 @@ impl LlvmBackend {
                     Ok(r)
                 } else if self.funcs.contains(n) {
                     let r = self.r();
-                    line!(self.out, "{} = call i64 @{}()", r, n);
+                    linea!(self.out, "{} = call i64 @{}()", r, n);
                     Ok(r)
                 } else {
                     Ok("0".into())
@@ -404,58 +404,60 @@ impl LlvmBackend {
                 let rv = self.generar_expr_con_resultado(derecha, ret_val)?;
                 let reg = self.r();
                 match operador {
-                    Operador::Suma => line!(self.out, "{} = add i64 {}, {}", reg, lv, rv),
-                    Operador::Resta => line!(self.out, "{} = sub i64 {}, {}", reg, lv, rv),
-                    Operador::Multiplicacion => line!(self.out, "{} = mul i64 {}, {}", reg, lv, rv),
-                    Operador::Division => line!(self.out, "{} = sdiv i64 {}, {}", reg, lv, rv),
-                    Operador::Modulo => line!(self.out, "{} = srem i64 {}, {}", reg, lv, rv),
+                    Operador::Suma => linea!(self.out, "{} = add i64 {}, {}", reg, lv, rv),
+                    Operador::Resta => linea!(self.out, "{} = sub i64 {}, {}", reg, lv, rv),
+                    Operador::Multiplicacion => {
+                        linea!(self.out, "{} = mul i64 {}, {}", reg, lv, rv)
+                    }
+                    Operador::Division => linea!(self.out, "{} = sdiv i64 {}, {}", reg, lv, rv),
+                    Operador::Modulo => linea!(self.out, "{} = srem i64 {}, {}", reg, lv, rv),
                     Operador::Mayor => {
                         let c = self.r();
-                        line!(self.out, "{} = icmp sgt i64 {}, {}", c, lv, rv);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                        linea!(self.out, "{} = icmp sgt i64 {}, {}", c, lv, rv);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, c);
                     }
                     Operador::Menor => {
                         let c = self.r();
-                        line!(self.out, "{} = icmp slt i64 {}, {}", c, lv, rv);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                        linea!(self.out, "{} = icmp slt i64 {}, {}", c, lv, rv);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, c);
                     }
                     Operador::MayorIgual => {
                         let c = self.r();
-                        line!(self.out, "{} = icmp sge i64 {}, {}", c, lv, rv);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                        linea!(self.out, "{} = icmp sge i64 {}, {}", c, lv, rv);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, c);
                     }
                     Operador::MenorIgual => {
                         let c = self.r();
-                        line!(self.out, "{} = icmp sle i64 {}, {}", c, lv, rv);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                        linea!(self.out, "{} = icmp sle i64 {}, {}", c, lv, rv);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, c);
                     }
                     Operador::IgualIgual => {
                         let c = self.r();
-                        line!(self.out, "{} = icmp eq i64 {}, {}", c, lv, rv);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                        linea!(self.out, "{} = icmp eq i64 {}, {}", c, lv, rv);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, c);
                     }
                     Operador::Diferente => {
                         let c = self.r();
-                        line!(self.out, "{} = icmp ne i64 {}, {}", c, lv, rv);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                        linea!(self.out, "{} = icmp ne i64 {}, {}", c, lv, rv);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, c);
                     }
                     Operador::Y => {
                         let zl = self.r();
                         let zr = self.r();
-                        line!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
-                        line!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
+                        linea!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
+                        linea!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
                         let a = self.r();
-                        line!(self.out, "{} = and i1 {}, {}", a, zl, zr);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, a);
+                        linea!(self.out, "{} = and i1 {}, {}", a, zl, zr);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, a);
                     }
                     Operador::O => {
                         let zl = self.r();
                         let zr = self.r();
-                        line!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
-                        line!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
+                        linea!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
+                        linea!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
                         let o = self.r();
-                        line!(self.out, "{} = or i1 {}, {}", o, zl, zr);
-                        line!(self.out, "{} = zext i1 {} to i64", reg, o);
+                        linea!(self.out, "{} = or i1 {}, {}", o, zl, zr);
+                        linea!(self.out, "{} = zext i1 {} to i64", reg, o);
                     }
                 }
                 Ok(reg)
@@ -465,14 +467,14 @@ impl LlvmBackend {
                 match operador {
                     OperadorUnario::Negar => {
                         let r = self.r();
-                        line!(self.out, "{} = sub i64 0, {}", r, v);
+                        linea!(self.out, "{} = sub i64 0, {}", r, v);
                         Ok(r)
                     }
                     OperadorUnario::No => {
                         let r = self.r();
-                        line!(self.out, "{} = icmp eq i64 {}, 0", r, v);
+                        linea!(self.out, "{} = icmp eq i64 {}, 0", r, v);
                         let x = self.r();
-                        line!(self.out, "{} = zext i1 {} to i64", x, r);
+                        linea!(self.out, "{} = zext i1 {} to i64", x, r);
                         Ok(x)
                     }
                 }
@@ -488,19 +490,19 @@ impl LlvmBackend {
                 }
                 let s = rs.join(", ");
                 let r = self.r();
-                line!(self.out, "{} = call i64 @{}({})", r, nombre, s);
+                linea!(self.out, "{} = call i64 @{}({})", r, nombre, s);
                 Ok(r)
             }
             Expresion::AccesoMiembro { objeto, miembro } => {
                 let o = self.generar_expr_con_resultado(objeto, ret_val)?;
                 let p = self.r();
-                line!(self.out, "{} = inttoptr i64 {} to i8*", p, o);
+                linea!(self.out, "{} = inttoptr i64 {} to i8*", p, o);
                 let g = self.r();
-                line!(self.out, "{} = getelementptr i8, i8* {}, i64 0", g, p);
+                linea!(self.out, "{} = getelementptr i8, i8* {}, i64 0", g, p);
                 let ip = self.r();
-                line!(self.out, "{} = bitcast i8* {} to i64*", ip, g);
+                linea!(self.out, "{} = bitcast i8* {} to i64*", ip, g);
                 let l = self.r();
-                line!(
+                linea!(
                     self.out,
                     "{} = load i64, i64* {} ; miembro {}",
                     l,
@@ -520,11 +522,11 @@ impl LlvmBackend {
                 let o = self.generar_expr_con_resultado(objeto, ret_val)?;
                 let i = self.generar_expr_con_resultado(indice, ret_val)?;
                 let p = self.r();
-                line!(self.out, "{} = inttoptr i64 {} to i64*", p, o);
+                linea!(self.out, "{} = inttoptr i64 {} to i64*", p, o);
                 let e = self.r();
-                line!(self.out, "{} = getelementptr i64, i64* {}, i64 {}", e, p, i);
+                linea!(self.out, "{} = getelementptr i64, i64* {}, i64 {}", e, p, i);
                 let l = self.r();
-                line!(self.out, "{} = load i64, i64* {}", l, e);
+                linea!(self.out, "{} = load i64, i64* {}", l, e);
                 Ok(l)
             }
             Expresion::Referencia { expr: e, .. } => self.generar_expr_con_resultado(e, ret_val),
@@ -544,7 +546,7 @@ impl LlvmBackend {
                                 self.generar_expr_con_resultado(ex, ret_val)?;
                             }
                         }
-                        line!(self.out, "br label %{}", end);
+                        linea!(self.out, "br label %{}", end);
                         break;
                     }
                 }
@@ -557,28 +559,28 @@ impl LlvmBackend {
     }
 
     /// Genera un check de postcondición con resultado
-    fn generar_check_post_llvm(&mut self, c: &Contrato, ret_val: &str) -> Result<(), String> {
+    fn generar_verificar_post_llvm(&mut self, c: &Contrato, ret_val: &str) -> Result<(), String> {
         let cond_val = self.generar_expr_con_resultado(&c.condicion, ret_val)?;
         let msg = c
             .mensaje
             .clone()
             .unwrap_or_else(|| "Postcondición falló".to_string());
-        let label_ok = format!("ok_post_{}", self.lc);
-        let label_fail = format!("fail_post_{}", self.lc);
+        let etiqueta_correcto = format!("ok_post_{}", self.lc);
+        let etiqueta_fail = format!("fail_post_{}", self.lc);
         let i1 = self.r();
-        line!(self.out, "{} = icmp ne i64 {}, 0", i1, cond_val);
-        line!(
+        linea!(self.out, "{} = icmp ne i64 {}, 0", i1, cond_val);
+        linea!(
             self.out,
             "br i1 {}, label %{}, label %{}",
             i1,
-            label_ok,
-            label_fail
+            etiqueta_correcto,
+            etiqueta_fail
         );
-        raw!(self.out, "{}:", label_fail);
-        let str_ptr = self.generar_string_constante(&msg);
-        line!(self.out, "call void @forja_contract_error(i8* {})", str_ptr);
-        line!(self.out, "br label %{}", label_ok);
-        raw!(self.out, "{}:", label_ok);
+        raw!(self.out, "{}:", etiqueta_fail);
+        let str_ptr = self.generar_texto_constante(&msg);
+        linea!(self.out, "call void @forja_contract_error(i8* {})", str_ptr);
+        linea!(self.out, "br label %{}", etiqueta_correcto);
+        raw!(self.out, "{}:", etiqueta_correcto);
         self.lc += 1;
         Ok(())
     }
@@ -611,7 +613,7 @@ impl LlvmBackend {
             } => {
                 let o = self.expr(objeto)?;
                 let v = self.expr(valor)?;
-                line!(self.out, "; assign {} .{} = {}", o, miembro, v);
+                linea!(self.out, "; assign {} .{} = {}", o, miembro, v);
             }
             Declaracion::AsignacionIndex {
                 nombre,
@@ -621,7 +623,7 @@ impl LlvmBackend {
             } => {
                 let i = self.expr(indice)?;
                 let v = self.expr(valor)?;
-                line!(self.out, "; assign {}[{}] = {}", nombre, i, v);
+                linea!(self.out, "; assign {}[{}] = {}", nombre, i, v);
             }
             Declaracion::Funcion {
                 nombre,
@@ -680,19 +682,23 @@ impl LlvmBackend {
                     if let Some(v) = valor {
                         let r = self.expr(v)?;
                         let rp = self.retval_ptr.as_ref().unwrap();
-                        line!(self.out, "store i64 {}, i64* {}", r, rp);
+                        linea!(self.out, "store i64 {}, i64* {}", r, rp);
                     } else {
                         let rp = self.retval_ptr.as_ref().unwrap();
-                        line!(self.out, "store i64 0, i64* {}", rp);
+                        linea!(self.out, "store i64 0, i64* {}", rp);
                     }
-                    line!(self.out, "br label %{}", self.end_label.as_ref().unwrap());
+                    linea!(
+                        self.out,
+                        "br label %{}",
+                        self.end_etiqueta.as_ref().unwrap()
+                    );
                 } else {
                     match valor {
                         Some(v) => {
                             let r = self.expr(v)?;
-                            line!(self.out, "ret i64 {}", r);
+                            linea!(self.out, "ret i64 {}", r);
                         }
-                        None => line!(self.out, "ret i64 0"),
+                        None => linea!(self.out, "ret i64 0"),
                     }
                 }
             }
@@ -720,26 +726,26 @@ impl LlvmBackend {
         let ps: Vec<String> = (0..params.len()).map(|i| format!("i64 %p{}", i)).collect();
         raw!(self.out, "define i64 @{}({}) {{", name, ps.join(", "));
         self.cur_fn = Some(name.to_string());
-        let prev = std::mem::take(&mut self.vars);
+        let anterior = std::mem::take(&mut self.vars);
         for (i, p) in params.iter().enumerate() {
             let ptr = self.alloca(&p.nombre);
             self.store(&ptr, &format!("%p{}", i));
         }
 
         // ─── Setup for postcondiciones ───
-        let has_post = !postcondiciones.is_empty();
-        if has_post {
+        let tiene_post = !postcondiciones.is_empty();
+        if tiene_post {
             self.postcondiciones_activas = true;
             let rp = self.r();
-            line!(self.out, "{} = alloca i64 ; retval for postcondiciones", rp);
+            linea!(self.out, "{} = alloca i64 ; retval for postcondiciones", rp);
             self.retval_ptr = Some(rp);
             let el = format!("end.{}", self.lc);
             self.lc += 1;
-            self.end_label = Some(el.clone());
+            self.end_etiqueta = Some(el.clone());
 
             // Collect Anterior() snapshots before body
-            self.anterior_map.clear();
-            self.anterior_count = 0;
+            self.anterior_mapa.clear();
+            self.anterior_cantidad = 0;
             for c in postcondiciones {
                 self.recolectar_anterior_temps(&c.condicion)?;
             }
@@ -752,22 +758,22 @@ impl LlvmBackend {
                 .mensaje
                 .clone()
                 .unwrap_or_else(|| "Precondición falló".to_string());
-            let label_ok = format!("ok_pre_{}", self.lc);
-            let label_fail = format!("fail_pre_{}", self.lc);
+            let etiqueta_correcto = format!("ok_pre_{}", self.lc);
+            let etiqueta_fail = format!("fail_pre_{}", self.lc);
             let i1 = self.r();
-            line!(self.out, "{} = icmp ne i64 {}, 0", i1, cond_val);
-            line!(
+            linea!(self.out, "{} = icmp ne i64 {}, 0", i1, cond_val);
+            linea!(
                 self.out,
                 "br i1 {}, label %{}, label %{}",
                 i1,
-                label_ok,
-                label_fail
+                etiqueta_correcto,
+                etiqueta_fail
             );
-            raw!(self.out, "{}:", label_fail);
-            let str_ptr = self.generar_string_constante(&msg);
-            line!(self.out, "call void @forja_contract_error(i8* {})", str_ptr);
-            line!(self.out, "br label %{}", label_ok);
-            raw!(self.out, "{}:", label_ok);
+            raw!(self.out, "{}:", etiqueta_fail);
+            let str_ptr = self.generar_texto_constante(&msg);
+            linea!(self.out, "call void @forja_contract_error(i8* {})", str_ptr);
+            linea!(self.out, "br label %{}", etiqueta_correcto);
+            raw!(self.out, "{}:", etiqueta_correcto);
             self.lc += 1;
         }
 
@@ -777,18 +783,22 @@ impl LlvmBackend {
         }
 
         // ─── Postcondiciones + retorno unificado ───
-        if has_post {
+        if tiene_post {
             // Salta a la etiqueta final si el cuerpo no tuvo un `retornar` explícito
             if !body
                 .iter()
                 .any(|x| matches!(x, Declaracion::Retornar { .. }))
             {
-                line!(self.out, "br label %{}", self.end_label.as_ref().unwrap());
+                linea!(
+                    self.out,
+                    "br label %{}",
+                    self.end_etiqueta.as_ref().unwrap()
+                );
             }
-            raw!(self.out, "{}:", self.end_label.as_ref().unwrap());
+            raw!(self.out, "{}:", self.end_etiqueta.as_ref().unwrap());
             // Load retval
             let ret_reg = self.r();
-            line!(
+            linea!(
                 self.out,
                 "{} = load i64, i64* {} ; retval for postcondiciones",
                 ret_reg,
@@ -796,24 +806,24 @@ impl LlvmBackend {
             );
             // Generate postcondición checks
             for c in postcondiciones {
-                self.generar_check_post_llvm(c, &ret_reg)?;
+                self.generar_verificar_post_llvm(c, &ret_reg)?;
             }
-            line!(self.out, "ret i64 {}", ret_reg);
+            linea!(self.out, "ret i64 {}", ret_reg);
         } else if !body
             .iter()
             .any(|x| matches!(x, Declaracion::Retornar { .. }))
         {
-            line!(self.out, "ret i64 0");
+            linea!(self.out, "ret i64 0");
         }
 
         raw!(self.out, "}}");
         raw!(self.out, "");
-        self.vars = prev;
+        self.vars = anterior;
         self.cur_fn = None;
         self.postcondiciones_activas = false;
         self.retval_ptr = None;
-        self.end_label = None;
-        self.anterior_map.clear();
+        self.end_etiqueta = None;
+        self.anterior_mapa.clear();
         Ok(())
     }
 
@@ -829,20 +839,20 @@ impl LlvmBackend {
         let e = self.lb("e");
         let m = self.lb("m");
         let i1 = self.r();
-        line!(self.out, "{} = icmp ne i64 {}, 0", i1, c);
-        line!(self.out, "br i1 {}, label %{}, label %{}", i1, t, e);
+        linea!(self.out, "{} = icmp ne i64 {}, 0", i1, c);
+        linea!(self.out, "br i1 {}, label %{}, label %{}", i1, t, e);
         raw!(self.out, "{}:", t);
         for d in tb {
             self.decl(d)?;
         }
-        line!(self.out, "br label %{}", m);
+        linea!(self.out, "br label %{}", m);
         raw!(self.out, "{}:", e);
         if let Some(eb) = eb {
             for d in eb {
                 self.decl(d)?;
             }
         }
-        line!(self.out, "br label %{}", m);
+        linea!(self.out, "br label %{}", m);
         raw!(self.out, "{}:", m);
         Ok(())
     }
@@ -851,84 +861,84 @@ impl LlvmBackend {
         let c = self.lb("wc");
         let b = self.lb("wb");
         let e = self.lb("we");
-        line!(self.out, "br label %{}", c);
+        linea!(self.out, "br label %{}", c);
         raw!(self.out, "{}:", c);
         let cv = self.expr(cond)?;
         let i1 = self.r();
-        line!(self.out, "{} = icmp ne i64 {}, 0", i1, cv);
-        line!(self.out, "br i1 {}, label %{}, label %{}", i1, b, e);
+        linea!(self.out, "{} = icmp ne i64 {}, 0", i1, cv);
+        linea!(self.out, "br i1 {}, label %{}, label %{}", i1, b, e);
         raw!(self.out, "{}:", b);
         for d in body {
             self.decl(d)?;
         }
-        line!(self.out, "br label %{}", c);
+        linea!(self.out, "br label %{}", c);
         raw!(self.out, "{}:", e);
         Ok(())
     }
 
     fn para(
         &mut self,
-        init: Option<&Declaracion>,
+        inicializar: Option<&Declaracion>,
         cond: Option<&Expresion>,
         inc: Option<&Declaracion>,
         body: &[Declaracion],
     ) -> Result<(), String> {
-        if let Some(i) = init {
+        if let Some(i) = inicializar {
             self.decl(i)?;
         }
         let c = self.lb("fc");
         let b = self.lb("fb");
         let n = self.lb("fi");
         let e = self.lb("fe");
-        line!(self.out, "br label %{}", c);
+        linea!(self.out, "br label %{}", c);
         raw!(self.out, "{}:", c);
         if let Some(cv) = cond {
             let v = self.expr(cv)?;
             let i1 = self.r();
-            line!(self.out, "{} = icmp ne i64 {}, 0", i1, v);
-            line!(self.out, "br i1 {}, label %{}, label %{}", i1, b, e);
+            linea!(self.out, "{} = icmp ne i64 {}, 0", i1, v);
+            linea!(self.out, "br i1 {}, label %{}, label %{}", i1, b, e);
         } else {
-            line!(self.out, "br label %{}", b);
+            linea!(self.out, "br label %{}", b);
         }
         raw!(self.out, "{}:", b);
         for d in body {
             self.decl(d)?;
         }
-        line!(self.out, "br label %{}", n);
+        linea!(self.out, "br label %{}", n);
         raw!(self.out, "{}:", n);
         if let Some(i) = inc {
             self.decl(i)?;
         }
-        line!(self.out, "br label %{}", c);
+        linea!(self.out, "br label %{}", c);
         raw!(self.out, "{}:", e);
         Ok(())
     }
 
     fn repetir(&mut self, cant: &Expresion, body: &[Declaracion]) -> Result<(), String> {
         let cp = format!("%rc.{}", self.lc);
-        line!(self.out, "{} = alloca i64", cp);
-        line!(self.out, "store i64 0, i64* {}", cp);
+        linea!(self.out, "{} = alloca i64", cp);
+        linea!(self.out, "store i64 0, i64* {}", cp);
         let t = self.expr(cant)?;
         let c = self.lb("rc");
         let b = self.lb("rb");
         let e = self.lb("re");
-        line!(self.out, "br label %{}", c);
+        linea!(self.out, "br label %{}", c);
         raw!(self.out, "{}:", c);
         let cn = self.r();
-        line!(self.out, "{} = load i64, i64* {}", cn, cp);
+        linea!(self.out, "{} = load i64, i64* {}", cn, cp);
         let cmp = self.r();
-        line!(self.out, "{} = icmp slt i64 {}, {}", cmp, cn, t);
-        line!(self.out, "br i1 {}, label %{}, label %{}", cmp, b, e);
+        linea!(self.out, "{} = icmp slt i64 {}, {}", cmp, cn, t);
+        linea!(self.out, "br i1 {}, label %{}, label %{}", cmp, b, e);
         raw!(self.out, "{}:", b);
         for d in body {
             self.decl(d)?;
         }
         let c2 = self.r();
         let ci = self.r();
-        line!(self.out, "{} = load i64, i64* {}", c2, cp);
-        line!(self.out, "{} = add i64 {}, 1", ci, c2);
-        line!(self.out, "store i64 {}, i64* {}", ci, cp);
-        line!(self.out, "br label %{}", c);
+        linea!(self.out, "{} = load i64, i64* {}", c2, cp);
+        linea!(self.out, "{} = add i64 {}, 1", ci, c2);
+        linea!(self.out, "store i64 {}, i64* {}", ci, cp);
+        linea!(self.out, "br label %{}", c);
         raw!(self.out, "{}:", e);
         Ok(())
     }
@@ -950,10 +960,10 @@ impl LlvmBackend {
         let s = rs.join(", ");
         if ret {
             let r = self.r();
-            line!(self.out, "{} = call i64 @{}({})", r, name, s);
+            linea!(self.out, "{} = call i64 @{}({})", r, name, s);
             Ok(Some(r))
         } else {
-            line!(self.out, "call i64 @{}({})", name, s);
+            linea!(self.out, "call i64 @{}({})", name, s);
             Ok(None)
         }
     }
@@ -993,13 +1003,13 @@ impl LlvmBackend {
             nl
         );
         let nr = self.r();
-        line!(
+        linea!(
             self.out,
             "{} = getelementptr [2 x i8], [2 x i8]* @{}, i64 0, i64 0",
             nr,
             nl
         );
-        line!(self.out, "call i32 (i8*, ...) @printf(i8* {})", nr);
+        linea!(self.out, "call i32 (i8*, ...) @printf(i8* {})", nr);
         Ok(Some("0".to_string()))
     }
 
@@ -1034,7 +1044,7 @@ impl LlvmBackend {
                         esc
                     );
                     let r = self.r();
-                    line!(
+                    linea!(
                         self.out,
                         "{} = getelementptr [{} x i8], [{} x i8]* @{}, i64 0, i64 0",
                         r,
@@ -1042,13 +1052,13 @@ impl LlvmBackend {
                         s.len() + 1,
                         lbl
                     );
-                    line!(self.out, "call i32 (i8*, ...) @printf(i8* {})", r);
+                    linea!(self.out, "call i32 (i8*, ...) @printf(i8* {})", r);
                     return Ok(());
                 }
                 _ if self.expr_es_texto(arg) => {
                     let v = self.expr(arg)?;
                     let p = self.r();
-                    line!(self.out, "{} = inttoptr i64 {} to i8*", p, v);
+                    linea!(self.out, "{} = inttoptr i64 {} to i8*", p, v);
                     let fl = self.sl();
                     raw!(
                         self.out,
@@ -1056,13 +1066,13 @@ impl LlvmBackend {
                         fl
                     );
                     let fr = self.r();
-                    line!(
+                    linea!(
                         self.out,
                         "{} = getelementptr [3 x i8], [3 x i8]* @{}, i64 0, i64 0",
                         fr,
                         fl
                     );
-                    line!(
+                    linea!(
                         self.out,
                         "call i32 (i8*, ...) @printf(i8* {}, i8* {})",
                         fr,
@@ -1071,8 +1081,8 @@ impl LlvmBackend {
                 }
                 _ => {
                     let v = self.expr(arg)?;
-                    let is_f = matches!(arg, Expresion::LiteralDecimal(_));
-                    let fmt = if is_f { "%f" } else { "%lld" };
+                    let es_f = matches!(arg, Expresion::LiteralDecimal(_));
+                    let fmt = if es_f { "%f" } else { "%lld" };
                     let fl = self.sl();
                     raw!(
                         self.out,
@@ -1082,7 +1092,7 @@ impl LlvmBackend {
                         fmt
                     );
                     let fr = self.r();
-                    line!(
+                    linea!(
                         self.out,
                         "{} = getelementptr [{} x i8], [{} x i8]* @{}, i64 0, i64 0",
                         fr,
@@ -1090,17 +1100,17 @@ impl LlvmBackend {
                         fmt.len() + 1,
                         fl
                     );
-                    if is_f {
+                    if es_f {
                         let dr = self.r();
-                        line!(self.out, "{} = bitcast i64 {} to double", dr, v);
-                        line!(
+                        linea!(self.out, "{} = bitcast i64 {} to double", dr, v);
+                        linea!(
                             self.out,
                             "call i32 (i8*, ...) @printf(i8* {}, double {})",
                             fr,
                             dr
                         );
                     } else {
-                        line!(
+                        linea!(
                             self.out,
                             "call i32 (i8*, ...) @printf(i8* {}, i64 {})",
                             fr,
@@ -1119,9 +1129,9 @@ impl LlvmBackend {
             Expresion::LiteralNumero(n) => Ok(format!("{}", n)),
             Expresion::LiteralDecimal(d) => {
                 let r = self.r();
-                line!(self.out, "{} = fadd double 0.0, {:e}", r, d);
+                linea!(self.out, "{} = fadd double 0.0, {:e}", r, d);
                 let i = self.r();
-                line!(self.out, "{} = bitcast double {} to i64", i, r);
+                linea!(self.out, "{} = bitcast double {} to i64", i, r);
                 Ok(i)
             }
             Expresion::LiteralExacto(_, _) => {
@@ -1147,7 +1157,7 @@ impl LlvmBackend {
                     esc
                 );
                 let r = self.r();
-                line!(
+                linea!(
                     self.out,
                     "{} = getelementptr [{} x i8], [{} x i8]* @{}, i64 0, i64 0",
                     r,
@@ -1156,7 +1166,7 @@ impl LlvmBackend {
                     lbl
                 );
                 let i = self.r();
-                line!(self.out, "{} = ptrtoint i8* {} to i64", i, r);
+                linea!(self.out, "{} = ptrtoint i8* {} to i64", i, r);
                 Ok(i)
             }
             Expresion::LiteralBooleano(b) => Ok(if *b { "1" } else { "0" }.into()),
@@ -1170,7 +1180,7 @@ impl LlvmBackend {
                     Ok(r)
                 } else if self.funcs.contains(n) {
                     let r = self.r();
-                    line!(self.out, "{} = call i64 @{}()", r, n);
+                    linea!(self.out, "{} = call i64 @{}()", r, n);
                     Ok(r)
                 } else {
                     Ok("0".into())
@@ -1186,14 +1196,14 @@ impl LlvmBackend {
                 match operador {
                     OperadorUnario::Negar => {
                         let r = self.r();
-                        line!(self.out, "{} = sub i64 0, {}", r, v);
+                        linea!(self.out, "{} = sub i64 0, {}", r, v);
                         Ok(r)
                     }
                     OperadorUnario::No => {
                         let r = self.r();
-                        line!(self.out, "{} = icmp eq i64 {}, 0", r, v);
+                        linea!(self.out, "{} = icmp eq i64 {}, 0", r, v);
                         let x = self.r();
-                        line!(self.out, "{} = zext i1 {} to i64", x, r);
+                        linea!(self.out, "{} = zext i1 {} to i64", x, r);
                         Ok(x)
                     }
                 }
@@ -1204,13 +1214,13 @@ impl LlvmBackend {
             Expresion::AccesoMiembro { objeto, miembro } => {
                 let o = self.expr(objeto)?;
                 let p = self.r();
-                line!(self.out, "{} = inttoptr i64 {} to i8*", p, o);
+                linea!(self.out, "{} = inttoptr i64 {} to i8*", p, o);
                 let g = self.r();
-                line!(self.out, "{} = getelementptr i8, i8* {}, i64 0", g, p);
+                linea!(self.out, "{} = getelementptr i8, i8* {}, i64 0", g, p);
                 let ip = self.r();
-                line!(self.out, "{} = bitcast i8* {} to i64*", ip, g);
+                linea!(self.out, "{} = bitcast i8* {} to i64*", ip, g);
                 let l = self.r();
-                line!(
+                linea!(
                     self.out,
                     "{} = load i64, i64* {} ; miembro {}",
                     l,
@@ -1222,15 +1232,15 @@ impl LlvmBackend {
             Expresion::Instanciacion { argumentos, .. } => {
                 let sz = (argumentos.len() as u64) * 8;
                 let r = self.r();
-                line!(self.out, "{} = call i8* @malloc(i64 {})", r, sz);
+                linea!(self.out, "{} = call i8* @malloc(i64 {})", r, sz);
                 let ptr = self.r();
-                line!(self.out, "{} = ptrtoint i8* {} to i64", ptr, r);
+                linea!(self.out, "{} = ptrtoint i8* {} to i64", ptr, r);
                 for (i, arg) in argumentos.iter().enumerate() {
                     let v = self.expr(arg)?;
                     let ep = self.r();
-                    line!(self.out, "{} = inttoptr i64 {} to i8*", ep, ptr);
+                    linea!(self.out, "{} = inttoptr i64 {} to i8*", ep, ptr);
                     let gp = self.r();
-                    line!(
+                    linea!(
                         self.out,
                         "{} = getelementptr i8, i8* {}, i64 {}",
                         gp,
@@ -1238,8 +1248,8 @@ impl LlvmBackend {
                         i * 8
                     );
                     let ip = self.r();
-                    line!(self.out, "{} = bitcast i8* {} to i64*", ip, gp);
-                    line!(self.out, "store i64 {}, i64* {}", v, ip);
+                    linea!(self.out, "{} = bitcast i8* {} to i64*", ip, gp);
+                    linea!(self.out, "store i64 {}, i64* {}", v, ip);
                 }
                 Ok(ptr)
             }
@@ -1248,7 +1258,7 @@ impl LlvmBackend {
                 if let Expresion::Identificador { nombre: n, .. } = ex.as_ref() {
                     if let Some(p) = self.vars.get(n).cloned() {
                         let r = self.r();
-                        line!(self.out, "{} = ptrtoint i64* {} to i64", r, p);
+                        linea!(self.out, "{} = ptrtoint i64* {} to i64", r, p);
                         return Ok(r);
                     }
                 }
@@ -1257,76 +1267,76 @@ impl LlvmBackend {
             Expresion::Arreglo(elementos) => {
                 let sz = (elementos.len() as u64) * 8;
                 let r = self.r();
-                line!(self.out, "{} = call i8* @malloc(i64 {})", r, sz);
+                linea!(self.out, "{} = call i8* @malloc(i64 {})", r, sz);
                 let ip = self.r();
-                line!(self.out, "{} = bitcast i8* {} to i64*", ip, r);
+                linea!(self.out, "{} = bitcast i8* {} to i64*", ip, r);
                 for (i, el) in elementos.iter().enumerate() {
                     let v = self.expr(el)?;
                     let ep = self.r();
-                    line!(
+                    linea!(
                         self.out,
                         "{} = getelementptr i64, i64* {}, i64 {}",
                         ep,
                         ip,
                         i
                     );
-                    line!(self.out, "store i64 {}, i64* {}", v, ep);
+                    linea!(self.out, "store i64 {}, i64* {}", v, ep);
                 }
                 let ret = self.r();
-                line!(self.out, "{} = ptrtoint i64* {} to i64", ret, ip);
+                linea!(self.out, "{} = ptrtoint i64* {} to i64", ret, ip);
                 Ok(ret)
             }
             Expresion::Index { objeto, indice } => {
                 let o = self.expr(objeto)?;
                 let i = self.expr(indice)?;
                 let p = self.r();
-                line!(self.out, "{} = inttoptr i64 {} to i64*", p, o);
+                linea!(self.out, "{} = inttoptr i64 {} to i64*", p, o);
                 let e = self.r();
-                line!(self.out, "{} = getelementptr i64, i64* {}, i64 {}", e, p, i);
+                linea!(self.out, "{} = getelementptr i64, i64* {}, i64 {}", e, p, i);
                 let l = self.r();
-                line!(self.out, "{} = load i64, i64* {}", l, e);
+                linea!(self.out, "{} = load i64, i64* {}", l, e);
                 Ok(l)
             }
             Expresion::Mapa(_) => Ok("0".into()),
             Expresion::Coincidir { expr: ex, brazos } => {
                 let v = self.expr(ex)?; // valor a matchear
-                let end_label = self.lb("mend");
+                let end_etiqueta = self.lb("mend");
 
                 for (i, brazo) in brazos.iter().enumerate() {
-                    let is_last = i == brazos.len() - 1;
+                    let es_ultimo = i == brazos.len() - 1;
 
-                    if !is_last {
+                    if !es_ultimo {
                         // No es el último brazo: comparar y decidir
-                        let arm_label = self.lb("marm");
-                        let next_check = self.lb("mchk");
+                        let arm_etiqueta = self.lb("marm");
+                        let siguiente_verificar = self.lb("mchk");
 
                         match &brazo.patron {
                             Patron::Literal(lit) => {
                                 let lv = self.expr(lit)?;
                                 let cmp = self.r();
-                                line!(self.out, "{} = icmp eq i64 {}, {}", cmp, v, lv);
-                                line!(
+                                linea!(self.out, "{} = icmp eq i64 {}, {}", cmp, v, lv);
+                                linea!(
                                     self.out,
                                     "br i1 {}, label %{}, label %{}",
                                     cmp,
-                                    arm_label,
-                                    next_check
+                                    arm_etiqueta,
+                                    siguiente_verificar
                                 );
                             }
                             Patron::Variable(_) | Patron::Ignorar | Patron::Constructor(_, _) => {
                                 // Siempre matchea
-                                line!(self.out, "br label %{}", arm_label);
+                                linea!(self.out, "br label %{}", arm_etiqueta);
                             }
                         }
 
                         // Label del cuerpo del brazo
-                        raw!(self.out, "{}:", arm_label);
+                        raw!(self.out, "{}:", arm_etiqueta);
 
                         // Registrar variables del patrón
                         for nombre in extraer_variables_patron_llvm(&brazo.patron) {
                             let p = format!("%mv.{}", nombre);
-                            line!(self.out, "{} = alloca i64", p);
-                            line!(self.out, "store i64 {}, i64* {}", v, p);
+                            linea!(self.out, "{} = alloca i64", p);
+                            linea!(self.out, "store i64 {}, i64* {}", v, p);
                             self.vars.insert(nombre, p);
                         }
 
@@ -1335,17 +1345,17 @@ impl LlvmBackend {
                             self.decl(d)?;
                         }
 
-                        line!(self.out, "br label %{}", end_label);
+                        linea!(self.out, "br label %{}", end_etiqueta);
 
                         // Label donde continúa si no matcheó
-                        raw!(self.out, "{}:", next_check);
+                        raw!(self.out, "{}:", siguiente_verificar);
                     } else {
                         // Último brazo: siempre matchea (default)
                         // Registrar variables del patrón
                         for nombre in extraer_variables_patron_llvm(&brazo.patron) {
                             let p = format!("%mv.{}", nombre);
-                            line!(self.out, "{} = alloca i64", p);
-                            line!(self.out, "store i64 {}, i64* {}", v, p);
+                            linea!(self.out, "{} = alloca i64", p);
+                            linea!(self.out, "store i64 {}, i64* {}", v, p);
                             self.vars.insert(nombre, p);
                         }
 
@@ -1356,7 +1366,7 @@ impl LlvmBackend {
                     }
                 }
 
-                raw!(self.out, "{}:", end_label);
+                raw!(self.out, "{}:", end_etiqueta);
                 Ok(v)
             }
             Expresion::Closure { .. } => Ok("0".into()),
@@ -1384,7 +1394,7 @@ impl LlvmBackend {
                 let val_reg = self.expr(valor)?;
                 // Guardar en variable
                 if let Some(var_reg) = self.vars.get(variable).cloned() {
-                    line!(self.out, "store i64 {}, i64* {}", val_reg, var_reg);
+                    linea!(self.out, "store i64 {}, i64* {}", val_reg, var_reg);
                 }
                 Ok(val_reg) // La asignación retorna el valor
             }
@@ -1425,7 +1435,7 @@ impl LlvmBackend {
                     let rp_clone = self.retval_ptr.clone();
                     if let Some(rp) = rp_clone {
                         let r = self.r();
-                        line!(self.out, "{} = load i64, i64* {} ; resultado", r, rp);
+                        linea!(self.out, "{} = load i64, i64* {} ; resultado", r, rp);
                         Ok(r)
                     } else {
                         Ok("0".to_string())
@@ -1438,10 +1448,10 @@ impl LlvmBackend {
                 // 'anterior(expr)' in postcondiciones: use saved snapshot or evaluate current
                 if self.postcondiciones_activas {
                     // Collect ptrs first to avoid borrow conflict
-                    let anterior_ptrs: Vec<String> = self.anterior_map.values().cloned().collect();
+                    let anterior_ptrs: Vec<String> = self.anterior_mapa.values().cloned().collect();
                     if let Some(ptr) = anterior_ptrs.first() {
                         let r = self.r();
-                        line!(self.out, "{} = load i64, i64* {} ; anterior", r, ptr);
+                        linea!(self.out, "{} = load i64, i64* {} ; anterior", r, ptr);
                         Ok(r)
                     } else {
                         // No snapshot found, just evaluate current
@@ -1458,11 +1468,11 @@ impl LlvmBackend {
             } => {
                 let cond_val = self.expr(condicion)?;
                 let cond_bool = self.r();
-                line!(self.out, "{} = icmp ne i64 {}, 0", cond_bool, cond_val);
+                linea!(self.out, "{} = icmp ne i64 {}, 0", cond_bool, cond_val);
                 let l_v = format!("tern_v_{}", self.r().trim_start_matches('%'));
                 let l_f = format!("tern_f_{}", self.r().trim_start_matches('%'));
                 let l_end = format!("tern_end_{}", self.r().trim_start_matches('%'));
-                line!(
+                linea!(
                     self.out,
                     "br i1 {}, label %{}, label %{}",
                     cond_bool,
@@ -1471,13 +1481,13 @@ impl LlvmBackend {
                 );
                 raw!(self.out, "{}:", l_v);
                 let v_res = self.expr(si_verdadero)?;
-                line!(self.out, "br label %{}", l_end);
+                linea!(self.out, "br label %{}", l_end);
                 raw!(self.out, "{}:", l_f);
                 let f_res = self.expr(si_falso)?;
-                line!(self.out, "br label %{}", l_end);
+                linea!(self.out, "br label %{}", l_end);
                 raw!(self.out, "{}:", l_end);
                 let phi_reg = self.r();
-                line!(
+                linea!(
                     self.out,
                     "{} = phi i64 [ {}, %{} ], [ {}, %{} ]",
                     phi_reg,
@@ -1500,77 +1510,77 @@ impl LlvmBackend {
         let rv = self.expr(r)?;
         let reg = self.r();
         match op {
-            Operador::Suma => line!(self.out, "{} = add i64 {}, {}", reg, lv, rv),
-            Operador::Resta => line!(self.out, "{} = sub i64 {}, {}", reg, lv, rv),
-            Operador::Multiplicacion => line!(self.out, "{} = mul i64 {}, {}", reg, lv, rv),
-            Operador::Division => line!(self.out, "{} = sdiv i64 {}, {}", reg, lv, rv),
-            Operador::Modulo => line!(self.out, "{} = srem i64 {}, {}", reg, lv, rv),
+            Operador::Suma => linea!(self.out, "{} = add i64 {}, {}", reg, lv, rv),
+            Operador::Resta => linea!(self.out, "{} = sub i64 {}, {}", reg, lv, rv),
+            Operador::Multiplicacion => linea!(self.out, "{} = mul i64 {}, {}", reg, lv, rv),
+            Operador::Division => linea!(self.out, "{} = sdiv i64 {}, {}", reg, lv, rv),
+            Operador::Modulo => linea!(self.out, "{} = srem i64 {}, {}", reg, lv, rv),
             Operador::Mayor => {
                 let c = self.r();
-                line!(self.out, "{} = icmp sgt i64 {}, {}", c, lv, rv);
-                line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                linea!(self.out, "{} = icmp sgt i64 {}, {}", c, lv, rv);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, c);
             }
             Operador::Menor => {
                 let c = self.r();
-                line!(self.out, "{} = icmp slt i64 {}, {}", c, lv, rv);
-                line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                linea!(self.out, "{} = icmp slt i64 {}, {}", c, lv, rv);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, c);
             }
             Operador::MayorIgual => {
                 let c = self.r();
-                line!(self.out, "{} = icmp sge i64 {}, {}", c, lv, rv);
-                line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                linea!(self.out, "{} = icmp sge i64 {}, {}", c, lv, rv);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, c);
             }
             Operador::MenorIgual => {
                 let c = self.r();
-                line!(self.out, "{} = icmp sle i64 {}, {}", c, lv, rv);
-                line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                linea!(self.out, "{} = icmp sle i64 {}, {}", c, lv, rv);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, c);
             }
             Operador::IgualIgual => {
                 let c = self.r();
-                line!(self.out, "{} = icmp eq i64 {}, {}", c, lv, rv);
-                line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                linea!(self.out, "{} = icmp eq i64 {}, {}", c, lv, rv);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, c);
             }
             Operador::Diferente => {
                 let c = self.r();
-                line!(self.out, "{} = icmp ne i64 {}, {}", c, lv, rv);
-                line!(self.out, "{} = zext i1 {} to i64", reg, c);
+                linea!(self.out, "{} = icmp ne i64 {}, {}", c, lv, rv);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, c);
             }
             Operador::Y => {
                 let zl = self.r();
                 let zr = self.r();
-                line!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
-                line!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
+                linea!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
+                linea!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
                 let a = self.r();
-                line!(self.out, "{} = and i1 {}, {}", a, zl, zr);
-                line!(self.out, "{} = zext i1 {} to i64", reg, a);
+                linea!(self.out, "{} = and i1 {}, {}", a, zl, zr);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, a);
             }
             Operador::O => {
                 let zl = self.r();
                 let zr = self.r();
-                line!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
-                line!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
+                linea!(self.out, "{} = icmp ne i64 {}, 0", zl, lv);
+                linea!(self.out, "{} = icmp ne i64 {}, 0", zr, rv);
                 let o = self.r();
-                line!(self.out, "{} = or i1 {}, {}", o, zl, zr);
-                line!(self.out, "{} = zext i1 {} to i64", reg, o);
+                linea!(self.out, "{} = or i1 {}, {}", o, zl, zr);
+                linea!(self.out, "{} = zext i1 {} to i64", reg, o);
             }
         }
         Ok(reg)
     }
 
     // ── Main auto ──
-    fn auto_main(&mut self, decls: &[Declaracion]) -> Result<(), String> {
+    fn auto_principal(&mut self, decls: &[Declaracion]) -> Result<(), String> {
         raw!(self.out, "define i64 @main(i64 %argc) {{");
         raw!(self.out, "  %entry:");
         self.cur_fn = Some("main".into());
-        let prev = std::mem::take(&mut self.vars);
+        let anterior = std::mem::take(&mut self.vars);
         for d in decls {
             if !matches!(d, Declaracion::Funcion { .. } | Declaracion::Clase { .. }) {
                 self.decl(d)?;
             }
         }
-        line!(self.out, "ret i64 0");
+        linea!(self.out, "ret i64 0");
         raw!(self.out, "}}");
-        self.vars = prev;
+        self.vars = anterior;
         self.cur_fn = None;
         Ok(())
     }

@@ -252,7 +252,7 @@ pub(crate) fn construir_sandbox(
     allow_net: Option<String>,
     allow_port: Option<String>,
 ) -> forja::sandbox::SandboxRed {
-    let mut sandbox = forja::sandbox::SandboxRed::new();
+    let mut sandbox = forja::sandbox::SandboxRed::nuevo();
 
     if let Some(hosts_str) = allow_net {
         let hosts: Vec<String> = hosts_str.split(',').map(|s| s.trim().to_string()).collect();
@@ -295,7 +295,7 @@ pub(crate) fn ejecutar_asm(fuente: &str, entrada_ruta: &str) -> Result<Vec<Strin
 
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
     let asm_code = compiler_asm::compilar_a_asm(&programa)
         .map_err(|e| format!("Error de compilación ASM: {:?}", e))?;
@@ -359,7 +359,7 @@ pub(crate) fn ejecutar_nativo(
     //    entre crate forja (lib) y crate forja (bin))
     let mut lexer = lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // 2. Detectar si usa GUI
@@ -394,7 +394,7 @@ pub(crate) fn ejecutar_nativo(
         .map_err(|e| format!("Error creando directorio temporal: {}", e))?;
 
     // 5. Transpilar a Rust
-    let mut transpiler = transpiler::Transpiler::new();
+    let mut transpiler = transpiler::Transpiler::nuevo();
     let codigo_rust = transpiler
         .transpilar(&programa)
         .map_err(|e| format!("Error de transpilación: {}", e[0]))?;

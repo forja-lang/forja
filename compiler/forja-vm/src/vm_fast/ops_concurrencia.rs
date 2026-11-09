@@ -32,12 +32,12 @@ impl ForjaFast {
                 // Crear objeto CanalEmisor
                 let sym_tx = self.sym_canal_emisor;
                 let forma_tx = self.runtime.registro_formas.obtener_o_crear(sym_tx);
-                let mut obj_tx = ObjVal::new(sym_tx, forma_tx);
+                let mut obj_tx = ObjVal::nuevo(sym_tx, forma_tx);
                 obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i64));
                 let obj_tx_idx = self.reservar_objeto(obj_tx);
                 let sym_rx = self.sym_canal_receptor;
                 let forma_rx = self.runtime.registro_formas.obtener_o_crear(sym_rx);
-                let mut obj_rx = ObjVal::new(sym_rx, forma_rx);
+                let mut obj_rx = ObjVal::nuevo(sym_rx, forma_rx);
                 obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i64));
                 let obj_rx_idx = self.reservar_objeto(obj_rx);
                 // Push tx, luego rx (ArrayNew [tx, rx] — tx index 0, rx index 1)
@@ -86,7 +86,7 @@ impl ForjaFast {
                     let cuerpo = move || {
                         // catch_unwind para evitar que panics maten el thread sin enviar resultado.
                         let ret = std::panic::catch_unwind(|| {
-                            let mut hilo_vm = ForjaFast::new();
+                            let mut hilo_vm = ForjaFast::nuevo();
                             hilo_vm.bytecode = hilo_bytecode;
                             hilo_vm.runtime.tabla_simbolos = hilo_sym_tabla;
                             hilo_vm.inicializar_symbols();
@@ -135,7 +135,9 @@ impl ForjaFast {
                             // Resolver valor de retorno a CanalValor para
                             // que el padre pueda re-indexar strings
                             if ret.es_texto() {
-                                CanalValor::Texto(Arc::clone(hilo_vm.get_str(ret.indice_texto())))
+                                CanalValor::Texto(Arc::clone(
+                                    hilo_vm.obtener_texto(ret.indice_texto()),
+                                ))
                             } else if ret.es_arreglo()
                                 || ret.es_mapa()
                                 || ret.es_objeto()
@@ -174,7 +176,7 @@ impl ForjaFast {
                             let hilo_indice = self.reservar_hilo(None, Some(rx_result));
                             let sym_hilo = self.sym_hilo;
                             let forma_hilo = self.runtime.registro_formas.obtener_o_crear(sym_hilo);
-                            let mut obj = ObjVal::new(self.sym_hilo, forma_hilo);
+                            let mut obj = ObjVal::nuevo(self.sym_hilo, forma_hilo);
                             obj.campos_vec.push(ValorFast::entero(hilo_indice as i64));
                             let obj_idx = self.reservar_objeto(obj);
                             self.empujar_valor(ValorFast::objeto(obj_idx));

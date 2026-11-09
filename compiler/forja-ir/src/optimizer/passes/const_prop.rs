@@ -9,12 +9,12 @@ pub struct ConstPropagator {
 
 impl Default for ConstPropagator {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl ConstPropagator {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ConstPropagator {
             cambios_realizados: 0,
             constantes: HashMap::new(),

@@ -63,7 +63,7 @@ fn es_ident(b: u8) -> bool {
 
 #[test]
 fn toda_llamada_nativa_existe_en_el_registro() {
-    let registro: HashSet<String> = forja::native_registry::NativoRegistro::new()
+    let registro: HashSet<String> = forja::native_registry::NativoRegistro::nuevo()
         .nombres()
         .into_iter()
         .collect();

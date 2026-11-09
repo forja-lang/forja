@@ -10,16 +10,16 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use forja::lsp::completado::{CompletionResolver, SymbolEntry, SymbolKind as ForjaSymbolKind};
+use forja::lsp::completado::{CompletionResolver, SymbolEntrada, SymbolTipo as ForjaSymbolKind};
 use forja::lsp::firma::SignatureResolver;
 use forja::lsp::index_stdlib::StdlibIndex;
 use forja::token::{Token, TokenTipo};
 
-fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
+fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntrada> {
     analisis
         .simbolos
         .iter()
-        .map(|s| SymbolEntry {
+        .map(|s| SymbolEntrada {
             name: s.nombre.clone(),
             kind: match s.tipo_simbolo {
                 SimboloTipo::Variable => ForjaSymbolKind::Variable,
@@ -38,7 +38,7 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
 fn cached_stdlib() -> &'static StdlibIndex {
     static INDEX: std::sync::OnceLock<StdlibIndex> = std::sync::OnceLock::new();
     INDEX.get_or_init(|| {
-        let mut idx = StdlibIndex::new();
+        let mut idx = StdlibIndex::nuevo();
         {
             let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             let library = raiz.join("library/std");
@@ -717,7 +717,7 @@ impl LanguageServer for Backend {
     // Completion
     // ----------------------------------------------------------------
 
-    async fn completion_resolve(&self, elemento: CompletionItem) -> Result<CompletionItem> {
+    async fn completion_resolve(&self, elemento: CompletionElemento) -> Result<CompletionElemento> {
         let label = elemento.label.clone();
         let stdlib = cached_stdlib();
 
@@ -737,11 +737,11 @@ impl LanguageServer for Backend {
                         f.module,
                         params_str.join("\n")
                     );
-                    if !f.return_type.is_empty() {
-                        doc += &format!("\n\nRetorna: `{}`", f.return_type);
+                    if !f.tipo_retorno.is_empty() {
+                        doc += &format!("\n\nRetorna: `{}`", f.tipo_retorno);
                     }
                 }
-                return Ok(CompletionItem {
+                return Ok(CompletionElemento {
                     documentation: Some(Documentation::String(doc)),
                     ..elemento
                 });
@@ -751,7 +751,7 @@ impl LanguageServer for Backend {
         // Doc de keyword
         let keyword_doc = keyword_description(&label);
         if let Some(doc) = keyword_doc {
-            return Ok(CompletionItem {
+            return Ok(CompletionElemento {
                 documentation: Some(Documentation::String(doc)),
                 ..elemento
             });
@@ -772,7 +772,7 @@ impl LanguageServer for Backend {
 
         let forja_items = self.completion_resolver.resolver(&tokens, cursor, &locales);
 
-        let lsp_items: Vec<CompletionItem> = forja_items
+        let lsp_items: Vec<CompletionElemento> = forja_items
             .iter()
             .map(|fi| {
                 let tipo = match fi.kind {
@@ -792,7 +792,7 @@ impl LanguageServer for Backend {
                     2 => Some(InsertTextFormat::SNIPPET),
                     _ => Some(InsertTextFormat::PLAIN_TEXT),
                 };
-                CompletionItem {
+                CompletionElemento {
                     label: fi.label.clone(),
                     kind: tipo,
                     detail: Some(fi.detail.clone()),
@@ -828,12 +828,12 @@ impl LanguageServer for Backend {
         let mut symbols: Vec<DocumentSymbol> = Vec::new();
         for s in &analisis.simbolos {
             let tipo = match s.tipo_simbolo {
-                SimboloTipo::Variable => SymbolKind::VARIABLE,
-                SimboloTipo::Funcion => SymbolKind::FUNCTION,
-                SimboloTipo::Clase => SymbolKind::CLASS,
-                SimboloTipo::Parametro => SymbolKind::VARIABLE,
-                SimboloTipo::Enum => SymbolKind::ENUM,
-                SimboloTipo::Rasgo => SymbolKind::INTERFACE,
+                SimboloTipo::Variable => SymbolTipo::VARIABLE,
+                SimboloTipo::Funcion => SymbolTipo::FUNCTION,
+                SimboloTipo::Clase => SymbolTipo::CLASS,
+                SimboloTipo::Parametro => SymbolTipo::VARIABLE,
+                SimboloTipo::Enum => SymbolTipo::ENUM,
+                SimboloTipo::Rasgo => SymbolTipo::INTERFACE,
             };
             symbols.push(DocumentSymbol {
                 name: s.nombre.clone(),
@@ -936,12 +936,12 @@ impl LanguageServer for Backend {
                     continue;
                 }
                 let tipo = match s.tipo_simbolo {
-                    SimboloTipo::Variable => SymbolKind::VARIABLE,
-                    SimboloTipo::Funcion => SymbolKind::FUNCTION,
-                    SimboloTipo::Clase => SymbolKind::CLASS,
-                    SimboloTipo::Parametro => SymbolKind::VARIABLE,
-                    SimboloTipo::Enum => SymbolKind::ENUM,
-                    SimboloTipo::Rasgo => SymbolKind::INTERFACE,
+                    SimboloTipo::Variable => SymbolTipo::VARIABLE,
+                    SimboloTipo::Funcion => SymbolTipo::FUNCTION,
+                    SimboloTipo::Clase => SymbolTipo::CLASS,
+                    SimboloTipo::Parametro => SymbolTipo::VARIABLE,
+                    SimboloTipo::Enum => SymbolTipo::ENUM,
+                    SimboloTipo::Rasgo => SymbolTipo::INTERFACE,
                 };
                 #[allow(deprecated)]
                 resultados.push(SymbolInformation {
@@ -1591,7 +1591,7 @@ async fn main() {
         return;
     }
 
-    forja::selfrun::shadow_copy();
+    forja::selfrun::shadow_copia();
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
@@ -1601,8 +1601,8 @@ async fn main() {
         client,
         documentos: Arc::new(Mutex::new(HashMap::new())),
         analisis_cache: Arc::new(Mutex::new(HashMap::new())),
-        completion_resolver: CompletionResolver::new(stdlib.clone()),
-        signature_resolver: SignatureResolver::new(stdlib),
+        completion_resolver: CompletionResolver::nuevo(stdlib.clone()),
+        signature_resolver: SignatureResolver::nuevo(stdlib),
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;

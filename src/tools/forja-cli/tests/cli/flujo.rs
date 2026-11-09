@@ -1,22 +1,22 @@
 //! Flujo de la CLI de punta a punta: cada comando que un usuario puede tocar,
-//! con stdin, `forja.yaml` y artefactos reales en un directorio temporal.
+//! con stdin, `forja.yaml` y artefactos reales en un directorio_raiz temporal.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-fn directorio_prueba(nombre: &str) -> PathBuf {
-    let directorio =
+fn directorio_raiz_prueba(nombre: &str) -> PathBuf {
+    let directorio_raiz =
         std::env::temp_dir().join(format!("forja_cli_{}_{}", nombre, std::process::id()));
-    let _ = std::fs::remove_dir_all(&directorio);
-    std::fs::create_dir_all(&directorio).unwrap();
-    directorio
+    let _ = std::fs::remove_dir_all(&directorio_raiz);
+    std::fs::create_dir_all(&directorio_raiz).unwrap();
+    directorio_raiz
 }
 
-fn correr(dir: &Path, args: &[&str], stdin: Option<&str>) -> Output {
+fn correr(directorio_raiz: &Path, args: &[&str], stdin: Option<&str>) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_forja"));
     cmd.args(args)
-        .current_dir(directorio)
+        .current_dir(directorio_raiz)
         .env("NO_COLOR", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -45,7 +45,7 @@ fn salida(o: &Output) -> String {
 }
 
 fn escribir(dir: &Path, nombre: &str, contenido: &str) -> PathBuf {
-    let ruta = directorio.join(nombre);
+    let ruta = dir.join(nombre);
     std::fs::write(&ruta, contenido).unwrap();
     ruta
 }
@@ -54,8 +54,8 @@ fn escribir(dir: &Path, nombre: &str, contenido: &str) -> PathBuf {
 
 #[test]
 fn cli_palabras_lista_keywords() {
-    let directorio = directorio_prueba("palabras");
-    let o = correr(&directorio, &["palabras"], None);
+    let directorio_raiz = directorio_raiz_prueba("palabras");
+    let o = correr(&directorio_raiz, &["palabras"], None);
     assert!(o.status.success(), "{}", salida(&o));
     let s = salida(&o);
     for kw in [
@@ -68,149 +68,161 @@ fn cli_palabras_lista_keywords() {
     ] {
         assert!(s.contains(kw), "falta {kw} en la lista de palabras");
     }
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_ayuda_y_explicar() {
-    let directorio = directorio_prueba("ayuda");
-    let o = correr(&directorio, &["ayuda"], None);
+    let directorio_raiz = directorio_raiz_prueba("ayuda");
+    let o = correr(&directorio_raiz, &["ayuda"], None);
     assert!(o.status.success());
     assert!(salida(&o).contains("ejecutar"));
 
-    let o = correr(&directorio, &["explicar", "variable"], None);
+    let o = correr(&directorio_raiz, &["explicar", "variable"], None);
     assert!(o.status.success());
     assert!(salida(&o).to_lowercase().contains("variable"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 // ── Ejecución y stdin ───────────────────────────────────────────────────────
 
 #[test]
 fn cli_ejecutar_correr_y_archivo_directo() {
-    let directorio = directorio_prueba("ejecutar");
-    escribir(&directorio, "hola.fa", "escribir(\"hola\")\n");
+    let directorio_raiz = directorio_raiz_prueba("ejecutar");
+    escribir(&directorio_raiz, "hola.fa", "escribir(\"hola\")\n");
     for args in [
         vec!["ejecutar", "hola.fa"],
         vec!["correr", "hola.fa"],
         vec!["run", "hola.fa"],
         vec!["hola.fa"],
     ] {
-        let o = correr(&directorio, &args, None);
+        let o = correr(&directorio_raiz, &args, None);
         assert!(o.status.success(), "args {args:?}: {}", salida(&o));
         assert!(String::from_utf8_lossy(&o.stdout).contains("hola"));
     }
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_leer_lee_stdin() {
-    let directorio = directorio_prueba("stdin");
+    let directorio_raiz = directorio_raiz_prueba("stdin");
     escribir(
-        &directorio,
+        &directorio_raiz,
         "eco.fa",
         "variable nombre = leer()\nescribir(\"Hola \" + nombre)\n",
     );
-    let o = correr(&directorio, &["ejecutar", "eco.fa"], Some("Ana\n"));
+    let o = correr(&directorio_raiz, &["ejecutar", "eco.fa"], Some("Ana\n"));
     assert!(o.status.success(), "{}", salida(&o));
     assert!(String::from_utf8_lossy(&o.stdout).contains("Hola Ana"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_stdin_vacio_devuelve_nulo_sin_colgarse() {
-    let directorio = directorio_prueba("stdin_vacio");
-    escribir(&directorio, "eco.fa", "variable x = leer()\nescribir(x)\n");
-    let o = correr(&directorio, &["ejecutar", "eco.fa"], Some(""));
+    let directorio_raiz = directorio_raiz_prueba("stdin_vacio");
+    escribir(
+        &directorio_raiz,
+        "eco.fa",
+        "variable x = leer()\nescribir(x)\n",
+    );
+    let o = correr(&directorio_raiz, &["ejecutar", "eco.fa"], Some(""));
     assert!(o.status.success(), "{}", salida(&o));
     assert!(String::from_utf8_lossy(&o.stdout).contains("nulo"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 // ── Formato, diagrama, documentación, color y lint ──────────────────────────
 
 #[test]
 fn cli_formatear_archivo() {
-    let directorio = directorio_prueba("fmt");
+    let directorio_raiz = directorio_raiz_prueba("fmt");
     let ruta = escribir(
-        &directorio,
+        &directorio_raiz,
         "feo.fa",
         "funcion f(a){\nsi(a>0){\nescribir( a )\n}\n}\n",
     );
-    let o = correr(&directorio, &["formatear", "feo.fa"], None);
+    let o = correr(&directorio_raiz, &["formatear", "feo.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
     let texto = std::fs::read_to_string(&ruta).unwrap();
     assert!(texto.contains("    "), "sin indentación:\n{texto}");
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_verificar_formato_falla_si_no_esta_formateado() {
-    let directorio = directorio_prueba("fmt_check");
-    escribir(&directorio, "forja.yaml", "verificar_formato: verdadero\n");
-    escribir(&directorio, "feo.fa", "funcion f(a){\nescribir(a)\n}\n");
-    let o = correr(&directorio, &["formatear", "feo.fa"], None);
+    let directorio_raiz = directorio_raiz_prueba("fmt_check");
+    escribir(
+        &directorio_raiz,
+        "forja.yaml",
+        "verificar_formato: verdadero\n",
+    );
+    escribir(
+        &directorio_raiz,
+        "feo.fa",
+        "funcion f(a){\nescribir(a)\n}\n",
+    );
+    let o = correr(&directorio_raiz, &["formatear", "feo.fa"], None);
     assert!(!o.status.success(), "debía fallar la verificación");
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_diagrama_genera_mermaid() {
-    let directorio = directorio_prueba("diagrama");
-    escribir(&directorio, "p.fa", "funcion f() { retornar 1 }\n");
-    let o = correr(&directorio, &["diagrama", "p.fa", "p.mmd"], None);
+    let directorio_raiz = directorio_raiz_prueba("diagrama");
+    escribir(&directorio_raiz, "p.fa", "funcion f() { retornar 1 }\n");
+    let o = correr(&directorio_raiz, &["diagrama", "p.fa", "p.mmd"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let mmd = std::fs::read_to_string(directorio.join("p.mmd")).unwrap();
+    let mmd = std::fs::read_to_string(directorio_raiz.join("p.mmd")).unwrap();
     assert!(mmd.contains("graph TD"), "mermaid inesperado: {mmd}");
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_documentar_genera_html() {
-    let directorio = directorio_prueba("doc");
+    let directorio_raiz = directorio_raiz_prueba("doc");
     escribir(
-        &directorio,
+        &directorio_raiz,
         "p.fa",
         "/// Suma dos números\nfuncion suma(a, b) { retornar a + b }\n",
     );
-    let o = correr(&directorio, &["documentar", "p.fa"], None);
+    let o = correr(&directorio_raiz, &["documentar", "p.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let html = std::fs::read_to_string(directorio.join("p.html")).unwrap();
+    let html = std::fs::read_to_string(directorio_raiz.join("p.html")).unwrap();
     assert!(html.contains("<!DOCTYPE html>"));
     assert!(html.contains("suma"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_colorear_emite_ansi() {
-    let directorio = directorio_prueba("highlight");
-    escribir(&directorio, "p.fa", "variable x = 1\n");
-    let o = correr(&directorio, &["colorear", "p.fa"], None);
+    let directorio_raiz = directorio_raiz_prueba("highlight");
+    escribir(&directorio_raiz, "p.fa", "variable x = 1\n");
+    let o = correr(&directorio_raiz, &["colorear", "p.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
     assert!(
         String::from_utf8_lossy(&o.stdout).contains("\x1b["),
         "sin colores ANSI"
     );
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_lint_archivo_valido() {
-    let directorio = directorio_prueba("lint");
-    escribir(&directorio, "p.fa", "variable x = 1\nescribir(x)\n");
-    let o = correr(&directorio, &["lint", "p.fa"], None);
+    let directorio_raiz = directorio_raiz_prueba("lint");
+    escribir(&directorio_raiz, "p.fa", "variable x = 1\nescribir(x)\n");
+    let o = correr(&directorio_raiz, &["lint", "p.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 // ── Proyectos y tests ───────────────────────────────────────────────────────
 
 #[test]
 fn cli_nuevo_proyecto_y_ejecutar_principal() {
-    let directorio = directorio_prueba("nuevo");
-    let o = correr(&directorio, &["nuevo", "miapp"], None);
+    let directorio_raiz = directorio_raiz_prueba("nuevo");
+    let o = correr(&directorio_raiz, &["nuevo", "miapp"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let app = directorio.join("miapp");
+    let app = directorio_raiz.join("miapp");
     assert!(app.join("main.fa").is_file());
     assert!(app.join("forja.json").is_file());
     assert!(app.join("modulos").is_dir());
@@ -218,57 +230,57 @@ fn cli_nuevo_proyecto_y_ejecutar_principal() {
     let o = correr(&app, &["ejecutar", "main.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
     assert!(String::from_utf8_lossy(&o.stdout).contains("Hola desde miapp"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
-fn cli_iniciar_crea_proyecto_en_el_directorio() {
-    let directorio = directorio_prueba("init");
-    let o = correr(&directorio, &["iniciar"], None);
+fn cli_iniciar_crea_proyecto_en_el_directorio_raiz() {
+    let directorio_raiz = directorio_raiz_prueba("init");
+    let o = correr(&directorio_raiz, &["iniciar"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    assert!(directorio.join("main.fa").is_file());
-    assert!(directorio.join("forja.json").is_file());
-    let _ = std::fs::remove_dir_all(directorio);
+    assert!(directorio_raiz.join("main.fa").is_file());
+    assert!(directorio_raiz.join("forja.json").is_file());
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_probar_tests_pasan_y_fallan() {
-    let directorio = directorio_prueba("probar");
+    let directorio_raiz = directorio_raiz_prueba("probar");
     escribir(
-        &directorio,
+        &directorio_raiz,
         "ok.fa",
         "@test\nfuncion test_ok() { asegurar(1 + 1 == 2) }\n",
     );
-    let o = correr(&directorio, &["probar", "ok.fa"], None);
+    let o = correr(&directorio_raiz, &["probar", "ok.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
 
     escribir(
-        &directorio,
+        &directorio_raiz,
         "mal.fa",
         "@test\nfuncion test_mal() { asegurar(1 + 1 == 3) }\n",
     );
-    let o = correr(&directorio, &["probar", "mal.fa"], None);
+    let o = correr(&directorio_raiz, &["probar", "mal.fa"], None);
     assert!(!o.status.success(), "un test fallido debe salir con error");
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 // ── Compilación AOT y ensamblador ───────────────────────────────────────────
 
 #[test]
 fn cli_compilar_genera_ejecutable_autonomo() {
-    let directorio = directorio_prueba("aot");
-    escribir(&directorio, "hola.fa", "escribir(\"aot ok\")\n");
-    let o = correr(&directorio, &["compilar", "hola.fa", "hola.exe"], None);
+    let directorio_raiz = directorio_raiz_prueba("aot");
+    escribir(&directorio_raiz, "hola.fa", "escribir(\"aot ok\")\n");
+    let o = correr(&directorio_raiz, &["compilar", "hola.fa", "hola.exe"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let exe = directorio.join("hola.exe");
+    let exe = directorio_raiz.join("hola.exe");
     assert!(exe.is_file(), "no se generó el ejecutable");
     let ejec = Command::new(&exe)
-        .current_dir(&directorio)
+        .current_dir(&directorio_raiz)
         .output()
         .unwrap();
     assert!(ejec.status.success(), "{}", salida(&ejec));
     assert!(String::from_utf8_lossy(&ejec.stdout).contains("aot ok"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
@@ -277,34 +289,38 @@ fn cli_asm_genera_binario_nativo() {
         eprintln!("gcc no disponible: se omite asm");
         return;
     }
-    let directorio = directorio_prueba("asm");
-    escribir(&directorio, "hola.fa", "escribir(7)\n");
-    let o = correr(&directorio, &["asm", "hola.fa", "-o", "hola_asm.exe"], None);
+    let directorio_raiz = directorio_raiz_prueba("asm");
+    escribir(&directorio_raiz, "hola.fa", "escribir(7)\n");
+    let o = correr(
+        &directorio_raiz,
+        &["asm", "hola.fa", "-o", "hola_asm.exe"],
+        None,
+    );
     if !o.status.success() {
         // Algunos entornos no traen toolchain de ensamblador; no es un fallo del lenguaje.
         eprintln!("asm no disponible: {}", salida(&o));
-        let _ = std::fs::remove_dir_all(directorio);
+        let _ = std::fs::remove_dir_all(directorio_raiz);
         return;
     }
-    let exe = directorio.join("hola_asm.exe");
+    let exe = directorio_raiz.join("hola_asm.exe");
     assert!(exe.is_file());
     let ejec = Command::new(&exe)
-        .current_dir(&directorio)
+        .current_dir(&directorio_raiz)
         .output()
         .unwrap();
     assert!(ejec.status.success());
     assert!(String::from_utf8_lossy(&ejec.stdout).contains('7'));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 // ── Configuración forja.yaml ────────────────────────────────────────────────
 
 #[test]
 fn cli_crea_forja_yaml_por_defecto() {
-    let directorio = directorio_prueba("yaml");
-    let o = correr(&directorio, &["version"], None);
+    let directorio_raiz = directorio_raiz_prueba("yaml");
+    let o = correr(&directorio_raiz, &["version"], None);
     assert!(o.status.success());
-    let yaml = std::fs::read_to_string(directorio.join("forja.yaml")).unwrap();
+    let yaml = std::fs::read_to_string(directorio_raiz.join("forja.yaml")).unwrap();
     for clave in [
         "motor:",
         "destino:",
@@ -315,69 +331,69 @@ fn cli_crea_forja_yaml_por_defecto() {
     ] {
         assert!(yaml.contains(clave), "falta {clave} en forja.yaml");
     }
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_estricto_desde_yaml_cambia_el_diagnostico() {
-    let directorio = directorio_prueba("estricto");
+    let directorio_raiz = directorio_raiz_prueba("estricto");
     escribir(
-        &directorio,
+        &directorio_raiz,
         "p.fa",
         "variable t: Texto = nulo\nescribir(t)\n",
     );
     // Sin estricto compila y muestra nulo.
-    let o = correr(&directorio, &["ejecutar", "p.fa"], None);
+    let o = correr(&directorio_raiz, &["ejecutar", "p.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
 
-    escribir(&directorio, "forja.yaml", "estricto: verdadero\n");
-    let o = correr(&directorio, &["ejecutar", "p.fa"], None);
+    escribir(&directorio_raiz, "forja.yaml", "estricto: verdadero\n");
+    let o = correr(&directorio_raiz, &["ejecutar", "p.fa"], None);
     assert!(!o.status.success(), "estricto debía rechazar nulo en Texto");
     assert!(salida(&o).contains("Nulo"), "{}", salida(&o));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_contratos_desde_yaml_se_pueden_desactivar() {
-    let directorio = directorio_prueba("contratos");
+    let directorio_raiz = directorio_raiz_prueba("contratos");
     escribir(
-        &directorio,
+        &directorio_raiz,
         "p.fa",
         "funcion f(x) -> Entero requiere x > 0, \"positivo\" { retornar x }\nescribir(f(-1))\n",
     );
-    let o = correr(&directorio, &["ejecutar", "p.fa"], None);
+    let o = correr(&directorio_raiz, &["ejecutar", "p.fa"], None);
     assert!(!o.status.success(), "el contrato debía fallar");
 
-    escribir(&directorio, "forja.yaml", "contratos: falso\n");
-    let o = correr(&directorio, &["ejecutar", "p.fa"], None);
+    escribir(&directorio_raiz, "forja.yaml", "contratos: falso\n");
+    let o = correr(&directorio_raiz, &["ejecutar", "p.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
     assert!(String::from_utf8_lossy(&o.stdout).contains("-1"));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_rechaza_flags() {
-    let directorio = directorio_prueba("flags");
-    escribir(&directorio, "p.fa", "escribir(1)\n");
-    let o = correr(&directorio, &["ejecutar", "p.fa", "--inventado"], None);
+    let directorio_raiz = directorio_raiz_prueba("flags");
+    escribir(&directorio_raiz, "p.fa", "escribir(1)\n");
+    let o = correr(&directorio_raiz, &["ejecutar", "p.fa", "--inventado"], None);
     assert!(!o.status.success(), "un flag debe rechazarse");
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_medir_con_iteraciones_minimas() {
-    let directorio = directorio_prueba("medir");
-    escribir(&directorio, "forja.yaml", "iteraciones: 1\n");
+    let directorio_raiz = directorio_raiz_prueba("medir");
+    escribir(&directorio_raiz, "forja.yaml", "iteraciones: 1\n");
     // Con import + callbacks: el hot run debe re-cargar el estado global o
     // lee índices de texto del heap anterior.
     escribir(
-        &directorio,
+        &directorio_raiz,
         "p.fa",
         "importar std/colecciones\nvariable a = [1, 2, 3]\nvariable b = colecciones.mapa(a, func(x) { retornar x * 2 })\nescribir(colecciones.reducir(b, func(s, x) { retornar s + x }, 0))\n",
     );
-    let o = correr(&directorio, &["medir", "p.fa"], None);
+    let o = correr(&directorio_raiz, &["medir", "p.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 // ── FFI real ────────────────────────────────────────────────────────────────
@@ -395,7 +411,7 @@ fn libc_sistema() -> &'static str {
 
 #[test]
 fn cli_ffi_llama_funcion_del_sistema() {
-    let directorio = directorio_prueba("ffi");
+    let directorio_raiz = directorio_raiz_prueba("ffi");
     let fuente = if cfg!(windows) {
         "importar std/ffi\n\
          importar externa \"kernel32.dll\"\n\
@@ -412,8 +428,8 @@ fn cli_ffi_llama_funcion_del_sistema() {
              escribir(pid > 0)\n"
         )
     };
-    escribir(&directorio, "ffi.fa", fuente);
-    let o = correr(&directorio, &["ejecutar", "ffi.fa"], None);
+    escribir(&directorio_raiz, "ffi.fa", fuente);
+    let o = correr(&directorio_raiz, &["ejecutar", "ffi.fa"], None);
     // FFI es una superficie documentada; si esto falla queda registrado el hueco.
     assert!(o.status.success(), "la llamada FFI falló: {}", salida(&o));
     assert!(
@@ -421,12 +437,12 @@ fn cli_ffi_llama_funcion_del_sistema() {
         "salida inesperada: {}",
         salida(&o)
     );
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
 fn cli_ffi_enlace_automatico_de_funcion_externa() {
-    let directorio = directorio_prueba("ffi_auto");
+    let directorio_raiz = directorio_raiz_prueba("ffi_auto");
     let fuente = if cfg!(windows) {
         "importar externa \"kernel32.dll\"\n\
          funcion externa GetCurrentProcessId() -> Entero;\n\
@@ -447,8 +463,8 @@ fn cli_ffi_enlace_automatico_de_funcion_externa() {
              escribir(longitud(getenv(\"PATH\")) > 0)\n"
         )
     };
-    escribir(&directorio, "ffi_auto.fa", fuente);
-    let o = correr(&directorio, &["ejecutar", "ffi_auto.fa"], None);
+    escribir(&directorio_raiz, "ffi_auto.fa", fuente);
+    let o = correr(&directorio_raiz, &["ejecutar", "ffi_auto.fa"], None);
     assert!(o.status.success(), "FFI automática falló: {}", salida(&o));
     assert_eq!(
         String::from_utf8_lossy(&o.stdout)
@@ -456,7 +472,7 @@ fn cli_ffi_enlace_automatico_de_funcion_externa() {
             .collect::<Vec<_>>(),
         vec!["verdadero", "4", "verdadero"]
     );
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }
 
 #[test]
@@ -468,13 +484,13 @@ fn cli_aot_nativo_compila_y_ejecuta() {
     {
         return; // sin clang se usa fallback; cubierto en otro test
     }
-    let directorio = directorio_prueba("aot_nativo");
-    escribir(&directorio, "p.fa", "escribir(2 + 3)\n");
-    let o = correr(&directorio, &["aot", "p.fa", "p.exe"], None);
+    let directorio_raiz = directorio_raiz_prueba("aot_nativo");
+    escribir(&directorio_raiz, "p.fa", "escribir(2 + 3)\n");
+    let o = correr(&directorio_raiz, &["aot", "p.fa", "p.exe"], None);
     assert!(o.status.success(), "{}", salida(&o));
-    let bin = directorio.join("p.exe");
+    let bin = directorio_raiz.join("p.exe");
     let out = std::process::Command::new(&bin).output().unwrap();
     assert!(out.status.success());
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "5");
-    let _ = std::fs::remove_dir_all(directorio);
+    let _ = std::fs::remove_dir_all(directorio_raiz);
 }

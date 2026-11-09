@@ -5,9 +5,9 @@ use forja::semantics::PrestamoChecker;
 fn verificar(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse()?;
-    let mut checker = PrestamoChecker::new();
+    let mut checker = PrestamoChecker::nuevo();
     checker.analizar(&programa)
 }
 

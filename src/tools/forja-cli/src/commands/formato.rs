@@ -33,7 +33,7 @@ pub(crate) fn fmt_un_archivo(
             return true;
         }
     };
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
         Err(errores) => {
@@ -48,7 +48,7 @@ pub(crate) fn fmt_un_archivo(
             return true;
         }
     };
-    let mut fmt = formatter::Formatter::new();
+    let mut fmt = formatter::Formatter::nuevo();
     let comentarios = lexer::extraer_comentarios(&fuente);
     let salida = fmt.formatear_con_comentarios(&programa, &comentarios);
 
@@ -317,7 +317,7 @@ pub(crate) fn cmd_doc(args: &[String]) {
             process::exit(1);
         }
     };
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
         Err(errors) => {

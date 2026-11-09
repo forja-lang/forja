@@ -8,14 +8,14 @@ const FBC_MAGIC: &[u8; 4] = b"FBC\0";
 /// Intenta cargar y ejecutar bytecode incrustado al final del propio .exe
 /// Formato: stub.exe + bytecode + 4 bytes de tamaño u32 LE + 4 bytes magic FBC
 pub fn try_selfrun() -> Option<()> {
-    let exe_path = std::env::current_exe().ok()?;
+    let exe_ruta = std::env::current_exe().ok()?;
 
-    let mut archivo = fs::File::open(&exe_path).ok()?;
+    let mut archivo = fs::File::open(&exe_ruta).ok()?;
 
     // Leer tamaño del archivo
-    let file_len = archivo.metadata().ok()?.len();
+    let archivo_longitud = archivo.metadata().ok()?.len();
 
-    if file_len < 8 {
+    if archivo_longitud < 8 {
         return None;
     }
 
@@ -30,16 +30,16 @@ pub fn try_selfrun() -> Option<()> {
     }
 
     // Leer tamaño del bytecode
-    let bc_size = u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64;
+    let bytecode_tamano = u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64;
 
-    if bc_size == 0 || bc_size > file_len - 8 {
+    if bytecode_tamano == 0 || bytecode_tamano > archivo_longitud - 8 {
         return None;
     }
 
     // Leer bytecode (ubicado justo antes del footer, al final del archivo)
-    let bc_start = file_len - 8 - bc_size;
-    archivo.seek(SeekFrom::Start(bc_start)).ok()?;
-    let mut bytecode_data = vec![0u8; bc_size as usize];
+    let bytecode_inicio = archivo_longitud - 8 - bytecode_tamano;
+    archivo.seek(SeekFrom::Start(bytecode_inicio)).ok()?;
+    let mut bytecode_data = vec![0u8; bytecode_tamano as usize];
     archivo.read_exact(&mut bytecode_data).ok()?;
 
     // Deserializar bytecode
@@ -48,7 +48,7 @@ pub fn try_selfrun() -> Option<()> {
         None => {
             eprintln!(
                 "[SELFRUN] Error al deserializar bytecode ({} bytes)",
-                bc_size
+                bytecode_tamano
             );
             return None;
         }
@@ -59,7 +59,7 @@ pub fn try_selfrun() -> Option<()> {
     }
 
     // Inicializar VM ForjaFast de producción
-    let mut vm = crate::vm_fast::ForjaFast::new();
+    let mut vm = crate::vm_fast::ForjaFast::nuevo();
 
     // Matemática rápida: por defecto activa en el ejecutable autónomo;
     // `matematica_rapida: falso` en un `forja.yaml` cercano la desactiva.
@@ -81,8 +81,8 @@ pub fn try_selfrun() -> Option<()> {
     // Salida mediante I/O con buffer para máximo rendimiento
     let stdout = std::io::stdout();
     let mut manejador = BufWriter::new(stdout.lock());
-    for line in vm.obtener_salida() {
-        let _ = writeln!(manejador, "{}", line);
+    for linea in vm.obtener_salida() {
+        let _ = writeln!(manejador, "{}", linea);
     }
     let _ = manejador.flush();
 
@@ -102,43 +102,43 @@ pub fn try_selfrun() -> Option<()> {
 /// Si estamos en Windows, copia el ejecutable actual al directorio temporal (%TEMP%)
 /// y lo ejecuta desde allí para liberar el ejecutable original (evita bloqueos de archivo).
 /// Al finalizar la ejecución, elimina automáticamente el ejecutable temporal generado.
-pub fn shadow_copy() {
+pub fn shadow_copia() {
     #[cfg(target_os = "windows")]
     {
         use std::env;
         use std::process::Command;
 
-        let exe_path = env::current_exe().unwrap_or_default();
-        let temp_dir = env::temp_dir();
+        let exe_ruta = env::current_exe().unwrap_or_default();
+        let temporal_directorio = env::temp_dir();
 
-        let exe_path_str = exe_path.to_string_lossy().to_lowercase();
-        let temp_dir_str = temp_dir.to_string_lossy().to_lowercase();
-        let file_name = exe_path.file_name().unwrap_or_default().to_string_lossy();
+        let exe_ruta_texto = exe_ruta.to_string_lossy().to_lowercase();
+        let temporal_directorio_texto = temporal_directorio.to_string_lossy().to_lowercase();
+        let archivo_name = exe_ruta.file_name().unwrap_or_default().to_string_lossy();
 
         // Evitar bucles: comprobar si ya somos la copia temporal por nombre o ruta
-        if file_name.starts_with("run_")
-            || exe_path_str.contains("\\appdata\\local\\temp\\")
-            || exe_path_str.starts_with(&temp_dir_str)
+        if archivo_name.starts_with("run_")
+            || exe_ruta_texto.contains("\\appdata\\local\\temp\\")
+            || exe_ruta_texto.starts_with(&temporal_directorio_texto)
         {
             return;
         }
 
         let pid = std::process::id();
-        let mut temp_exe = temp_dir.clone();
-        temp_exe.push(format!("run_{}_{}", pid, file_name));
+        let mut temporal_exe = temporal_directorio.clone();
+        temporal_exe.push(format!("run_{}_{}", pid, archivo_name));
 
         // Copiar el ejecutable
-        match fs::copy(&exe_path, &temp_exe) {
+        match fs::copy(&exe_ruta, &temporal_exe) {
             Ok(_) => {
                 // Ejecutar la copia pasando todos los argumentos originales y el path original en env var
                 let argumentos: Vec<String> = env::args().skip(1).collect();
-                let status_res = Command::new(&temp_exe)
-                    .env("FORJA_ORIGINAL_EXE", &exe_path)
+                let status_res = Command::new(&temporal_exe)
+                    .env("FORJA_ORIGINAL_EXE", &exe_ruta)
                     .args(&argumentos)
                     .status();
 
                 // Intentar limpiar el ejecutable temporal al terminar
-                let _ = fs::remove_file(&temp_exe);
+                let _ = fs::remove_file(&temporal_exe);
 
                 match status_res {
                     Ok(status) => {

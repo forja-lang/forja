@@ -121,7 +121,7 @@ impl ArbolDominadores {
         mut bloque2: IdBloque,
     ) -> IdBloque {
         // Nota: Usamos IdBloque directamente en vez de semi-dominator ordering
-        // (DFS numbering de Cooper et al.). Esto es correcto cuando los BlockIds
+        // (DFS numbering de Cooper et al.). Esto es ok cuando los BlockIds
         // son secuenciales sin huecos (que es siempre el caso en Forja: los bloques
         // se crean secuencialmente via `nuevo_bloque()`). Si en el futuro se soportaran
         // huecos en IDs (por ejemplo, para dead-code elimination con reasignación),
@@ -1039,10 +1039,10 @@ mod tests {
     fn ir_de_fuente(fuente: &str) -> crate::ir::ProgramaIr {
         let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
         let tokens = lexer.tokenize().expect("lexer");
-        let programa = forja_syntax::parser::Parser::new(tokens)
+        let programa = forja_syntax::parser::Parser::nuevo(tokens)
             .parse()
             .expect("parser");
-        let mut constructor_ir = crate::ir_constructor::ConstructorDesdeAst::new();
+        let mut constructor_ir = crate::ir_constructor::ConstructorDesdeAst::nuevo();
         let ir = constructor_ir.programa_a_ir(&programa);
         assert!(
             constructor_ir.soportado,

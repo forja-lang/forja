@@ -87,7 +87,7 @@ pub struct GcIntrinsicsManager {
 }
 
 impl GcIntrinsicsManager {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         GcIntrinsicsManager {
             pila_maps: Vec::new(),
             safe_points: Vec::new(),
@@ -148,7 +148,7 @@ impl GcIntrinsicsManager {
 
 impl Default for GcIntrinsicsManager {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_gc_intrinsics_manager() {
-        let mut mgr = GcIntrinsicsManager::new();
+        let mut mgr = GcIntrinsicsManager::nuevo();
         let fid = mgr.nuevo_funcion_id();
 
         let sm = PilaMapa {
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_safe_point_registration() {
-        let mut mgr = GcIntrinsicsManager::new();
+        let mut mgr = GcIntrinsicsManager::nuevo();
         let fid = mgr.nuevo_funcion_id();
 
         let sp = SafePoint {
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_buscar_closest_pila_mapa() {
-        let mut mgr = GcIntrinsicsManager::new();
+        let mut mgr = GcIntrinsicsManager::nuevo();
         let fid = mgr.nuevo_funcion_id();
 
         mgr.register_pila_mapa(PilaMapa {

@@ -214,6 +214,10 @@ def reemplazar_codigo(
         # `std::ruta`, `foo::ruta`, `#[cfg(...)]`, `x.ruta(`
         anterior = codigo[max(0, inicio - 2):inicio]
         if anterior.endswith("::"):
+            # `use crossterm::event;`: el último tramo de una ruta externa no se renombra
+            ruta_use = re.search(r"use\s+([\w:]+)::$", previo)
+            if ruta_use and not ruta_use.group(1).startswith(("crate", "self", "super", "forja")):
+                return palabra
             # `Vec::new` es de std; `Self::new` y `TipoPropio::new` sí son de este archivo.
             calificador = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*::$", codigo[:inicio])
             nombre_cal = calificador.group(1) if calificador else ""

@@ -14,12 +14,12 @@ pub struct Sha256 {
 
 impl Default for Sha256 {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Sha256 {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self {
             h: [
                 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
@@ -74,7 +74,7 @@ impl Sha256 {
     }
 
     pub fn digest(data: &[u8]) -> [u8; 32] {
-        let mut sha = Self::new();
+        let mut sha = Self::nuevo();
         sha.update(data);
         sha.finalize()
     }
@@ -155,12 +155,12 @@ pub struct Sha1 {
 
 impl Default for Sha1 {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Sha1 {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self {
             h: [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0],
             buf: [0u8; 64],
@@ -212,7 +212,7 @@ impl Sha1 {
     }
 
     pub fn digest(data: &[u8]) -> [u8; 20] {
-        let mut sha = Self::new();
+        let mut sha = Self::nuevo();
         sha.update(data);
         sha.finalize()
     }
@@ -271,12 +271,12 @@ pub struct Sha224(Sha256);
 
 impl Default for Sha224 {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Sha224 {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         let inner = Sha256 {
             h: IV224,
             buf: [0u8; 64],
@@ -294,7 +294,7 @@ impl Sha224 {
         out
     }
     pub fn digest(data: &[u8]) -> [u8; 28] {
-        let mut h = Self::new();
+        let mut h = Self::nuevo();
         h.update(data);
         h.finalize()
     }
@@ -310,12 +310,12 @@ pub struct Sha512 {
 
 impl Default for Sha512 {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Sha512 {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self {
             h: [
                 0x6a09e667f3bcc908,
@@ -381,7 +381,7 @@ impl Sha512 {
     }
 
     pub fn digest(data: &[u8]) -> [u8; 64] {
-        let mut h = Self::new();
+        let mut h = Self::nuevo();
         h.update(data);
         h.finalize()
     }
@@ -541,12 +541,12 @@ pub struct Sha384(Sha512);
 
 impl Default for Sha384 {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Sha384 {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self(Sha512 {
             h: IV384,
             buf: [0u8; 128],
@@ -563,7 +563,7 @@ impl Sha384 {
         out
     }
     pub fn digest(data: &[u8]) -> [u8; 48] {
-        let mut h = Self::new();
+        let mut h = Self::nuevo();
         h.update(data);
         h.finalize()
     }
@@ -592,13 +592,13 @@ pub fn hmac_sha256(clave: &[u8], data: &[u8]) -> [u8; 32] {
     }
 
     // 3. inner = SHA256(ipad || data)
-    let mut inner = Sha256::new();
+    let mut inner = Sha256::nuevo();
     inner.update(&ipad);
     inner.update(data);
     let inner_hash = inner.finalize();
 
     // 4. outer = SHA256(opad || inner_hash)
-    let mut outer = Sha256::new();
+    let mut outer = Sha256::nuevo();
     outer.update(&opad);
     outer.update(&inner_hash);
     outer.finalize()

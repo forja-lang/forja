@@ -6,13 +6,13 @@ use forja::vm_fast::ForjaFast;
 fn ejecutar(fuente: &str) -> ForjaFast {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     let mut bc = gen.generar(&programa).unwrap();
     bc = optimizar_indices(&bc);
     bc = fusionar_opcodes(&bc);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bc);
     vm.ejecutar().unwrap();
     vm
@@ -456,13 +456,13 @@ fn test_vm_cuando_verdadero() {
 fn salida_fast(fuente: &str) -> Vec<String> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     let bc = gen.generar(&programa).unwrap();
     let bc = optimizar_indices(&bc);
     let bc = fusionar_opcodes(&bc);
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bc);
     // ForjaFast empieza en ip=0 (FunctionDef se skipean solos)
     vm.fijar_max_inst(50000);

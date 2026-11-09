@@ -9,11 +9,11 @@
 
 use super::*;
 
-const TARGETS: [TargetArch; 4] = [
-    TargetArch::X86_64Windows,
-    TargetArch::X86_64Linux,
-    TargetArch::AArch64,
-    TargetArch::RiscV64,
+const TARGETS: [DestinoArch; 4] = [
+    DestinoArch::X86_64Windows,
+    DestinoArch::X86_64Linux,
+    DestinoArch::AArch64,
+    DestinoArch::RiscV64,
 ];
 
 // ──────────────────────────────────────────────────────────
@@ -23,32 +23,32 @@ const TARGETS: [TargetArch; 4] = [
 #[test]
 fn detect_mapea_cada_plataforma() {
     assert_eq!(
-        TargetArch::desde_plataforma("x86_64", "windows"),
-        TargetArch::X86_64Windows
+        DestinoArch::desde_plataforma("x86_64", "windows"),
+        DestinoArch::X86_64Windows
     );
     assert_eq!(
-        TargetArch::desde_plataforma("x86_64", "linux"),
-        TargetArch::X86_64Linux
+        DestinoArch::desde_plataforma("x86_64", "linux"),
+        DestinoArch::X86_64Linux
     );
     assert_eq!(
-        TargetArch::desde_plataforma("aarch64", "macos"),
-        TargetArch::AArch64
+        DestinoArch::desde_plataforma("aarch64", "macos"),
+        DestinoArch::AArch64
     );
     assert_eq!(
-        TargetArch::desde_plataforma("x86_64", "macos"),
-        TargetArch::X86_64Linux
+        DestinoArch::desde_plataforma("x86_64", "macos"),
+        DestinoArch::X86_64Linux
     );
     assert_eq!(
-        TargetArch::desde_plataforma("riscv64", "linux"),
-        TargetArch::RiscV64
+        DestinoArch::desde_plataforma("riscv64", "linux"),
+        DestinoArch::RiscV64
     );
     assert_eq!(
-        TargetArch::desde_plataforma("riscv32", "linux"),
-        TargetArch::X86_64Linux
+        DestinoArch::desde_plataforma("riscv32", "linux"),
+        DestinoArch::X86_64Linux
     );
     assert_eq!(
-        TargetArch::detect(),
-        TargetArch::desde_plataforma(std::env::consts::ARCH, std::env::consts::OS)
+        DestinoArch::detect(),
+        DestinoArch::desde_plataforma(std::env::consts::ARCH, std::env::consts::OS)
     );
 }
 
@@ -58,12 +58,12 @@ fn tabla_de_targets_completa() {
         assert!(!t.name().is_empty());
         assert!(
             !t.syntax_directive().is_empty()
-                || matches!(t, TargetArch::AArch64 | TargetArch::RiscV64)
+                || matches!(t, DestinoArch::AArch64 | DestinoArch::RiscV64)
         );
         assert!(!t.section_rodata().is_empty());
         assert!(!t.ret_reg().is_empty());
         assert!(!t.ret_reg_32().is_empty());
-        assert!(!t.tmp_reg().is_empty());
+        assert!(!t.temporal_reg().is_empty());
         assert!(!t.tmp2_reg().is_empty());
         assert!(!t.fp_reg().is_empty());
         assert!(!t.sp_reg().is_empty());
@@ -76,36 +76,36 @@ fn tabla_de_targets_completa() {
 
     // `from_str` acepta alias y normaliza separadores.
     let casos = [
-        ("x86_64_windows", TargetArch::X86_64Windows),
-        ("x86_64-windows", TargetArch::X86_64Windows),
-        ("win64", TargetArch::X86_64Windows),
-        ("windows", TargetArch::X86_64Windows),
-        ("x86_64_linux", TargetArch::X86_64Linux),
-        ("x86_64-linux", TargetArch::X86_64Linux),
-        ("linux64", TargetArch::X86_64Linux),
-        ("linux", TargetArch::X86_64Linux),
-        ("x86_64", TargetArch::X86_64Linux),
-        ("aarch64", TargetArch::AArch64),
-        ("arm64", TargetArch::AArch64),
-        ("arm", TargetArch::AArch64),
-        ("riscv64", TargetArch::RiscV64),
-        ("riscv", TargetArch::RiscV64),
-        ("rv64", TargetArch::RiscV64),
+        ("x86_64_windows", DestinoArch::X86_64Windows),
+        ("x86_64-windows", DestinoArch::X86_64Windows),
+        ("win64", DestinoArch::X86_64Windows),
+        ("windows", DestinoArch::X86_64Windows),
+        ("x86_64_linux", DestinoArch::X86_64Linux),
+        ("x86_64-linux", DestinoArch::X86_64Linux),
+        ("linux64", DestinoArch::X86_64Linux),
+        ("linux", DestinoArch::X86_64Linux),
+        ("x86_64", DestinoArch::X86_64Linux),
+        ("aarch64", DestinoArch::AArch64),
+        ("arm64", DestinoArch::AArch64),
+        ("arm", DestinoArch::AArch64),
+        ("riscv64", DestinoArch::RiscV64),
+        ("riscv", DestinoArch::RiscV64),
+        ("rv64", DestinoArch::RiscV64),
     ];
     for (texto, esperado) in casos {
         assert_eq!(
-            TargetArch::desde_str(texto),
+            DestinoArch::desde_str(texto),
             Some(esperado),
             "from_str({texto})"
         );
         let mayusculas = texto.to_uppercase();
         assert_eq!(
-            TargetArch::desde_str(&mayusculas),
+            DestinoArch::desde_str(&mayusculas),
             Some(esperado),
             "from_str({mayusculas})"
         );
     }
-    assert_eq!(TargetArch::desde_str("mips"), None);
+    assert_eq!(DestinoArch::desde_str("mips"), None);
 }
 
 // ──────────────────────────────────────────────────────────
@@ -115,9 +115,9 @@ fn tabla_de_targets_completa() {
 #[test]
 fn emisores_x86_usan_eax_para_32_bits() {
     // `ldr_reg_mem` tiene una rama dedicada para el registro de 32 bits.
-    let asm = TargetArch::X86_64Linux.ldr_reg_mem("eax", "rbp", 8);
+    let asm = DestinoArch::X86_64Linux.ldr_reg_mem("eax", "rbp", 8);
     assert!(asm.contains("mov eax, [rbp - 8]"), "{asm}");
-    let asm64 = TargetArch::X86_64Windows.ldr_reg_mem("rax", "rbp", 8);
+    let asm64 = DestinoArch::X86_64Windows.ldr_reg_mem("rax", "rbp", 8);
     assert!(asm64.contains("mov rax, [rbp - 8]"), "{asm64}");
 }
 
@@ -158,14 +158,18 @@ fn to_8bit_reg_convierte_todos_los_registros() {
         ("r15d", "r15b"),
     ];
     for (reg, esperado) in esperados {
-        assert_eq!(TargetArch::to_8bit_reg(reg), esperado, "to_8bit_reg({reg})");
+        assert_eq!(
+            DestinoArch::to_8bit_reg(reg),
+            esperado,
+            "to_8bit_reg({reg})"
+        );
     }
     // Registros no estándar: fallback `{reg}l`.
-    assert_eq!(TargetArch::to_8bit_reg("x19"), "x19l");
+    assert_eq!(DestinoArch::to_8bit_reg("x19"), "x19l");
 }
 
 #[test]
-fn emisores_por_target_emiten_formas_distintas() {
+fn emisores_por_destino_emiten_formas_distintas() {
     for t in TARGETS {
         let a = t.arg_regs()[0];
         let b = t.arg_regs()[1];
@@ -174,18 +178,18 @@ fn emisores_por_target_emiten_formas_distintas() {
 
         assert!(!t.mov_reg_imm(a, 0).is_empty());
         assert!(!t.mov_reg_imm(a, -1).is_empty());
-        assert!(t.push_reg(a).contains(a));
-        assert!(t.pop_reg(a).contains(a));
-        assert!(!t.push_fp_lr().is_empty());
-        assert!(!t.pop_fp_lr().is_empty());
-        assert!(t.set_fp_from_sp().contains(fp));
+        assert!(t.empujar_reg(a).contains(a));
+        assert!(t.desapilar_reg(a).contains(a));
+        assert!(!t.empujar_fp_lr().is_empty());
+        assert!(!t.desapilar_fp_lr().is_empty());
+        assert!(t.fijar_fp_from_sp().contains(fp));
         assert!(t.sub_sp(16).contains("16"));
         assert!(t.add_sp(16).contains("16"));
         assert!(t.mov_sp_fp().contains(fp));
         assert!(t.str_reg_mem(a, fp, 8).contains(a));
         assert!(t.ldr_reg_mem(a, fp, 8).contains(a));
-        assert!(t.str_field(fp, 8, a).contains(a));
-        assert!(t.ldr_field(a, fp, 8).contains(a));
+        assert!(t.texto_campo(fp, 8, a).contains(a));
+        assert!(t.ldr_campo(a, fp, 8).contains(a));
         // Escalas de 8 y 16 bytes: `log2` debe dar 3 y 4 (no 0).
         assert!(t.str_mem_index(fp, b, 8, a).contains(a));
         assert!(t.str_mem_index(fp, b, 16, a).contains(a));
@@ -198,12 +202,12 @@ fn emisores_por_target_emiten_formas_distintas() {
         assert!(t.cmp_reg_reg(a, b).contains(b));
         assert!(t.test_reg(a).contains(a));
         for set in [
-            t.set_g(a),
-            t.set_l(a),
-            t.set_ge(a),
-            t.set_le(a),
-            t.set_e(a),
-            t.set_ne(a),
+            t.fijar_g(a),
+            t.fijar_l(a),
+            t.fijar_ge(a),
+            t.fijar_le(a),
+            t.fijar_e(a),
+            t.fijar_ne(a),
         ] {
             assert!(!set.is_empty());
         }
@@ -213,16 +217,16 @@ fn emisores_por_target_emiten_formas_distintas() {
         assert!(t.jump(".Lx").contains(".Lx"));
         assert!(t.jump_if_zero(".Lx").contains(".Lx"));
         assert!(t.jump_if_ge(".Lx").contains(".Lx"));
-        assert!(t.lea_label(a, ".Lx").contains(".Lx"));
+        assert!(t.lea_etiqueta(a, ".Lx").contains(".Lx"));
         assert!(t.movsd_mem_fp(fp, 8, t.float_reg()).contains(t.float_reg()));
         assert!(t.movsd_fp_mem(t.float_reg(), fp, 8).contains(t.float_reg()));
-        assert!(t.movsd_label(t.float_reg(), ".Lf").contains(".Lf"));
+        assert!(t.movsd_etiqueta(t.float_reg(), ".Lf").contains(".Lf"));
         let qword = t.mov_qword_ptr_imm(fp, 8, 42);
         assert!(qword.contains(fp), "{t:?}: {qword}");
         assert!(qword.contains("42"), "{t:?}: {qword}");
-        assert!(!t.gen_syscall_write(a, b).is_empty());
+        assert!(!t.generacion_syscall_escribir(a, b).is_empty());
         assert!(!t.section_rodata().is_empty());
-        assert!(t.fp_reg() != sp || matches!(t, TargetArch::AArch64 | TargetArch::RiscV64));
+        assert!(t.fp_reg() != sp || matches!(t, DestinoArch::AArch64 | DestinoArch::RiscV64));
     }
 }
 
@@ -245,46 +249,51 @@ fn log2_todos_los_grados() {
 #[test]
 fn pool_de_registros_se_agota_y_se_libera() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let total = c.reg_names.len();
         let mut alocados = Vec::new();
-        while let Some(reg) = c.alloc_reg() {
+        while let Some(reg) = c.reservar_reg() {
             alocados.push(reg);
         }
         assert_eq!(alocados.len(), total, "{t:?}: el pool debe agotarse");
-        assert!(c.alloc_reg().is_none(), "{t:?}: pool agotado → None");
+        assert!(c.reservar_reg().is_none(), "{t:?}: pool agotado → None");
 
         for reg in &alocados {
-            c.free_reg(reg);
+            c.liberar_reg(reg);
         }
-        assert_eq!(c.alloc_reg(), Some(alocados[0]));
+        assert_eq!(c.reservar_reg(), Some(alocados[0]));
 
         // Liberar un registro que no está en el pool no hace nada.
-        c.free_reg("registro_inexistente");
+        c.liberar_reg("registro_inexistente");
         // Liberar una variable sin registro asociado no hace nada.
-        c.free_var_reg("variable_sin_registro");
+        c.liberar_variable_reg("variable_sin_registro");
     }
 }
 
 #[test]
-fn alloc_var_reg_persistente_y_agotamiento() {
+fn reservar_variable_reg_persistente_y_agotamiento() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let mut asignados = Vec::new();
         for i in 0..c.reg_names.len() {
             let nombre = format!("v{i}");
-            let reg = c.alloc_var_reg(&nombre).expect("registro disponible");
-            assert_eq!(c.var_reg_map.get(&nombre), Some(&reg));
-            assert_eq!(c.reg_var_map.get(reg), Some(&nombre));
+            let reg = c
+                .reservar_variable_reg(&nombre)
+                .expect("registro disponible");
+            assert_eq!(c.variable_reg_mapa.get(&nombre), Some(&reg));
+            assert_eq!(c.reg_variable_mapa.get(reg), Some(&nombre));
             asignados.push(nombre);
         }
-        assert!(c.alloc_var_reg("sobra").is_none(), "{t:?}: pool agotado");
+        assert!(
+            c.reservar_variable_reg("sobra").is_none(),
+            "{t:?}: pool agotado"
+        );
 
         for nombre in &asignados {
-            c.free_var_reg(nombre);
+            c.liberar_variable_reg(nombre);
         }
-        assert!(c.var_reg_map.is_empty());
-        assert!(c.reg_var_map.is_empty());
+        assert!(c.variable_reg_mapa.is_empty());
+        assert!(c.reg_variable_mapa.is_empty());
         assert!(c.reg_pool.iter().all(|usado| !usado));
     }
 }
@@ -329,14 +338,14 @@ fn tipos_forja_a_asm_cubre_todas_las_variantes() {
     }
 
     // Tamaño en bytes de cada tipo de máquina.
-    assert_eq!(c.tipo_asm_size(&TipoAsm::Booleano), 4);
+    assert_eq!(c.tipo_asm_tamano(&TipoAsm::Booleano), 4);
     for tipo in [
         TipoAsm::Entero,
         TipoAsm::Decimal,
         TipoAsm::Texto,
         TipoAsm::Clase("C".into()),
     ] {
-        assert_eq!(c.tipo_asm_size(&tipo), 8, "{tipo:?}");
+        assert_eq!(c.tipo_asm_tamano(&tipo), 8, "{tipo:?}");
     }
 }
 
@@ -540,8 +549,8 @@ fn metodo(nombre: &str, parametros: Vec<Parametro>, cuerpo: Vec<Declaracion>) ->
 }
 
 /// Compilador con una variable de cada `TipoAsm` disponible.
-fn con_variables(target: TargetArch) -> CompilerAsm {
-    let mut c = CompilerAsm::with_target(target);
+fn con_variables(destino: DestinoArch) -> CompilerAsm {
+    let mut c = CompilerAsm::con_destino(destino);
     for (i, (nombre, tipo)) in [
         ("ent", TipoAsm::Entero),
         ("dec", TipoAsm::Decimal),
@@ -554,7 +563,7 @@ fn con_variables(target: TargetArch) -> CompilerAsm {
     {
         c.variables.insert(
             nombre.into(),
-            StackVar {
+            PilaVariable {
                 offset: 8 * (i as i32 + 1),
                 tipo,
             },
@@ -567,9 +576,9 @@ fn con_variables(target: TargetArch) -> CompilerAsm {
 fn registrar_clase_c(c: &mut CompilerAsm) {
     c.clases.insert(
         "C".into(),
-        ClaseAsmInfo {
+        ClaseAsmInformacion {
             campos: vec![("x".into(), TipoAsm::Entero)],
-            size: 8,
+            tamano: 8,
             offsets: HashMap::from([("x".to_string(), 0)]),
             metodos: vec![],
         },
@@ -578,7 +587,7 @@ fn registrar_clase_c(c: &mut CompilerAsm) {
 
 /// Ocupa todos los registros calle-saved para forzar el camino de stack.
 fn llenar_pool(c: &mut CompilerAsm) {
-    while c.alloc_reg().is_some() {}
+    while c.reservar_reg().is_some() {}
 }
 
 mod bordes;

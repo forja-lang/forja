@@ -17,7 +17,7 @@ pub struct FuncionInliner {
 }
 
 impl FuncionInliner {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         FuncionInliner {
             inlines_realizados: 0,
             max_inline_size: 10,
@@ -283,6 +283,6 @@ impl FuncionInliner {
 
 impl Default for FuncionInliner {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }

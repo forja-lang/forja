@@ -7,14 +7,14 @@
 //!
 //! DoD consolidar x86-64 y ARM64 con cobertura de tests por target.
 
-use forja::compiler_asm::{compilar_a_asm_con_target, CompilerAsm, TargetArch};
+use forja::compiler_asm::{compilar_a_asm_con_destino, CompilerAsm, DestinoArch};
 
 /// Parsea un programa Forja (fallible).
 fn parsear(fuente: &str) -> Result<forja::ast::Programa, String> {
     let tokens = forja::lexer::Lexer::new(fuente)
         .tokenize()
         .map_err(|e| format!("{e:?}"))?;
-    forja::parser::Parser::new(tokens)
+    forja::parser::Parser::nuevo(tokens)
         .parse()
         .map_err(|e| format!("{e:?}"))
 }
@@ -216,62 +216,62 @@ const PROGRAMAS_NO_SOPORTADOS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-const TARGETS: &[TargetArch] = &[
-    TargetArch::X86_64Windows,
-    TargetArch::X86_64Linux,
-    TargetArch::AArch64,
-    TargetArch::RiscV64,
+const TARGETS: &[DestinoArch] = &[
+    DestinoArch::X86_64Windows,
+    DestinoArch::X86_64Linux,
+    DestinoArch::AArch64,
+    DestinoArch::RiscV64,
 ];
 
 #[test]
 fn destino_sintaxis_directivas() {
     assert_eq!(
-        TargetArch::X86_64Windows.syntax_directive(),
+        DestinoArch::X86_64Windows.syntax_directive(),
         ".intel_syntax noprefix"
     );
     assert_eq!(
-        TargetArch::X86_64Linux.syntax_directive(),
+        DestinoArch::X86_64Linux.syntax_directive(),
         ".intel_syntax noprefix"
     );
-    assert_eq!(TargetArch::AArch64.syntax_directive(), "");
-    assert_eq!(TargetArch::RiscV64.syntax_directive(), "");
-    assert_eq!(TargetArch::X86_64Windows.name(), "x86-64 Windows");
-    assert_eq!(TargetArch::X86_64Linux.name(), "x86-64 Linux");
-    assert_eq!(TargetArch::AArch64.name(), "ARM64 (aarch64)");
-    assert_eq!(TargetArch::RiscV64.name(), "RISC-V 64 (rv64)");
+    assert_eq!(DestinoArch::AArch64.syntax_directive(), "");
+    assert_eq!(DestinoArch::RiscV64.syntax_directive(), "");
+    assert_eq!(DestinoArch::X86_64Windows.name(), "x86-64 Windows");
+    assert_eq!(DestinoArch::X86_64Linux.name(), "x86-64 Linux");
+    assert_eq!(DestinoArch::AArch64.name(), "ARM64 (aarch64)");
+    assert_eq!(DestinoArch::RiscV64.name(), "RISC-V 64 (rv64)");
 }
 
 #[test]
 fn destino_from_texto_alias() {
     let casos = [
-        ("windows", TargetArch::X86_64Windows),
-        ("win64", TargetArch::X86_64Windows),
-        ("x86_64-windows", TargetArch::X86_64Windows),
-        ("linux", TargetArch::X86_64Linux),
-        ("x86_64-linux", TargetArch::X86_64Linux),
-        ("x86_64", TargetArch::X86_64Linux),
-        ("aarch64", TargetArch::AArch64),
-        ("arm64", TargetArch::AArch64),
-        ("ARM", TargetArch::AArch64),
-        ("riscv64", TargetArch::RiscV64),
-        ("riscv", TargetArch::RiscV64),
-        ("rv64", TargetArch::RiscV64),
-        ("RISC-V", TargetArch::RiscV64),
+        ("windows", DestinoArch::X86_64Windows),
+        ("win64", DestinoArch::X86_64Windows),
+        ("x86_64-windows", DestinoArch::X86_64Windows),
+        ("linux", DestinoArch::X86_64Linux),
+        ("x86_64-linux", DestinoArch::X86_64Linux),
+        ("x86_64", DestinoArch::X86_64Linux),
+        ("aarch64", DestinoArch::AArch64),
+        ("arm64", DestinoArch::AArch64),
+        ("ARM", DestinoArch::AArch64),
+        ("riscv64", DestinoArch::RiscV64),
+        ("riscv", DestinoArch::RiscV64),
+        ("rv64", DestinoArch::RiscV64),
+        ("RISC-V", DestinoArch::RiscV64),
     ];
     for (entrada, esperado) in casos {
         assert_eq!(
-            TargetArch::desde_str(entrada),
+            DestinoArch::desde_str(entrada),
             Some(esperado),
             "from_str({entrada:?})"
         );
     }
-    assert_eq!(TargetArch::desde_str("mips"), None);
-    assert_eq!(TargetArch::desde_str("gpu"), None);
+    assert_eq!(DestinoArch::desde_str("mips"), None);
+    assert_eq!(DestinoArch::desde_str("gpu"), None);
 }
 
 #[test]
 fn detect_no_paniquea() {
-    let _ = TargetArch::detect();
+    let _ = DestinoArch::detect();
 }
 
 /// `CompilerAsm::default()` existe para que el tipo no quede sin `Default`
@@ -302,7 +302,7 @@ fn bateria_por_destino() {
                     continue;
                 }
             };
-            let asm = match compilar_a_asm_con_target(&programa, *destino) {
+            let asm = match compilar_a_asm_con_destino(&programa, *destino) {
                 Ok(a) => a,
                 Err(e) => {
                     fallos.push(format!("[{} / {nombre}] error: {e:?}", destino.name()));
@@ -323,7 +323,7 @@ fn bateria_por_destino() {
 
             // Invariantes por arquitectura.
             match destino {
-                TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
                     if !asm.contains("rax") && !asm.contains("eax") {
                         fallos.push(format!(
                             "[{} / {nombre}] no emite registros x86 (rax/eax)",
@@ -343,7 +343,7 @@ fn bateria_por_destino() {
                         ));
                     }
                 }
-                TargetArch::AArch64 => {
+                DestinoArch::AArch64 => {
                     if !asm.contains("x0") && !asm.contains("w0") {
                         fallos.push(format!(
                             "[{} / {nombre}] no emite registros ARM64 (x0/w0)",
@@ -357,7 +357,7 @@ fn bateria_por_destino() {
                         ));
                     }
                 }
-                TargetArch::RiscV64 => {
+                DestinoArch::RiscV64 => {
                     if !asm.contains("a0") && !asm.contains("t0") {
                         fallos.push(format!(
                             "[{} / {nombre}] no emite registros RISC-V (a0/t0)",
@@ -406,7 +406,7 @@ fn constructos_no_soportados_fallan_en_compilacion() {
     for destino in TARGETS {
         for (nombre, fuente, esperado) in PROGRAMAS_NO_SOPORTADOS {
             let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
-            match compilar_a_asm_con_target(&programa, *destino) {
+            match compilar_a_asm_con_destino(&programa, *destino) {
                 Ok(asm) => panic!(
                     "[{} / {nombre}] debió rechazarse, pero generó ASM ({} bytes)",
                     destino.name(),
@@ -442,7 +442,7 @@ fn funciones_generan_etiqueta_por_destino() {
         parsear("funcion suma(a, b) -> Entero {\n    retornar a + b\n}\nescribir(suma(2, 3))")
             .expect("parse");
     for destino in TARGETS {
-        let asm = compilar_a_asm_con_target(&programa, *destino).expect("compila");
+        let asm = compilar_a_asm_con_destino(&programa, *destino).expect("compila");
         assert!(
             asm.contains("suma:"),
             "[{}] falta el label de `suma`",
@@ -473,7 +473,7 @@ fn analisis_de_en_linea_por_destino() {
     for destino in TARGETS {
         for fuente in fuentes {
             let programa = parsear(fuente).expect("parse");
-            let asm = compilar_a_asm_con_target(&programa, *destino)
+            let asm = compilar_a_asm_con_destino(&programa, *destino)
                 .unwrap_or_else(|e| panic!("[{}] {e:?}", destino.name()));
             assert!(asm.contains("main:"));
         }
@@ -493,7 +493,7 @@ fn instanciacion_sin_constructor_no_llama_simbolo_inexistente() {
             .expect("parse");
 
     for destino in TARGETS {
-        let asm = compilar_a_asm_con_target(&sin_ctor, *destino).expect("compila");
+        let asm = compilar_a_asm_con_destino(&sin_ctor, *destino).expect("compila");
         assert!(
             !asm.contains("call Punto.nuevo"),
             "[{}] no debe llamar a `Punto.nuevo` sin constructor",
@@ -505,7 +505,7 @@ fn instanciacion_sin_constructor_no_llama_simbolo_inexistente() {
             destino.name()
         );
 
-        let asm2 = compilar_a_asm_con_target(&con_ctor, *destino).expect("compila");
+        let asm2 = compilar_a_asm_con_destino(&con_ctor, *destino).expect("compila");
         assert!(
             asm2.contains("P.nuevo"),
             "[{}] debe generar y llamar al constructor `P.nuevo`",
@@ -569,7 +569,7 @@ fn e2e_x86_64_linux_ensambla_y_ejecuta() {
 
     for (nombre, fuente, esperado) in E2E_EJECUCION {
         let programa = parsear(fuente).expect("parse");
-        let asm = compilar_a_asm_con_target(&programa, TargetArch::X86_64Linux).expect("compila");
+        let asm = compilar_a_asm_con_destino(&programa, DestinoArch::X86_64Linux).expect("compila");
         let fuente_s = directorio.join(format!("{nombre}.s"));
         fs::write(&fuente_s, asm).expect("escribir .s");
         let exe = directorio.join(nombre);
@@ -624,7 +624,7 @@ fn cobertura_constructos_asm() {
     for fuente in programas {
         if let Ok(programa) = parsear(fuente) {
             for destino in TARGETS {
-                let _ = compilar_a_asm_con_target(&programa, *destino);
+                let _ = compilar_a_asm_con_destino(&programa, *destino);
             }
         }
     }
@@ -649,7 +649,7 @@ fn e2e_riscv64_ensambla() {
     let mut fallos = Vec::new();
     for (nombre, fuente) in PROGRAMAS {
         let programa = parsear(fuente).expect("parse");
-        let asm = compilar_a_asm_con_target(&programa, TargetArch::RiscV64).expect("compila");
+        let asm = compilar_a_asm_con_destino(&programa, DestinoArch::RiscV64).expect("compila");
         let ruta = directorio.join(format!("{nombre}.s"));
         std::fs::write(&ruta, asm).expect("escribir .s");
 
@@ -684,8 +684,11 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
     use std::fs;
     use std::process::Command;
 
-    let destino = TargetArch::detect();
-    if !matches!(destino, TargetArch::X86_64Windows | TargetArch::X86_64Linux) {
+    let destino = DestinoArch::detect();
+    if !matches!(
+        destino,
+        DestinoArch::X86_64Windows | DestinoArch::X86_64Linux
+    ) {
         eprintln!("host {destino:?}: sin ejecución ASM nativa en tests; se omite");
         return;
     }
@@ -708,13 +711,13 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
     for (nombre, fuente) in PROGRAMAS {
         let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
         // Se compila siempre (así la cobertura del backend ASM sigue completa).
-        let asm = compilar_a_asm_con_target(&programa, destino)
+        let asm = compilar_a_asm_con_destino(&programa, destino)
             .unwrap_or_else(|e| panic!("[{nombre}] compila a ASM: {e:?}"));
 
         // shortcut: la concatenación de textos del backend ASM revienta al
         // ejecutarse en Linux (el binario termina con error); en Windows y en
         // la VM funciona. Queda pendiente del backend ASM para x86-64 Linux.
-        if matches!(destino, TargetArch::X86_64Linux) && *nombre == "texto_concatenacion" {
+        if matches!(destino, DestinoArch::X86_64Linux) && *nombre == "texto_concatenacion" {
             eprintln!("[{nombre}] compilado pero omitido al ejecutar: concatenación ASM en Linux pendiente");
             omitidos += 1;
             continue;

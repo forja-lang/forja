@@ -110,11 +110,11 @@ fn existe_variable_resultado(declaraciones: &[Declaracion]) -> bool {
 /// Generador de código Rust a partir del AST de Forja
 pub struct Transpiler {
     output: String,
-    indent_level: usize,
+    sangria_level: usize,
     #[allow(dead_code)]
-    errors: Vec<ErrorForja>,
+    errores: Vec<ErrorForja>,
     /// Conteo de variables temporales para el bucle `para`
-    temp_counter: usize,
+    temporal_counter: usize,
     /// Si es true, no genera el fn main() automático
     pub saltar_main: bool,
     /// Si es true, la app GUI compilada mantiene la consola (`forja compilar --console`)
@@ -187,17 +187,17 @@ fn necesita_parentesis(expr: &Expresion, op_padre: &Operador) -> bool {
 
 impl Default for Transpiler {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Transpiler {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Transpiler {
             output: String::new(),
-            indent_level: 0,
-            errors: Vec::new(),
-            temp_counter: 0,
+            sangria_level: 0,
+            errores: Vec::new(),
+            temporal_counter: 0,
             clases: HashMap::new(),
             declaraciones_globales: Vec::new(),
             funciones_externas: Vec::new(),
@@ -277,36 +277,36 @@ impl Transpiler {
         self.recolectar_clases(&programa.declaraciones);
 
         // Segunda pasada: generar código
-        self.emit_line(
+        self.emitir_linea(
             "// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja",
         );
-        self.emit_line(
+        self.emitir_linea(
             "// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust",
         );
-        self.emit_line("");
+        self.emitir_linea("");
 
         // En Windows, las apps GUI deben usar el subsistema "windows" para no mostrar
         // consola. Con `--console` se omite a propósito para poder ver los errores.
         if self.usa_gui() && !self.mantener_consola {
-            self.emit_line(
+            self.emitir_linea(
                 "#![cfg_attr(target_os = \"windows\", windows_subsystem = \"windows\")]",
             );
-            self.emit_line("");
+            self.emitir_linea("");
         }
 
         // Detectar si hay concurrencia para añadir imports
         let tiene_concurrencia = self.detectar_concurrencia(&programa.declaraciones);
         if tiene_concurrencia {
-            self.emit_line("use std::thread;");
-            self.emit_line("use std::sync::mpsc;");
-            self.emit_line("");
+            self.emitir_linea("use std::thread;");
+            self.emitir_linea("use std::sync::mpsc;");
+            self.emitir_linea("");
         }
 
         // Detectar si se usa el paquete GUI para emitir código que usa forja_gui_rt
         if self.usa_gui() {
-            self.emit_line("// ─── GUI: Forja GUI Runtime (xilem precompilado) ───");
-            self.emit_line("use forja_gui_rt::*;");
-            self.emit_line("");
+            self.emitir_linea("// ─── GUI: Forja GUI Runtime (xilem precompilado) ───");
+            self.emitir_linea("use forja_gui_rt::*;");
+            self.emitir_linea("");
         }
 
         // Recolectar funciones externas
@@ -325,8 +325,8 @@ impl Transpiler {
 
         // Generar bloque extern "C" para funciones externas
         if !self.funciones_externas.is_empty() {
-            self.emit_line("extern \"C\" {");
-            self.indent();
+            self.emitir_linea("extern \"C\" {");
+            self.sangria();
             for decl in &programa.declaraciones {
                 if let Declaracion::Funcion {
                     nombre,
@@ -350,7 +350,7 @@ impl Transpiler {
                         .as_ref()
                         .map(|t| self.tipo_a_rust(t))
                         .unwrap_or_else(|| "()".to_string());
-                    self.emit_line(&format!(
+                    self.emitir_linea(&format!(
                         "fn {}({}) -> {};",
                         nombre,
                         params_str.join(", "),
@@ -359,8 +359,8 @@ impl Transpiler {
                 }
             }
             self.dedent();
-            self.emit_line("}");
-            self.emit_line("");
+            self.emitir_linea("}");
+            self.emitir_linea("");
         }
 
         // Detectar si hay función main o clases para generar el fn main()
@@ -382,7 +382,7 @@ impl Transpiler {
                 Declaracion::Funcion { externa: true, .. } => {} // ya declaradas en extern "C"
                 Declaracion::Funcion { nombre, .. } if self.usa_gui() && nombre == "main" => {
                     // Saltar main de Forja cuando hay GUI (Xilem genera su propio main)
-                    self.emit_line("// fn main() de Forja omitido (GUI usa Xilem)");
+                    self.emitir_linea("// fn main() de Forja omitido (GUI usa Xilem)");
                 }
                 // En GUI, los callbacks se ejecutan desde el AST embebido (evaluador),
                 // no como Rust: emitir el cuerpo rompía con las funciones que arman
@@ -390,7 +390,7 @@ impl Transpiler {
                 Declaracion::Funcion { .. } if self.usa_gui() => {}
                 Declaracion::Funcion { .. } => {
                     self.transpilar_declaracion(decl);
-                    self.emit_line("");
+                    self.emitir_linea("");
                 }
                 _ => {}
             }
@@ -401,7 +401,7 @@ impl Transpiler {
             match decl {
                 Declaracion::Rasgo { .. } | Declaracion::Implementacion { .. } => {
                     self.transpilar_declaracion(decl);
-                    self.emit_line("");
+                    self.emitir_linea("");
                 }
                 _ => {}
             }
@@ -411,8 +411,8 @@ impl Transpiler {
         if self.usa_gui() {
             // Generar thread_local! para variables globales (accesibles desde callbacks)
             if !self.variables_globales.is_empty() {
-                self.emit_line("use std::cell::RefCell;");
-                self.emit_line("");
+                self.emitir_linea("use std::cell::RefCell;");
+                self.emitir_linea("");
                 let vars: Vec<(String, String, String)> = self
                     .variables_globales
                     .iter()
@@ -438,12 +438,12 @@ impl Transpiler {
                     } else {
                         valor_default.clone()
                     };
-                    self.emit_line(&format!(
+                    self.emitir_linea(&format!(
                         "thread_local! {{ static GLOBALS_{}: RefCell<{}> = RefCell::new({}); }}",
                         nombre, tipo_safe, val_safe
                     ));
                 }
-                self.emit_line("");
+                self.emitir_linea("");
             }
             // Generar el programa completo como datos de Rust
             // El runtime (forja_gui_rt) se encarga de todo: tema, estado, eventos, layout, bucle
@@ -452,55 +452,55 @@ impl Transpiler {
             // en un `static` estable (`Vec` no es const), así que la forma estática no
             // compilaba en ninguna versión de Rust.
             let ast_code = self.generar_ast_programa(&programa.declaraciones);
-            self.emit_line("// ─── Programa Forja como datos para el runtime ───");
-            self.emit_line("use forja::ast::*;");
-            self.emit_line("");
-            self.emit_line("fn programa() -> Programa {span: None, ");
-            self.emit_line("    Programa {spans: Vec::new(), nombres: Vec::new(), indice_nombres: std::collections::HashMap::new(), span: None, ");
-            self.emit_line("        declaraciones: vec![");
-            self.indent();
-            self.indent();
+            self.emitir_linea("// ─── Programa Forja como datos para el runtime ───");
+            self.emitir_linea("use forja::ast::*;");
+            self.emitir_linea("");
+            self.emitir_linea("fn programa() -> Programa {span: None, ");
+            self.emitir_linea("    Programa {spans: Vec::new(), nombres: Vec::new(), indice_nombres: std::collections::HashMap::new(), span: None, ");
+            self.emitir_linea("        declaraciones: vec![");
+            self.sangria();
+            self.sangria();
             for line in ast_code.lines() {
-                self.emit_line(line);
+                self.emitir_linea(line);
             }
             self.dedent();
             self.dedent();
-            self.emit_line("        ],");
-            self.emit_line("    }");
-            self.emit_line("}");
-            self.emit_line("");
+            self.emitir_linea("        ],");
+            self.emitir_linea("    }");
+            self.emitir_linea("}");
+            self.emitir_linea("");
 
             // main() delega completamente al runtime
             // Soporta --load-state=<json> para hot reload
-            self.emit_line("fn main() -> Result<(), String> {");
-            self.emit_line("    let args: Vec<String> = std::env::args().collect();");
-            self.emit_line("    let load_state = args.iter()");
-            self.emit_line("        .find_map(|a| a.strip_prefix(\"--load-state=\"))");
-            self.emit_line("        .map(|s| s.to_string());");
-            self.emit_line("");
-            self.emit_line(
+            self.emitir_linea("fn main() -> Result<(), String> {");
+            self.emitir_linea("    let args: Vec<String> = std::env::args().collect();");
+            self.emitir_linea("    let load_state = args.iter()");
+            self.emitir_linea("        .find_map(|a| a.strip_prefix(\"--load-state=\"))");
+            self.emitir_linea("        .map(|s| s.to_string());");
+            self.emitir_linea("");
+            self.emitir_linea(
                 "    forja_gui_rt::build_and_run(&programa(), load_state.as_deref(), None, true)",
             );
-            self.emit_line("}");
-            self.emit_line("");
+            self.emitir_linea("}");
+            self.emitir_linea("");
 
             // Android entry point
-            self.emit_line("#[cfg(target_os = \"android\")]");
-            self.emit_line("#[no_mangle]");
-            self.emit_line(
+            self.emitir_linea("#[cfg(target_os = \"android\")]");
+            self.emitir_linea("#[no_mangle]");
+            self.emitir_linea(
                 "fn android_main(app: winit::platform::android::activity::AndroidApp) {",
             );
-            self.emit_line(
+            self.emitir_linea(
                 "    forja_gui_rt::build_and_run_android(&programa(), None, None, true, app);",
             );
-            self.emit_line("}");
+            self.emitir_linea("}");
             return Ok(self.output.clone());
         }
 
         // Si no hay GUI, generar main con código global
         if !tiene_main && !self.saltar_main {
-            self.emit_line("fn main() {");
-            self.indent();
+            self.emitir_linea("fn main() {");
+            self.sangria();
 
             for decl in &programa.declaraciones {
                 match decl {
@@ -512,7 +512,7 @@ impl Transpiler {
             }
 
             self.dedent();
-            self.emit_line("}");
+            self.emitir_linea("}");
         }
 
         Ok(self.output.clone())
@@ -701,8 +701,8 @@ impl Transpiler {
                     }
                     "espacio" | "spacer" => {
                         if let Some(arg) = argumentos.first() {
-                            let size = Self::extraer_f64_valor(arg);
-                            format!("Layout::Spacer({})", size)
+                            let tamano = Self::extraer_f64_valor(arg);
+                            format!("Layout::Spacer({})", tamano)
                         } else {
                             "Layout::Spacer(8.0)".to_string()
                         }
@@ -718,15 +718,15 @@ impl Transpiler {
                         } else {
                             "#6750A4".to_string()
                         };
-                        let child_code = if let Some(arg) = argumentos.first() {
+                        let hijo_code = if let Some(arg) = argumentos.first() {
                             self.generar_layout_code(arg)
                         } else {
                             "Layout::Spacer(0.0)".to_string()
                         };
-                        format!("Layout::ThemeProvider {{ child: Box::new({}), theme: String::from(\"{}\") }}", child_code, seed)
+                        format!("Layout::ThemeProvider {{ child: Box::new({}), theme: String::from(\"{}\") }}", hijo_code, seed)
                     }
                     "sombra" | "elevated_box" => {
-                        let child_code = if let Some(arg) = argumentos.first() {
+                        let hijo_code = if let Some(arg) = argumentos.first() {
                             self.generar_layout_code(arg)
                         } else {
                             "Layout::Spacer(0.0)".to_string()
@@ -736,11 +736,11 @@ impl Transpiler {
                         } else { 1u8 };
                         format!(
                             "Layout::ElevatedBox {{ child: Box::new({}), level: {}, shape_family: String::from(\"small\") }}",
-                            child_code, nivel
+                            hijo_code, nivel
                         )
                     }
                     "relleno" | "padding" => {
-                        let child_code = if let Some(arg) = argumentos.first() {
+                        let hijo_code = if let Some(arg) = argumentos.first() {
                             self.generar_layout_code(arg)
                         } else {
                             "Layout::Spacer(0.0)".to_string()
@@ -750,24 +750,24 @@ impl Transpiler {
                         } else { 16.0 };
                         format!(
                             "Layout::Padding {{ child: Box::new({}), amount: {} }}",
-                            child_code, cantidad
+                            hijo_code, cantidad
                         )
                     }
                     "expandido" | "expanded" => {
-                        let child_code = if let Some(arg) = argumentos.first() {
+                        let hijo_code = if let Some(arg) = argumentos.first() {
                             self.generar_layout_code(arg)
                         } else {
                             "Layout::Spacer(0.0)".to_string()
                         };
-                        format!("Layout::Expanded {{ child: Box::new({}) }}", child_code)
+                        format!("Layout::Expanded {{ child: Box::new({}) }}", hijo_code)
                     }
                     "centrado" | "centered" => {
-                        let child_code = if let Some(arg) = argumentos.first() {
+                        let hijo_code = if let Some(arg) = argumentos.first() {
                             self.generar_layout_code(arg)
                         } else {
                             "Layout::Spacer(0.0)".to_string()
                         };
-                        format!("Layout::Centered {{ child: Box::new({}) }}", child_code)
+                        format!("Layout::Centered {{ child: Box::new({}) }}", hijo_code)
                     }
                     // ===== INDICADORES =====
                     "barra_progreso_linear" | "progress_bar_linear" | "lineal_progreso" => {
@@ -778,12 +778,12 @@ impl Transpiler {
                         "Layout::LinearProgress { variable: String::from(\"\"), indeterminado: true }".to_string()
                     }
                     "circulo_progreso" | "circular_progress" | "cargando_circular" => {
-                        let size = argumentos.first().map_or(48.0, Self::extraer_f64_valor);
-                        format!("Layout::CircularProgress {{ variable: String::from(\"\"), size: {}, indeterminado: true }}", size)
+                        let tamano = argumentos.first().map_or(48.0, Self::extraer_f64_valor);
+                        format!("Layout::CircularProgress {{ variable: String::from(\"\"), size: {}, indeterminado: true }}", tamano)
                     }
                     "distintivo" | "badge" | "insignia" => {
                         let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() {
-                            self.esc_ast_string(s)
+                            self.esc_ast_texto(s)
                         } else { String::new() };
                         format!("Layout::Badge {{ child: Box::new(Layout::Spacer(0.0)), valor: Some(String::from(\"{}\")), dot: false }}", texto)
                     }
@@ -802,32 +802,32 @@ impl Transpiler {
                         "Layout::Skeleton { ancho: 200.0, alto: 16.0, tipo: String::from(\"line\") }".to_string()
                     }
                     "estado_vacio" | "empty_state" | "sin_datos" => {
-                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "Sin datos".to_string() };
-                        let icono = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { "inbox".to_string() } } else { "inbox".to_string() };
+                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { "Sin datos".to_string() };
+                        let icono = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_texto(s) } else { "inbox".to_string() } } else { "inbox".to_string() };
                         format!("Layout::EmptyState {{ icono: String::from(\"{}\"), mensaje: String::from(\"{}\"), accion_texto: None, accion_cb: None }}", icono, mensaje)
                     }
                     "estado_error" | "error_state" | "error" => {
-                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "Error".to_string() };
+                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { "Error".to_string() };
                         format!("Layout::ErrorState {{ mensaje: String::from(\"{}\"), on_retry: None }}", mensaje)
                     }
 
                     // ===== AVATARES =====
                     "avatar" | "avatar_text" | "avatar_texto" => {
-                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::Avatar {{ texto: String::from(\"{}\"), variant: AvatarVariant::Text, tamano: 40.0 }}", texto)
                     }
                     "avatar_icono" | "avatar_icon" => {
-                        let icono = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let icono = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::Avatar {{ texto: String::from(\"{}\"), variant: AvatarVariant::Icon, tamano: 40.0 }}", icono)
                     }
                     "avatar_imagen" | "avatar_image" | "avatar_img" => {
-                        let url = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let url = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::Avatar {{ texto: String::from(\"{}\"), variant: AvatarVariant::Image, tamano: 40.0 }}", url)
                     }
                     "grupo_avatar" | "avatar_group" | "grupo_avatares" => {
                         let hijos: Vec<String> = argumentos.iter().map(|a| {
                             match a {
-                                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_string(s)),
+                                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_texto(s)),
                                 _ => String::from("String::from(\"?\")"),
                             }
                         }).collect();
@@ -849,8 +849,8 @@ impl Transpiler {
                         format!("Layout::NavigationBar {{ items: vec![{}], seleccion: 0, on_change: String::new() }}", items.join(", "))
                     }
                     "item_navegacion" | "nav_item" | "item_nav" => {
-                        let icono = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
-                        let texto = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { String::new() } } else { String::new() };
+                        let icono = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
+                        let texto = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_texto(s) } else { String::new() } } else { String::new() };
                         format!("Layout::NavItem {{ icono: String::from(\"{}\"), texto: String::from(\"{}\"), selected: false, on_click: None }}", icono, texto)
                     }
                     "riel_navegacion" | "navigation_rail" | "nav_rail" | "barra_lateral" => {
@@ -866,44 +866,44 @@ impl Transpiler {
                         format!("Layout::NavigationDrawer {{ items: vec![{}], seleccion: 0, on_change: String::new(), modal: true, visible: String::from(\"drawer_visible\") }}", items.join(", "))
                     }
                     "barra_superior" | "top_app_bar" | "barra_titulo" | "app_bar" => {
-                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Small }}", titulo)
                     }
                     "barra_superior_mediana" | "medium_top_bar" => {
-                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Medium }}", titulo)
                     }
                     "barra_superior_grande" | "large_top_bar" => {
-                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Large }}", titulo)
                     }
                     "pestanas" | "tabs_widget" | "tabs" => {
                         let items: Vec<String> = argumentos.iter().map(|a| {
                             match a {
-                                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_string(s)),
+                                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_texto(s)),
                                 _ => String::from("String::new()"),
                             }
                         }).collect();
                         format!("Layout::Tabs {{ tabs: vec![{}], seleccion: 0, on_change: String::from(\"tab_change\"), scrollable: false }}", items.join(", "))
                     }
                     "barra_busqueda" | "search_bar" | "buscador" => {
-                        let placeholder = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "Buscar...".to_string() };
+                        let placeholder = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { "Buscar...".to_string() };
                         format!("Layout::SearchBar {{ placeholder: String::from(\"{}\"), on_search: String::new(), variable: String::from(\"busqueda\") }}", placeholder)
                     }
 
                     // ===== FEEDBACK =====
                     "dialogo_alerta" | "dialog_alert" | "alerta" => {
-                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
-                        let mensaje = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { String::new() } } else { String::new() };
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
+                        let mensaje = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_texto(s) } else { String::new() } } else { String::new() };
                         format!("Layout::DialogAlert {{ titulo: String::from(\"{}\"), mensaje: String::from(\"{}\"), confirmar_texto: String::from(\"OK\"), cancelar_texto: String::from(\"Cancelar\"), on_confirm: String::new(), on_cancel: String::new() }}", titulo, mensaje)
                     }
                     "dialogo_confirmacion" | "dialog_confirm" | "confirmacion" => {
-                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
-                        let mensaje = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { String::new() } } else { String::new() };
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
+                        let mensaje = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_texto(s) } else { String::new() } } else { String::new() };
                         format!("Layout::DialogAlert {{ titulo: String::from(\"{}\"), mensaje: String::from(\"{}\"), confirmar_texto: String::from(\"Confirmar\"), cancelar_texto: String::from(\"Cancelar\"), on_confirm: String::new(), on_cancel: String::new() }}", titulo, mensaje)
                     }
                     "hoja_inferior" | "bottom_sheet" | "sheet" | "panel_inferior" => {
-                        let visible = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "sheet_visible".to_string() };
+                        let visible = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { "sheet_visible".to_string() };
                         let hijos: Vec<String> = if argumentos.len() > 1 {
                             argumentos[1..].iter().map(|a| self.generar_layout_code(a)).collect()
                         } else { vec![] };
@@ -911,11 +911,11 @@ impl Transpiler {
                             hijos.join(", "), visible)
                     }
                     "snackbar" | "notification" | "notificacion" => {
-                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         format!("Layout::Snackbar {{ mensaje: String::from(\"{}\"), accion_texto: None, accion_callback: None, duracion: 4000.0, visible: String::from(\"snack_visible\") }}", mensaje)
                     }
                     "informacion" | "tooltip" | "info" => {
-                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_texto(s) } else { String::new() };
                         let hijo = if argumentos.len() > 1 { self.generar_layout_code(&argumentos[1]) } else { "Layout::Spacer(0.0)".to_string() };
                         format!("Layout::Tooltip {{ child: Box::new({}), texto: String::from(\"{}\") }}", hijo, texto)
                     }
@@ -1107,7 +1107,7 @@ impl Transpiler {
                     }
                 }
 
-                let campos_info: Vec<(String, String)> = campos
+                let campos_informacion: Vec<(String, String)> = campos
                     .iter()
                     .map(|c| {
                         let tipo = tipos_campos
@@ -1118,13 +1118,14 @@ impl Transpiler {
                     })
                     .collect();
 
-                let metodos_info: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
+                let metodos_informacion: Vec<String> =
+                    metodos.iter().map(|m| m.nombre.clone()).collect();
 
                 self.clases.insert(
                     nombre.clone(),
                     ClaseInfo {
-                        campos: campos_info,
-                        metodos: metodos_info,
+                        campos: campos_informacion,
+                        metodos: metodos_informacion,
                         tipos_campos,
                         invariantes: invariantes.clone(),
                     },
@@ -1207,16 +1208,16 @@ impl Transpiler {
                 };
 
                 // Generar #[derive(...)] desde @derive(Mostrar, Igual, ...)
-                self.emit_derive_from_atributos(atributos);
+                self.emitir_derive_from_atributos(atributos);
 
                 // Generar struct
-                self.emit_line("#[derive(Debug)]");
-                self.emit_line(&format!("struct {}{} {{", nombre, gen_params_str));
-                self.indent();
+                self.emitir_linea("#[derive(Debug)]");
+                self.emitir_linea(&format!("struct {}{} {{", nombre, gen_params_str));
+                self.sangria();
 
                 for campo in campos {
                     if campo.nombre.is_empty() || campo.nombre == ":" {
-                        self.errors.push(ErrorForja::new(
+                        self.errores.push(ErrorForja::nuevo(
                             ErrorTipo::ErrorSemantico,
                             0,
                             0,
@@ -1226,45 +1227,45 @@ impl Transpiler {
                         continue;
                     }
                     let tipo = self.inferir_tipo_campo(campo);
-                    self.emit_line(&format!("{}: {},", campo.nombre, tipo));
+                    self.emitir_linea(&format!("{}: {},", campo.nombre, tipo));
                 }
 
                 // Si no hay campos, agregar un placeholder
                 if campos.is_empty() {
-                    self.emit_line("// Campos de la clase");
+                    self.emitir_linea("// Campos de la clase");
                 }
 
                 self.dedent();
-                self.emit_line("}");
-                self.emit_line("");
+                self.emitir_linea("}");
+                self.emitir_linea("");
 
                 // Generar impl con genéricos
                 if parametros_tipo.is_empty() {
-                    self.emit_line(&format!("impl {} {{", nombre));
+                    self.emitir_linea(&format!("impl {} {{", nombre));
                 } else {
                     let gen_names: Vec<String> =
                         parametros_tipo.iter().map(|p| p.nombre.clone()).collect();
                     let gen_params = format!("<{}>", gen_names.join(", "));
-                    self.emit_line(&format!("impl{} {}{} {{", gen_params, nombre, gen_params));
+                    self.emitir_linea(&format!("impl{} {}{} {{", gen_params, nombre, gen_params));
                 }
-                self.indent();
+                self.sangria();
 
                 for metodo in metodos {
                     self.generar_metodo(metodo, nombre);
-                    self.emit_line("");
+                    self.emitir_linea("");
                 }
 
                 self.dedent();
-                self.emit_line("}");
-                self.emit_line("");
+                self.emitir_linea("}");
+                self.emitir_linea("");
             }
         }
     }
 
     fn inferir_tipo_campo(&self, campo: &VariableClase) -> String {
         // Buscar el tipo inferido desde el constructor (recolectar_clases)
-        for info in self.clases.values() {
-            if let Some(tipo) = info.tipos_campos.get(&campo.nombre) {
+        for informacion in self.clases.values() {
+            if let Some(tipo) = informacion.tipos_campos.get(&campo.nombre) {
                 return tipo.clone();
             }
         }
@@ -1293,8 +1294,8 @@ impl Transpiler {
                 })
                 .collect();
 
-            self.emit_line(&format!("fn nuevo({}) -> Self {{", params.join(", ")));
-            self.indent();
+            self.emitir_linea(&format!("fn nuevo({}) -> Self {{", params.join(", ")));
+            self.sangria();
 
             // Generar inicialización de campos basada en el cuerpo del constructor
             // Busca patrones: este.campo = param → Self { campo: param }
@@ -1329,19 +1330,19 @@ impl Transpiler {
                 .collect();
 
             if campos_inicializar.is_empty() {
-                self.emit_line(&format!("{} {{ }}", nombre_clase));
+                self.emitir_linea(&format!("{} {{ }}", nombre_clase));
             } else {
-                self.emit_line(&format!("{} {{", nombre_clase));
-                self.indent();
+                self.emitir_linea(&format!("{} {{", nombre_clase));
+                self.sangria();
                 for (campo, valor) in &campos_inicializar {
-                    self.emit_line(&format!("{}: {},", campo, valor));
+                    self.emitir_linea(&format!("{}: {},", campo, valor));
                 }
                 self.dedent();
-                self.emit_line("}");
+                self.emitir_linea("}");
             }
 
             self.dedent();
-            self.emit_line("}");
+            self.emitir_linea("}");
         } else {
             // Método normal: fn nombre(&self, ...)
             let params: Vec<String> = metodo
@@ -1386,37 +1387,37 @@ impl Transpiler {
 
             sig.push_str(" {");
 
-            self.emit_line(&sig);
-            self.indent();
+            self.emitir_linea(&sig);
+            self.sangria();
 
             // ─── Invariantes de clase (al inicio del método) ─────────
             let invariantes = self
                 .clases
                 .get(nombre_clase)
-                .map(|info| info.invariantes.clone())
+                .map(|informacion| informacion.invariantes.clone())
                 .unwrap_or_default();
             if !invariantes.is_empty() {
-                self.emit_line("// ═══ Invariantes ═══");
+                self.emitir_linea("// ═══ Invariantes ═══");
                 for c in &invariantes {
                     let cond = self.transpilar_expresion(&c.condicion);
                     let msg = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Invariante falló".to_string());
-                    self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
                 }
             }
 
             // ─── Precondiciones del método ───────────────────────────
             if !metodo.precondiciones.is_empty() {
-                self.emit_line("// ═══ Precondiciones ═══");
+                self.emitir_linea("// ═══ Precondiciones ═══");
                 for c in &metodo.precondiciones {
                     let cond = self.transpilar_expresion(&c.condicion);
                     let msg = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Precondición falló".to_string());
-                    self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
                 }
             }
 
@@ -1426,17 +1427,17 @@ impl Transpiler {
                 self.recolectar_vars_anterior(&c.condicion, &mut vars_anterior);
             }
             for var in &vars_anterior {
-                self.emit_line(&format!("let _anterior_{} = {}.clone();", var, var));
+                self.emitir_linea(&format!("let _anterior_{} = {}.clone();", var, var));
             }
 
             // ─── Guardar estado de postcondiciones ────────────────────
-            let prev_postcondiciones = std::mem::take(&mut self.postcondiciones_actuales);
-            let prev_modo = self.modo_postcondiciones;
+            let anterior_postcondiciones = std::mem::take(&mut self.postcondiciones_actuales);
+            let anterior_modo = self.modo_postcondiciones;
             if !metodo.postcondiciones.is_empty() {
                 self.postcondiciones_actuales = metodo.postcondiciones.clone();
                 self.modo_postcondiciones = true;
             }
-            let prev_tiene_resultado = self.tiene_resultado_var;
+            let anterior_tiene_resultado = self.tiene_resultado_var;
             self.tiene_resultado_var = metodo.parametros.iter().any(|p| p.nombre == "resultado")
                 || existe_variable_resultado(&metodo.cuerpo);
 
@@ -1444,27 +1445,27 @@ impl Transpiler {
                 self.transpilar_declaracion(decl);
             }
 
-            self.tiene_resultado_var = prev_tiene_resultado;
+            self.tiene_resultado_var = anterior_tiene_resultado;
 
             // ─── Invariantes al final del método ──────────────────────
             if !invariantes.is_empty() {
-                self.emit_line("// ═══ Invariantes ═══");
+                self.emitir_linea("// ═══ Invariantes ═══");
                 for c in &invariantes {
                     let cond = self.transpilar_expresion(&c.condicion);
                     let msg = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Invariante falló".to_string());
-                    self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
                 }
             }
 
             // Restaurar estado de postcondiciones
-            self.postcondiciones_actuales = prev_postcondiciones;
-            self.modo_postcondiciones = prev_modo;
+            self.postcondiciones_actuales = anterior_postcondiciones;
+            self.modo_postcondiciones = anterior_modo;
 
             self.dedent();
-            self.emit_line("}");
+            self.emitir_linea("}");
         }
     }
 
@@ -1780,18 +1781,18 @@ impl Transpiler {
                     decl_str.push_str(&self.transpilar_expresion(val));
                 }
 
-                self.emit_line(&format!("{};", decl_str));
+                self.emitir_linea(&format!("{};", decl_str));
             }
 
             Declaracion::Asignacion { nombre, valor, .. } => {
                 let val_str = self.transpilar_expresion(valor);
                 if self.usa_gui() && self.es_variable_global(nombre) {
-                    self.emit_line(&format!(
+                    self.emitir_linea(&format!(
                         "GLOBALS_{}.with(|g| *g.borrow_mut() = {});",
                         nombre, val_str
                     ));
                 } else {
-                    self.emit_line(&format!("{} = {};", nombre, val_str));
+                    self.emitir_linea(&format!("{} = {};", nombre, val_str));
                 }
             }
 
@@ -1803,7 +1804,7 @@ impl Transpiler {
             } => {
                 let obj_str = self.transpilar_expresion(objeto);
                 let val_str = self.transpilar_expresion(valor);
-                self.emit_line(&format!("{}.{} = {};", obj_str, miembro, val_str));
+                self.emitir_linea(&format!("{}.{} = {};", obj_str, miembro, val_str));
             }
 
             Declaracion::AsignacionIndex {
@@ -1814,7 +1815,7 @@ impl Transpiler {
             } => {
                 let idx_str = self.transpilar_expresion(indice);
                 let val_str = self.transpilar_expresion(valor);
-                self.emit_line(&format!("{}[{}] = {};", nombre, idx_str, val_str));
+                self.emitir_linea(&format!("{}[{}] = {};", nombre, idx_str, val_str));
             }
 
             Declaracion::Funcion {
@@ -1832,12 +1833,12 @@ impl Transpiler {
                 // Emitir doc comment si existe
                 if let Some(doc_text) = doc {
                     for line in doc_text.lines() {
-                        self.emit_line(&format!("/// {}", line));
+                        self.emitir_linea(&format!("/// {}", line));
                     }
                 }
                 // Emitir #[test] si la función tiene @test
                 if atributos.iter().any(|a| a.nombre == "test") {
-                    self.emit_line("#[test]");
+                    self.emitir_linea("#[test]");
                 }
                 // Inferir tipos de parámetros desde el cuerpo de la función
                 let tipos_inferidos = self.inferir_tipos_desde_cuerpo(cuerpo, parametros);
@@ -1888,25 +1889,25 @@ impl Transpiler {
                     String::new()
                 };
 
-                self.emit_line(&format!(
+                self.emitir_linea(&format!(
                     "fn {}{}({}){} {{",
                     nombre,
                     gen_params_str,
                     params.join(", "),
                     ret_str
                 ));
-                self.indent();
+                self.sangria();
 
                 // ─── Precondiciones ───────────────────────────────────────
                 if !precondiciones.is_empty() {
-                    self.emit_line("// ═══ Precondiciones ═══");
+                    self.emitir_linea("// ═══ Precondiciones ═══");
                     for c in precondiciones {
                         let cond = self.transpilar_expresion(&c.condicion);
                         let msg = c
                             .mensaje
                             .clone()
                             .unwrap_or_else(|| "Precondición falló".to_string());
-                        self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                        self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
                     }
                 }
 
@@ -1916,12 +1917,12 @@ impl Transpiler {
                     self.recolectar_vars_anterior(&c.condicion, &mut vars_anterior);
                 }
                 for var in &vars_anterior {
-                    self.emit_line(&format!("let _anterior_{} = {}.clone();", var, var));
+                    self.emitir_linea(&format!("let _anterior_{} = {}.clone();", var, var));
                 }
 
                 // ─── Guardar estado de postcondiciones ────────────────────
-                let prev_postcondiciones = std::mem::take(&mut self.postcondiciones_actuales);
-                let prev_modo = self.modo_postcondiciones;
+                let anterior_postcondiciones = std::mem::take(&mut self.postcondiciones_actuales);
+                let anterior_modo = self.modo_postcondiciones;
                 if !postcondiciones.is_empty() {
                     self.postcondiciones_actuales = postcondiciones.clone();
                     self.modo_postcondiciones = true;
@@ -1932,7 +1933,7 @@ impl Transpiler {
                 let declaraciones_previas = std::mem::take(&mut self.declaraciones_globales);
                 self.declaraciones_globales = cuerpo.clone();
 
-                let prev_tiene_resultado = self.tiene_resultado_var;
+                let anterior_tiene_resultado = self.tiene_resultado_var;
                 self.tiene_resultado_var = parametros.iter().any(|p| p.nombre == "resultado")
                     || existe_variable_resultado(cuerpo);
 
@@ -1940,20 +1941,20 @@ impl Transpiler {
                     self.transpilar_declaracion(d);
                 }
 
-                self.tiene_resultado_var = prev_tiene_resultado;
+                self.tiene_resultado_var = anterior_tiene_resultado;
 
                 // Restaurar contexto anterior
                 self.declaraciones_globales = declaraciones_previas;
-                self.postcondiciones_actuales = prev_postcondiciones;
-                self.modo_postcondiciones = prev_modo;
+                self.postcondiciones_actuales = anterior_postcondiciones;
+                self.modo_postcondiciones = anterior_modo;
 
                 self.dedent();
-                self.emit_line("}");
+                self.emitir_linea("}");
             }
 
             Declaracion::Rasgo { nombre, metodos } => {
-                self.emit_line(&format!("trait {} {{", nombre));
-                self.indent();
+                self.emitir_linea(&format!("trait {} {{", nombre));
+                self.sangria();
                 for metodo in metodos {
                     let params: Vec<String> = metodo
                         .parametros
@@ -1976,7 +1977,7 @@ impl Transpiler {
                         Some(t) => format!(" -> {}", self.tipo_a_rust(t)),
                         None => String::new(),
                     };
-                    self.emit_line(&format!(
+                    self.emitir_linea(&format!(
                         "fn {}({}){};",
                         metodo.nombre,
                         params.join(", "),
@@ -1984,8 +1985,8 @@ impl Transpiler {
                     ));
                 }
                 self.dedent();
-                self.emit_line("}");
-                self.emit_line("");
+                self.emitir_linea("}");
+                self.emitir_linea("");
             }
 
             Declaracion::Implementacion {
@@ -1993,15 +1994,15 @@ impl Transpiler {
                 clase_nombre,
                 metodos,
             } => {
-                self.emit_line(&format!("impl {} for {} {{", rasgo_nombre, clase_nombre));
-                self.indent();
+                self.emitir_linea(&format!("impl {} for {} {{", rasgo_nombre, clase_nombre));
+                self.sangria();
                 for metodo in metodos {
                     self.generar_metodo(metodo, clase_nombre);
-                    self.emit_line("");
+                    self.emitir_linea("");
                 }
                 self.dedent();
-                self.emit_line("}");
-                self.emit_line("");
+                self.emitir_linea("}");
+                self.emitir_linea("");
             }
 
             Declaracion::Clase { .. } => {
@@ -2009,7 +2010,7 @@ impl Transpiler {
             }
 
             Declaracion::Importar(ruta) => {
-                self.emit_line(&format!("// importar \"{}\"", ruta));
+                self.emitir_linea(&format!("// importar \"{}\"", ruta));
             }
 
             Declaracion::Enum {
@@ -2018,7 +2019,7 @@ impl Transpiler {
                 atributos,
             } => {
                 // Generar #[derive(...)] desde @derive(Mostrar, Igual, ...)
-                self.emit_derive_from_atributos(atributos);
+                self.emitir_derive_from_atributos(atributos);
                 let vars: Vec<String> = variantes
                     .iter()
                     .map(|v| {
@@ -2031,14 +2032,14 @@ impl Transpiler {
                         }
                     })
                     .collect();
-                self.emit_line(&format!("enum {} {{", nombre));
-                self.indent();
+                self.emitir_linea(&format!("enum {} {{", nombre));
+                self.sangria();
                 for v in &vars {
-                    self.emit_line(&format!("{},", v));
+                    self.emitir_linea(&format!("{},", v));
                 }
                 self.dedent();
-                self.emit_line("}");
-                self.emit_line("");
+                self.emitir_linea("}");
+                self.emitir_linea("");
             }
 
             Declaracion::Si {
@@ -2047,8 +2048,8 @@ impl Transpiler {
                 bloque_falso,
             } => {
                 let cond_str = self.transpilar_expresion(condicion);
-                self.emit_line(&format!("if {} {{", cond_str));
-                self.indent();
+                self.emitir_linea(&format!("if {} {{", cond_str));
+                self.sangria();
 
                 for d in bloque_verdadero {
                     self.transpilar_declaracion(d);
@@ -2057,46 +2058,46 @@ impl Transpiler {
                 self.dedent();
 
                 if let Some(bloque_falso) = bloque_falso {
-                    self.emit_line("} else {");
-                    self.indent();
+                    self.emitir_linea("} else {");
+                    self.sangria();
 
                     for d in bloque_falso {
                         self.transpilar_declaracion(d);
                     }
 
                     self.dedent();
-                    self.emit_line("}");
+                    self.emitir_linea("}");
                 } else {
-                    self.emit_line("}");
+                    self.emitir_linea("}");
                 }
             }
 
             Declaracion::Mientras { condicion, bloque } => {
                 let cond_str = self.transpilar_expresion(condicion);
-                self.emit_line(&format!("while {} {{", cond_str));
-                self.indent();
+                self.emitir_linea(&format!("while {} {{", cond_str));
+                self.sangria();
 
                 for d in bloque {
                     self.transpilar_declaracion(d);
                 }
 
                 self.dedent();
-                self.emit_line("}");
+                self.emitir_linea("}");
             }
 
             Declaracion::Cuando {
                 condicion, cuerpo, ..
             } => {
                 let cond_str = self.transpilar_expresion(condicion);
-                self.emit_line(&format!("if {} {{", cond_str));
-                self.indent();
+                self.emitir_linea(&format!("if {} {{", cond_str));
+                self.sangria();
 
                 for d in cuerpo {
                     self.transpilar_declaracion(d);
                 }
 
                 self.dedent();
-                self.emit_line("}");
+                self.emitir_linea("}");
             }
 
             Declaracion::Para {
@@ -2125,23 +2126,23 @@ impl Transpiler {
                         {
                             // Patrón detectado: for x in 0..N
                             let range_end = self.transpilar_expresion(derecha);
-                            self.emit_line(&format!("for {} in 0..{} {{", var_name, range_end));
-                            self.indent();
+                            self.emitir_linea(&format!("for {} in 0..{} {{", var_name, range_end));
+                            self.sangria();
 
                             for d in bloque {
                                 self.transpilar_declaracion(d);
                             }
 
                             self.dedent();
-                            self.emit_line("}");
+                            self.emitir_linea("}");
                             return;
                         }
                     }
                 }
 
                 // Fallback: generar como while
-                let _temp_name = format!("__para_{}", self.temp_counter);
-                self.temp_counter += 1;
+                let temporal_name = format!("__para_{}", self.temporal_counter);
+                self.temporal_counter += 1;
 
                 if let Some(init) = inicializacion {
                     self.transpilar_declaracion(init);
@@ -2153,8 +2154,8 @@ impl Transpiler {
                     "true".to_string()
                 };
 
-                self.emit_line(&format!("while {} {{", cond_str));
-                self.indent();
+                self.emitir_linea(&format!("while {} {{", cond_str));
+                self.sangria();
 
                 // Generar el bloque encerrado en una lambda o scope para el continue
                 // Por simplicidad genera el bloque directamente
@@ -2167,20 +2168,20 @@ impl Transpiler {
                 }
 
                 self.dedent();
-                self.emit_line("}");
+                self.emitir_linea("}");
             }
 
             Declaracion::Repetir { cantidad, bloque } => {
                 let cantidad_str = self.transpilar_expresion(cantidad);
-                self.emit_line(&format!("for _ in 0..{} {{", cantidad_str));
-                self.indent();
+                self.emitir_linea(&format!("for _ in 0..{} {{", cantidad_str));
+                self.sangria();
 
                 for d in bloque {
                     self.transpilar_declaracion(d);
                 }
 
                 self.dedent();
-                self.emit_line("}");
+                self.emitir_linea("}");
             }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
@@ -2190,14 +2191,14 @@ impl Transpiler {
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
-                    self.emit_line(&format!("println!(\"{}\", {});", "{}", args.join(", ")));
+                    self.emitir_linea(&format!("println!(\"{}\", {});", "{}", args.join(", ")));
                 } else if nombre == "longitud" {
                     let args: Vec<String> = argumentos
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
                     if args.len() == 1 {
-                        self.emit_line(&format!("{}.len();", args[0]));
+                        self.emitir_linea(&format!("{}.len();", args[0]));
                     }
                 } else if nombre == "BD" {
                     // BD(especificación) → abrir conexión SQLite.
@@ -2207,7 +2208,7 @@ impl Transpiler {
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
                     if let Some(spec) = args.first() {
-                        self.emit_line(&format!(
+                        self.emitir_linea(&format!(
                             "let _conexion_bd: rusqlite::Connection = {{ let espec = {}; if espec == \"sqlite:memoria\" {{ rusqlite::Connection::open_in_memory().expect(\"BD: no se pudo abrir la BD en memoria\") }} else {{ rusqlite::Connection::open(espec).expect(\"BD: no se pudo abrir la BD\") }} }};",
                             spec
                         ));
@@ -2217,40 +2218,40 @@ impl Transpiler {
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
-                    self.emit_line(&format!("unsafe {{ {}({}); }}", nombre, args.join(", ")));
+                    self.emitir_linea(&format!("unsafe {{ {}({}); }}", nombre, args.join(", ")));
                 } else if nombre.ends_with(".enviar") {
                     let obj = nombre.trim_end_matches(".enviar");
                     let args: Vec<String> = argumentos
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
-                    self.emit_line(&format!("{}.send({}).unwrap();", obj, args.join(", ")));
+                    self.emitir_linea(&format!("{}.send({}).unwrap();", obj, args.join(", ")));
                 } else if nombre.ends_with(".recibir") {
                     let obj = nombre.trim_end_matches(".recibir");
-                    self.emit_line(&format!("{}.recv().unwrap();", obj));
+                    self.emitir_linea(&format!("{}.recv().unwrap();", obj));
                 } else if nombre.ends_with(".unir") {
                     let obj = nombre.trim_end_matches(".unir");
-                    self.emit_line(&format!("{}.join().unwrap();", obj));
+                    self.emitir_linea(&format!("{}.join().unwrap();", obj));
                 } else if nombre == "asegurar" || nombre.ends_with(".asegurar") {
                     let args: Vec<String> = argumentos
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
                     if !args.is_empty() {
-                        self.emit_line(&format!("assert!({}, \"Aserción falló\");", args[0]));
+                        self.emitir_linea(&format!("assert!({}, \"Aserción falló\");", args[0]));
                     }
                 } else {
                     let args: Vec<String> = argumentos
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
-                    self.emit_line(&format!("{}({});", nombre, args.join(", ")));
+                    self.emitir_linea(&format!("{}({});", nombre, args.join(", ")));
                 }
             }
 
             Declaracion::AccesoMiembro { objeto, miembro } => {
                 let obj_str = self.transpilar_expresion(objeto);
-                self.emit_line(&format!("{}.{};", obj_str, miembro));
+                self.emitir_linea(&format!("{}.{};", obj_str, miembro));
             }
 
             Declaracion::Retornar { valor, .. } => {
@@ -2258,7 +2259,7 @@ impl Transpiler {
                     let postconds = self.postcondiciones_actuales.clone();
                     if let Some(val) = valor {
                         let val_str = self.transpilar_expresion(val);
-                        self.emit_line(&format!("let _return_value = {};", val_str));
+                        self.emitir_linea(&format!("let _return_value = {};", val_str));
                         // Emitir postcondiciones
                         for c in &postconds {
                             let cond = self.transpilar_expresion(&c.condicion);
@@ -2266,9 +2267,9 @@ impl Transpiler {
                                 .mensaje
                                 .clone()
                                 .unwrap_or_else(|| "Postcondición falló".to_string());
-                            self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                            self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
                         }
-                        self.emit_line("return _return_value;");
+                        self.emitir_linea("return _return_value;");
                     } else {
                         // Sin valor de retorno: emitir postcondiciones y retornar
                         for c in &postconds {
@@ -2277,25 +2278,25 @@ impl Transpiler {
                                 .mensaje
                                 .clone()
                                 .unwrap_or_else(|| "Postcondición falló".to_string());
-                            self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                            self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
                         }
-                        self.emit_line("return;");
+                        self.emitir_linea("return;");
                     }
                 } else {
                     if let Some(val) = valor {
                         let val_str = self.transpilar_expresion(val);
-                        self.emit_line(&format!("return {};", val_str));
+                        self.emitir_linea(&format!("return {};", val_str));
                     } else {
-                        self.emit_line("return;");
+                        self.emitir_linea("return;");
                     }
                 }
             }
 
             Declaracion::Romper => {
-                self.emit_line("break;");
+                self.emitir_linea("break;");
             }
             Declaracion::Continuar => {
-                self.emit_line("continue;");
+                self.emitir_linea("continue;");
             }
 
             Declaracion::AsignacionMultiple {
@@ -2305,19 +2306,19 @@ impl Transpiler {
             } => {
                 let valor_str = self.transpilar_expresion(valor);
                 if *mutable {
-                    self.emit_line(&format!(
+                    self.emitir_linea(&format!(
                         "let mut ({}) = {};",
                         variables.join(", "),
                         valor_str
                     ));
                 } else {
-                    self.emit_line(&format!("let ({}) = {};", variables.join(", "), valor_str));
+                    self.emitir_linea(&format!("let ({}) = {};", variables.join(", "), valor_str));
                 }
             }
 
             Declaracion::Expresion(expr) => {
                 let expr_str = self.transpilar_expresion(expr);
-                self.emit_line(&format!("{};", expr_str));
+                self.emitir_linea(&format!("{};", expr_str));
             }
             Declaracion::ImportarExterna(_) => {}
         }
@@ -2332,7 +2333,7 @@ impl Transpiler {
         self.profundidad_expresion += 1;
         if self.profundidad_expresion > MAX_AST_PROFUNDIDAD {
             self.profundidad_expresion -= 1;
-            self.errors.push(ErrorForja::new(
+            self.errores.push(ErrorForja::nuevo(
                 crate::error::ErrorTipo::ErrorSintactico,
                 0,
                 0,
@@ -2341,9 +2342,9 @@ impl Transpiler {
             ));
             return String::from("/* expresión demasiado grande */ 0");
         }
-        let result = self.transpilar_expresion_inner(expr);
+        let resultado = self.transpilar_expresion_inner(expr);
         self.profundidad_expresion -= 1;
-        result
+        resultado
     }
 
     /// Implementación interna de transpilar_expresion (sin control de profundidad).
@@ -2595,25 +2596,25 @@ impl Transpiler {
 
             Expresion::Coincidir { expr, brazos } => {
                 let expr_str = self.transpilar_expresion(expr);
-                let mut result = format!("match {} {{\n", expr_str);
+                let mut resultado = format!("match {} {{\n", expr_str);
                 for brazo in brazos {
                     let patron_str = self.patron_a_rust(&brazo.patron);
-                    result.push_str(&format!("    {} => {{\n", patron_str));
+                    resultado.push_str(&format!("    {} => {{\n", patron_str));
                     // Save current output state and redirect to capture body
-                    let saved_output = std::mem::take(&mut self.output);
-                    let saved_indent = self.indent_level;
-                    self.indent_level += 2;
+                    let saved_salida = std::mem::take(&mut self.output);
+                    let saved_sangria = self.sangria_level;
+                    self.sangria_level += 2;
                     for decl in &brazo.cuerpo {
                         self.transpilar_declaracion(decl);
                     }
-                    result.push_str(&self.output);
+                    resultado.push_str(&self.output);
                     // Restore state
-                    self.output = saved_output;
-                    self.indent_level = saved_indent;
-                    result.push_str("    },\n");
+                    self.output = saved_salida;
+                    self.sangria_level = saved_sangria;
+                    resultado.push_str("    },\n");
                 }
-                result.push('}');
-                result
+                resultado.push('}');
+                resultado
             }
 
             Expresion::Closure { parametros, cuerpo } => {
@@ -2628,19 +2629,19 @@ impl Transpiler {
             Expresion::Hilo { cuerpo } => {
                 // Generar: thread::spawn(move || { ... })
                 let mut body_parts = Vec::new();
-                let prev_decls = std::mem::take(&mut self.declaraciones_globales);
+                let anterior_decls = std::mem::take(&mut self.declaraciones_globales);
                 self.declaraciones_globales = cuerpo.clone();
-                let prev_output = std::mem::take(&mut self.output);
-                let prev_indent = self.indent_level;
+                let anterior_salida = std::mem::take(&mut self.output);
+                let anterior_sangria = self.sangria_level;
 
                 for d in cuerpo {
                     self.transpilar_declaracion(d);
                 }
 
                 body_parts.push(self.output.clone());
-                self.output = prev_output;
-                self.indent_level = prev_indent;
-                self.declaraciones_globales = prev_decls;
+                self.output = anterior_salida;
+                self.sangria_level = anterior_sangria;
+                self.declaraciones_globales = anterior_decls;
 
                 let body = body_parts.join("").trim().to_string();
                 format!("thread::spawn(move || {{\n{}    \n}})", body)
@@ -2659,16 +2660,16 @@ impl Transpiler {
                 // Usamos un enfoque similar a Hilo: guardar/restaurar output state
                 let mut arms = Vec::new();
                 for brazo in brazos {
-                    let prev_output = std::mem::take(&mut self.output);
-                    let prev_indent = self.indent_level;
+                    let anterior_salida = std::mem::take(&mut self.output);
+                    let anterior_sangria = self.sangria_level;
 
                     for d in &brazo.cuerpo {
                         self.transpilar_declaracion(d);
                     }
 
                     let cuerpo_str = self.output.trim().to_string();
-                    self.output = prev_output;
-                    self.indent_level = prev_indent;
+                    self.output = anterior_salida;
+                    self.sangria_level = anterior_sangria;
 
                     if let Some((var, expr_recv)) = &brazo.recepcion {
                         // caso valor = rx.recibir() { ... }
@@ -2878,7 +2879,7 @@ impl Transpiler {
     // ============================================================
 
     /// Emite #[derive(...)] a partir de atributos @derive(Mostrar, Igual, ...)
-    fn emit_derive_from_atributos(&mut self, atributos: &[Atributo]) {
+    fn emitir_derive_from_atributos(&mut self, atributos: &[Atributo]) {
         if let Some(derive_attr) = atributos.iter().find(|a| a.nombre == "derive") {
             let rasgos: Vec<&String> = derive_attr
                 .argumentos
@@ -2902,7 +2903,7 @@ impl Transpiler {
                         _ => t.to_string(),
                     })
                     .collect();
-                self.emit_line(&format!("#[derive({})]", rust_traits.join(", ")));
+                self.emitir_linea(&format!("#[derive({})]", rust_traits.join(", ")));
             }
         }
     }
@@ -2940,7 +2941,7 @@ impl Transpiler {
                     None => "None".to_string(),
                 };
                 format!("Declaracion::Variable {{ mutable: {}, nombre: String::from(\"{}\"), tipo: {}, valor: {}, linea: {}, columna: {} }}",
-                    mutable, self.esc_ast_string(nombre), tipo_str, valor_str, linea, columna)
+                    mutable, self.esc_ast_texto(nombre), tipo_str, valor_str, linea, columna)
             }
             Declaracion::Asignacion {
                 nombre,
@@ -2949,7 +2950,7 @@ impl Transpiler {
                 columna,
             } => {
                 format!("Declaracion::Asignacion {{ nombre: String::from(\"{}\"), valor: Box::new({}), linea: {}, columna: {} }}",
-                    self.esc_ast_string(nombre), self.generar_ast_expresion(valor), linea, columna)
+                    self.esc_ast_texto(nombre), self.generar_ast_expresion(valor), linea, columna)
             }
             Declaracion::AsignacionMiembro {
                 objeto,
@@ -2959,7 +2960,7 @@ impl Transpiler {
                 columna,
             } => {
                 format!("Declaracion::AsignacionMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\"), valor: Box::new({}), linea: {}, columna: {} }}",
-                    self.generar_ast_expresion(objeto), self.esc_ast_string(miembro), self.generar_ast_expresion(valor), linea, columna)
+                    self.generar_ast_expresion(objeto), self.esc_ast_texto(miembro), self.generar_ast_expresion(valor), linea, columna)
             }
             Declaracion::AsignacionIndex {
                 nombre,
@@ -2969,7 +2970,7 @@ impl Transpiler {
                 columna,
             } => {
                 format!("Declaracion::AsignacionIndex {{ nombre: String::from(\"{}\"), indice: Box::new({}), valor: Box::new({}), linea: {}, columna: {} }}",
-                    self.esc_ast_string(nombre), self.generar_ast_expresion(indice), self.generar_ast_expresion(valor), linea, columna)
+                    self.esc_ast_texto(nombre), self.generar_ast_expresion(indice), self.generar_ast_expresion(valor), linea, columna)
             }
             Declaracion::Funcion {
                 nombre,
@@ -2990,7 +2991,7 @@ impl Transpiler {
                     .map(|p| {
                         format!(
                             "ParametroTipo {{ nombre: String::from(\"{}\"), rasgos: vec![] }}",
-                            self.esc_ast_string(&p.nombre)
+                            self.esc_ast_texto(&p.nombre)
                         )
                     })
                     .collect();
@@ -3000,7 +3001,7 @@ impl Transpiler {
                         None => "None".to_string(),
                     };
                     format!("Parametro {{ nombre: String::from(\"{}\"), tipo: {}, prestado: {}, mutable: {} }}",
-                        self.esc_ast_string(&p.nombre), tipo_str, p.prestado, p.mutable)
+                        self.esc_ast_texto(&p.nombre), tipo_str, p.prestado, p.mutable)
                 }).collect();
                 let ret_str = match tipo_retorno {
                     Some(t) => format!("Some({})", self.tipo_a_ast(t)),
@@ -3011,15 +3012,15 @@ impl Transpiler {
                     .map(|d| self.generar_ast_declaracion(d))
                     .collect();
                 let enlace_str = match enlace_nombre {
-                    Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_string(s)),
+                    Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_texto(s)),
                     None => "None".to_string(),
                 };
                 let docs_str = match doc {
-                    Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_string(s)),
+                    Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_texto(s)),
                     None => "None".to_string(),
                 };
                 format!("Declaracion::Funcion {{ nombre: String::from(\"{}\"), parametros_tipo: vec![{}], parametros: vec![{}], tipo_retorno: {}, cuerpo: vec![{}], externa: {}, asincrona: false, enlace_nombre: {}, atributos: vec![], doc: {}, precondiciones: vec![], postcondiciones: vec![] }}",
-                    self.esc_ast_string(nombre), params_tipo_str.join(", "), params_str.join(", "), ret_str, cuerpo_str.join(", "), externa, enlace_str, docs_str)
+                    self.esc_ast_texto(nombre), params_tipo_str.join(", "), params_str.join(", "), ret_str, cuerpo_str.join(", "), externa, enlace_str, docs_str)
             }
             Declaracion::Expresion(expr) => {
                 format!(
@@ -3033,7 +3034,7 @@ impl Transpiler {
                     .map(|a| self.generar_ast_expresion(a))
                     .collect();
                 format!("Declaracion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
-                    self.esc_ast_string(nombre), args_str.join(", "))
+                    self.esc_ast_texto(nombre), args_str.join(", "))
             }
             Declaracion::Retornar { valor } => match valor {
                 Some(v) => format!(
@@ -3079,7 +3080,7 @@ impl Transpiler {
                 incremento,
                 bloque,
             } => {
-                let init_str = match inicializacion {
+                let inicializar_texto = match inicializacion {
                     Some(d) => format!("Some(Box::new({}))", self.generar_ast_declaracion(d)),
                     None => "None".to_string(),
                 };
@@ -3096,7 +3097,7 @@ impl Transpiler {
                     .map(|d| self.generar_ast_declaracion(d))
                     .collect();
                 format!("Declaracion::Para {{ inicializacion: {}, condicion: {}, incremento: {}, bloque: vec![{}] }}",
-                    init_str, cond_str, inc_str, blk.join(", "))
+                    inicializar_texto, cond_str, inc_str, blk.join(", "))
             }
             Declaracion::Repetir { cantidad, bloque } => {
                 let blk: Vec<String> = bloque
@@ -3125,7 +3126,7 @@ impl Transpiler {
             Declaracion::Importar(ruta) => {
                 format!(
                     "Declaracion::Importar(String::from(\"{}\"))",
-                    self.esc_ast_string(ruta)
+                    self.esc_ast_texto(ruta)
                 )
             }
             Declaracion::AsignacionMultiple {
@@ -3135,14 +3136,14 @@ impl Transpiler {
             } => {
                 let vars_str: Vec<String> = variables
                     .iter()
-                    .map(|v| format!("String::from(\"{}\")", self.esc_ast_string(v)))
+                    .map(|v| format!("String::from(\"{}\")", self.esc_ast_texto(v)))
                     .collect();
                 format!("Declaracion::AsignacionMultiple {{ variables: vec![{}], mutable: {}, valor: Box::new({}) }}",
                     vars_str.join(", "), mutable, self.generar_ast_expresion(valor))
             }
             Declaracion::AccesoMiembro { objeto, miembro } => {
                 format!("Declaracion::AccesoMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\") }}",
-                    self.generar_ast_expresion(objeto), self.esc_ast_string(miembro))
+                    self.generar_ast_expresion(objeto), self.esc_ast_texto(miembro))
             }
             _ => "// Declaracion omitida (generacion directa)".to_string(),
         }
@@ -3168,7 +3169,7 @@ impl Transpiler {
             }
             Expresion::LiteralTexto(s) => format!(
                 "Expresion::LiteralTexto(String::from(\"{}\"))",
-                self.esc_ast_string(s)
+                self.esc_ast_texto(s)
             ),
             Expresion::LiteralBooleano(b) => format!("Expresion::LiteralBooleano({})", b),
             Expresion::LiteralNulo => "Expresion::LiteralNulo".to_string(),
@@ -3199,7 +3200,7 @@ impl Transpiler {
             }
             Expresion::Identificador { nombre, linea, columna } => format!(
                 "Expresion::Identificador {{ nombre: String::from(\"{}\"), linea: {}, columna: {} }}",
-                self.esc_ast_string(nombre), linea, columna
+                self.esc_ast_texto(nombre), linea, columna
             ),
             Expresion::Binaria {
                 izquierda,
@@ -3237,7 +3238,7 @@ impl Transpiler {
                     .map(|a| self.generar_ast_expresion(a))
                     .collect();
                 format!("Expresion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
-                    self.esc_ast_string(nombre), args.join(", "))
+                    self.esc_ast_texto(nombre), args.join(", "))
             }
             Expresion::LlamadaMetodo {
                 objeto,
@@ -3251,13 +3252,13 @@ impl Transpiler {
                 format!(
                     "Expresion::LlamadaMetodo {{ objeto: Box::new({}), metodo: String::from(\"{}\"), argumentos: vec![{}] }}",
                     self.generar_ast_expresion(objeto),
-                    self.esc_ast_string(metodo),
+                    self.esc_ast_texto(metodo),
                     args.join(", ")
                 )
             }
             Expresion::AccesoMiembro { objeto, miembro } => {
                 format!("Expresion::AccesoMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\") }}",
-                    self.generar_ast_expresion(objeto), self.esc_ast_string(miembro))
+                    self.generar_ast_expresion(objeto), self.esc_ast_texto(miembro))
             }
             Expresion::Instanciacion { clase, argumentos } => {
                 let args: Vec<String> = argumentos
@@ -3265,7 +3266,7 @@ impl Transpiler {
                     .map(|a| self.generar_ast_expresion(a))
                     .collect();
                 format!("Expresion::Instanciacion {{ clase: String::from(\"{}\"), argumentos: vec![{}] }}",
-                    self.esc_ast_string(clase), args.join(", "))
+                    self.esc_ast_texto(clase), args.join(", "))
             }
             Expresion::Referencia { expr: e, mutable } => {
                 format!(
@@ -3319,7 +3320,7 @@ impl Transpiler {
             ),
             Expresion::Asignacion { variable, valor } => {
                 format!("Expresion::Asignacion {{ variable: String::from(\"{}\"), valor: Box::new({}) }}",
-                    self.esc_ast_string(variable), self.generar_ast_expresion(valor))
+                    self.esc_ast_texto(variable), self.generar_ast_expresion(valor))
             }
             Expresion::AsignacionCampo {
                 objeto,
@@ -3327,7 +3328,7 @@ impl Transpiler {
                 valor,
             } => {
                 format!("Expresion::AsignacionCampo {{ objeto: Box::new({}), campo: String::from(\"{}\"), valor: Box::new({}) }}",
-                    self.generar_ast_expresion(objeto), self.esc_ast_string(campo), self.generar_ast_expresion(valor))
+                    self.generar_ast_expresion(objeto), self.esc_ast_texto(campo), self.generar_ast_expresion(valor))
             }
             Expresion::ArraySet { array, valor } => {
                 format!(
@@ -3395,7 +3396,7 @@ impl Transpiler {
                         None => "None".to_string(),
                     };
                     format!("Parametro {{ nombre: String::from(\"{}\"), tipo: {}, prestado: {}, mutable: {} }}",
-                        self.esc_ast_string(&p.nombre), tipo_str, p.prestado, p.mutable)
+                        self.esc_ast_texto(&p.nombre), tipo_str, p.prestado, p.mutable)
                 }).collect();
                 let cuerpo_str: Vec<String> = cuerpo
                     .iter()
@@ -3452,7 +3453,7 @@ impl Transpiler {
             Tipo::Booleano => "Tipo::Booleano".to_string(),
             Tipo::Nulo => "Tipo::Nulo".to_string(),
             Tipo::Exacto => "Tipo::Exacto".to_string(),
-            Tipo::Clase(n) => format!("Tipo::Clase(String::from(\"{}\"))", self.esc_ast_string(n)),
+            Tipo::Clase(n) => format!("Tipo::Clase(String::from(\"{}\"))", self.esc_ast_texto(n)),
             Tipo::Arreglo(t) => format!("Tipo::Arreglo(Box::new({}))", self.tipo_a_ast(t)),
             Tipo::Funcion(params, ret) => {
                 let p: Vec<String> = params.iter().map(|t| self.tipo_a_ast(t)).collect();
@@ -3470,11 +3471,11 @@ impl Transpiler {
             Tipo::Opcion(inner) => format!("Tipo::Opcion(Box::new({}))", self.tipo_a_ast(inner)),
             Tipo::RasgoObjeto(n) => format!(
                 "Tipo::RasgoObjeto(String::from(\"{}\"))",
-                self.esc_ast_string(n)
+                self.esc_ast_texto(n)
             ),
             Tipo::Parametro(n) => format!(
                 "Tipo::Parametro(String::from(\"{}\"))",
-                self.esc_ast_string(n)
+                self.esc_ast_texto(n)
             ),
         }
     }
@@ -3483,13 +3484,13 @@ impl Transpiler {
         match patron {
             Patron::Variable(n) => format!(
                 "Patron::Variable(String::from(\"{}\"))",
-                self.esc_ast_string(n)
+                self.esc_ast_texto(n)
             ),
             Patron::Constructor(n, ps) => {
                 let sub: Vec<String> = ps.iter().map(|p| self.patron_a_ast(p)).collect();
                 format!(
                     "Patron::Constructor(String::from(\"{}\"), vec![{}])",
-                    self.esc_ast_string(n),
+                    self.esc_ast_texto(n),
                     sub.join(", ")
                 )
             }
@@ -3498,29 +3499,29 @@ impl Transpiler {
         }
     }
 
-    fn esc_ast_string(&self, s: &str) -> String {
+    fn esc_ast_texto(&self, s: &str) -> String {
         s.replace('\\', "\\\\").replace('"', "\\\"")
     }
 
     #[allow(dead_code)]
-    fn emit(&mut self, texto: &str) {
+    fn emitir(&mut self, texto: &str) {
         self.output.push_str(texto);
     }
 
-    fn emit_line(&mut self, texto: &str) {
-        let indent = "    ".repeat(self.indent_level);
-        self.output.push_str(&indent);
+    fn emitir_linea(&mut self, texto: &str) {
+        let sangria = "    ".repeat(self.sangria_level);
+        self.output.push_str(&sangria);
         self.output.push_str(texto);
         self.output.push('\n');
     }
 
-    fn indent(&mut self) {
-        self.indent_level += 1;
+    fn sangria(&mut self) {
+        self.sangria_level += 1;
     }
 
     fn dedent(&mut self) {
-        if self.indent_level > 0 {
-            self.indent_level -= 1;
+        if self.sangria_level > 0 {
+            self.sangria_level -= 1;
         }
     }
 }
@@ -3532,211 +3533,211 @@ mod tests {
     use crate::parser::Parser;
     use crate::semantics::PrestamoChecker;
 
-    fn transpilar_source(source: &str) -> Result<String, Vec<ErrorForja>> {
-        let mut lexer = Lexer::new(source);
+    fn transpilar_fuente(fuente: &str) -> Result<String, Vec<ErrorForja>> {
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse()?;
 
-        let mut checker = PrestamoChecker::new();
+        let mut checker = PrestamoChecker::nuevo();
         checker.analizar(&programa)?;
 
-        let mut transpiler = Transpiler::new();
+        let mut transpiler = Transpiler::nuevo();
         transpiler.transpilar(&programa)
     }
 
     #[test]
     fn test_transpilar_variable() {
-        let result = transpilar_source("variable x = 5").unwrap();
+        let resultado = transpilar_fuente("variable x = 5").unwrap();
         // 'variable' sin reasignación -> let (sin mut innecesario)
-        assert!(result.contains("let x = 5;"));
-        assert!(!result.contains("let mut x = 5;"));
+        assert!(resultado.contains("let x = 5;"));
+        assert!(!resultado.contains("let mut x = 5;"));
     }
 
     #[test]
     fn test_transpilar_constante() {
-        let result = transpilar_source("constante x = 10").unwrap();
+        let resultado = transpilar_fuente("constante x = 10").unwrap();
         // 'constante' es inmutable -> let
-        assert!(result.contains("let x = 10;"));
+        assert!(resultado.contains("let x = 10;"));
     }
 
     #[test]
     fn test_transpilar_escribir() {
-        let result = transpilar_source("escribir(\"Hola mundo\")").unwrap();
-        assert!(result.contains("println!"));
-        assert!(result.contains("Hola mundo"));
+        let resultado = transpilar_fuente("escribir(\"Hola mundo\")").unwrap();
+        assert!(resultado.contains("println!"));
+        assert!(resultado.contains("Hola mundo"));
     }
 
     #[test]
     fn test_transpilar_si_sino() {
-        let source = "variable x = 5\nsi (x > 0) { variable y = 1 } sino { variable z = 2 }";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("if"));
-        assert!(result.contains("else"));
+        let fuente = "variable x = 5\nsi (x > 0) { variable y = 1 } sino { variable z = 2 }";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("if"));
+        assert!(resultado.contains("else"));
     }
 
     #[test]
     fn test_transpilar_mientras() {
-        let source = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("while"));
+        let fuente = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("while"));
     }
 
     #[test]
     fn test_transpilar_repetir() {
-        let source = "repetir (5) { escribir(\"hola\") }";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("for _ in 0..5"));
+        let fuente = "repetir (5) { escribir(\"hola\") }";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("for _ in 0..5"));
     }
 
     #[test]
     fn test_transpilar_para() {
-        let source = "para (variable i = 0; i < 10; i = i + 1) { escribir(i) }";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "para (variable i = 0; i < 10; i = i + 1) { escribir(i) }";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // Debe optimizar a for i in 0..10
-        assert!(result.contains("for i in 0..10") || result.contains("while"));
+        assert!(resultado.contains("for i in 0..10") || resultado.contains("while"));
     }
 
     #[test]
     fn test_transpilar_clase() {
-        let source = "clase Persona { nombre constructor(n) { este.nombre = n } }";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("struct Persona"));
-        assert!(result.contains("impl Persona"));
-        assert!(result.contains("fn nuevo"));
+        let fuente = "clase Persona { nombre constructor(n) { este.nombre = n } }";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("struct Persona"));
+        assert!(resultado.contains("impl Persona"));
+        assert!(resultado.contains("fn nuevo"));
     }
 
     #[test]
     fn test_transpilar_instanciacion() {
-        let source = "clase Persona { nombre constructor(n) { este.nombre = n } } variable p = nuevo Persona(\"Ana\")";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("Persona::nuevo"));
+        let fuente = "clase Persona { nombre constructor(n) { este.nombre = n } } variable p = nuevo Persona(\"Ana\")";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("Persona::nuevo"));
     }
 
     #[test]
     fn test_transpilar_referencia() {
-        let source = "variable x = 5\nvariable y = &x";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("&x"));
+        let fuente = "variable x = 5\nvariable y = &x";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("&x"));
     }
 
     #[test]
-    fn test_transpilar_main_generado() {
-        let source = "variable x = 5\nescribir(x)";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("fn main()"));
+    fn test_transpilar_principal_generado() {
+        let fuente = "variable x = 5\nescribir(x)";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("fn main()"));
         // x no se reasigna, solo se lee -> let sin mut
-        assert!(result.contains("let x = 5;"));
-        assert!(!result.contains("let mut x = 5;"));
+        assert!(resultado.contains("let x = 5;"));
+        assert!(!resultado.contains("let mut x = 5;"));
     }
 
     #[test]
     fn test_transpilar_variable_con_reasignacion() {
-        let source = "variable x = 5\nx = 10";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "variable x = 5\nx = 10";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // x se reasigna -> debe ser let mut
-        assert!(result.contains("let mut x = 5;"));
+        assert!(resultado.contains("let mut x = 5;"));
     }
 
     #[test]
     fn test_transpilar_variable_reasignada_en_si() {
-        let source = "variable x = 5\nsi (verdadero) { x = 10 }";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "variable x = 5\nsi (verdadero) { x = 10 }";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // x se reasigna dentro de un bloque si -> debe ser let mut
-        assert!(result.contains("let mut x = 5;"));
+        assert!(resultado.contains("let mut x = 5;"));
     }
 
     #[test]
     fn test_transpilar_variable_reasignada_en_mientras() {
-        let source = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // x se reasigna dentro del bucle -> debe ser let mut
-        assert!(result.contains("let mut x = 0;"));
+        assert!(resultado.contains("let mut x = 0;"));
     }
 
     #[test]
     fn test_transpilar_variable_sin_uso() {
-        let source = "variable x = 5\nvariable y = 10";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "variable x = 5\nvariable y = 10";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // Ninguna se reasigna -> let sin mut
-        assert!(result.contains("let x = 5;"));
-        assert!(result.contains("let y = 10;"));
-        assert!(!result.contains("let mut"));
+        assert!(resultado.contains("let x = 5;"));
+        assert!(resultado.contains("let y = 10;"));
+        assert!(!resultado.contains("let mut"));
     }
 
     #[test]
     fn test_gui_genera_programa_como_funcion() {
-        let source = "importar gui\nfuncion main() {\n    escribir(\"hola\")\n}";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "importar gui\nfuncion main() {\n    escribir(\"hola\")\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // El programa se emite como función: `vec![…]` no es const, así que la
         // forma `static PROGRAMA` no compilaba en ninguna versión estable de Rust.
-        assert!(result.contains("fn programa() -> Programa {span: None, "));
-        assert!(result.contains("use forja::ast::*;"));
+        assert!(resultado.contains("fn programa() -> Programa {span: None, "));
+        assert!(resultado.contains("use forja::ast::*;"));
         assert!(
-            !result.contains("static PROGRAMA"),
-            "el AST no debe emitirse en un `static` (no es const):\n{result}"
+            !resultado.contains("static PROGRAMA"),
+            "el AST no debe emitirse en un `static` (no es const):\n{resultado}"
         );
         // main() usa build_and_run del runtime, tomando el programa de la función
-        assert!(result.contains("build_and_run(&programa(),"));
-        assert!(result.contains("build_and_run_android(&programa(),"));
+        assert!(resultado.contains("build_and_run(&programa(),"));
+        assert!(resultado.contains("build_and_run_android(&programa(),"));
     }
 
     #[test]
     fn test_gui_genera_ast_widgets() {
-        let source = "importar gui\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(usuario)\n    escribir(contrasena)\n}";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "importar gui\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(usuario)\n    escribir(contrasena)\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // Debe generar el AST con declaraciones de variables y llamadas a funcion
-        assert!(result.contains("Declaracion::Variable"));
-        assert!(result.contains("Declaracion::LlamadaFuncion"));
+        assert!(resultado.contains("Declaracion::Variable"));
+        assert!(resultado.contains("Declaracion::LlamadaFuncion"));
         // Debe contener los valores literales
-        assert!(result.contains("admin"));
-        assert!(result.contains("secreta"));
+        assert!(resultado.contains("admin"));
+        assert!(resultado.contains("secreta"));
     }
 
     #[test]
     fn test_gui_boton_con_callback() {
-        let source = "importar gui\nfuncion al_saludar() { escribir(\"Hola!\") }\nfuncion main() {\n    boton(\"Saludar\", &al_saludar)\n}";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "importar gui\nfuncion al_saludar() { escribir(\"Hola!\") }\nfuncion main() {\n    boton(\"Saludar\", &al_saludar)\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // Ahora genera el AST en vez de Layout::Button directamente
-        assert!(result.contains("LlamadaFuncion"));
-        assert!(result.contains("boton"));
-        assert!(result.contains("al_saludar"));
-        assert!(result.contains("Saludar"));
+        assert!(resultado.contains("LlamadaFuncion"));
+        assert!(resultado.contains("boton"));
+        assert!(resultado.contains("al_saludar"));
+        assert!(resultado.contains("Saludar"));
     }
 
     #[test]
     fn test_gui_boton_sin_callback() {
-        let source = "importar gui\nfuncion main() {\n    boton(\"Cerrar\")\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("Cerrar"));
-        assert!(result.contains("LlamadaFuncion"));
+        let fuente = "importar gui\nfuncion main() {\n    boton(\"Cerrar\")\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("Cerrar"));
+        assert!(resultado.contains("LlamadaFuncion"));
     }
 
     #[test]
     fn test_gui_columna_basica() {
-        let source = "importar gui\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"))\n}";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "importar gui\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"))\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // Ahora genera el AST, no Layout::Column directamente
-        assert!(result.contains("columna"));
-        assert!(result.contains("Arriba"));
-        assert!(result.contains("Click"));
+        assert!(resultado.contains("columna"));
+        assert!(resultado.contains("Arriba"));
+        assert!(resultado.contains("Click"));
     }
 
     #[test]
     fn test_gui_entrada_texto() {
-        let source = "importar gui\nfuncion main() {\n    entrada_texto(\"Nombre\")\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("entrada_texto"));
-        assert!(result.contains("Nombre"));
+        let fuente = "importar gui\nfuncion main() {\n    entrada_texto(\"Nombre\")\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
+        assert!(resultado.contains("entrada_texto"));
+        assert!(resultado.contains("Nombre"));
     }
 
     #[test]
     fn test_gui_multiple_widgets() {
-        let source = "importar gui\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    boton(\"Click\")\n}";
-        let result = transpilar_source(source).unwrap();
+        let fuente = "importar gui\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    boton(\"Click\")\n}";
+        let resultado = transpilar_fuente(fuente).unwrap();
         // Verificar que aparecen todos los nombres de widgets en el AST
-        assert!(result.contains("Config"));
-        assert!(result.contains("Nombre"));
-        assert!(result.contains("Click"));
+        assert!(resultado.contains("Config"));
+        assert!(resultado.contains("Nombre"));
+        assert!(resultado.contains("Click"));
     }
 }

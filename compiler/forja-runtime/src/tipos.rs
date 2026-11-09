@@ -375,7 +375,7 @@ pub struct ObjVal {
 }
 
 impl ObjVal {
-    pub fn new(clase: IdSimbolo, forma_id: IdForma) -> Self {
+    pub fn nuevo(clase: IdSimbolo, forma_id: IdForma) -> Self {
         ObjVal {
             clase,
             forma_id,
@@ -393,7 +393,7 @@ pub struct ExactoVal {
 }
 
 impl ExactoVal {
-    pub fn new(coeficiente: i128, escala: u32) -> Self {
+    pub fn nuevo(coeficiente: i128, escala: u32) -> Self {
         ExactoVal {
             coeficiente,
             escala,

@@ -29,10 +29,10 @@ fn bench_vm(c: &mut Criterion) {
     let (bc, _) = forja::compilar_pipeline_completa(FUENTE).unwrap();
     c.bench_function("vm_fib_20", |b| {
         b.iter(|| {
-            let mut vm = forja::vm_fast::ForjaFast::new();
+            let mut vm = forja::vm_fast::ForjaFast::nuevo();
             vm.cargar_bytecode(black_box(bc.clone()));
             vm.ejecutar().unwrap();
-            black_box(vm.obtener_output().to_vec());
+            black_box(vm.obtener_salida().to_vec());
         });
     });
 }

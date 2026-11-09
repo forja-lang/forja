@@ -28,7 +28,7 @@ pub fn emitir_bytecode_canonico(
     tipos: HashMap<String, Tipo>,
     overloads: Overloads,
 ) -> Result<(Vec<Opcode>, Vec<ContratoBytecode>), String> {
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     gen.fijar_tipos_inferidos(tipos);
     gen.fijar_funciones_overload(overloads);
     // los contratos referencian globales por índice, así que el
@@ -75,7 +75,7 @@ pub fn globales_de(programa: &Programa) -> Vec<(String, bool)> {
 /// Emite bytecode derivado del IR, o `Err` si el programa está fuera del
 /// subconjunto soportado por el constructor IR.
 pub fn emitir_bytecode_ir(programa: &Programa) -> Result<Vec<Opcode>, String> {
-    let mut constructor_ir = ConstructorDesdeAst::new();
+    let mut constructor_ir = ConstructorDesdeAst::nuevo();
     let ir = constructor_ir.programa_a_ir_sin_ast(programa);
     if !constructor_ir.soportado {
         // el diagnóstico dice qué constructo abortó la emisión IR.
@@ -88,6 +88,6 @@ pub fn emitir_bytecode_ir(programa: &Programa) -> Result<Vec<Opcode>, String> {
     // promoción de memoria a SSA (mem2reg + φ) antes de bajar a
     // bytecode. Los φ se resuelven en las aristas al convertir.
     let ir = crate::ir_ssa::promover_programa(&ir);
-    let mut conversor = ConversorABytecode::new(ir.simbolos.clone());
+    let mut conversor = ConversorABytecode::nuevo(ir.simbolos.clone());
     Ok(conversor.convertir_programa(&ir))
 }

@@ -99,7 +99,7 @@ impl ForjaFast {
         let version_actual = self
             .module_registry
             .get(&module_id)
-            .map(|info| info.version)
+            .map(|informacion| informacion.version)
             .unwrap_or(0);
         let nueva_version = version_actual + 1;
 
@@ -185,8 +185,8 @@ impl ForjaFast {
         }
 
         // 7. Actualizar versión en module_registry
-        if let Some(info) = self.module_registry.get_mut(&module_id) {
-            info.version = nueva_version;
+        if let Some(informacion) = self.module_registry.get_mut(&module_id) {
+            informacion.version = nueva_version;
         }
 
         // 8. Re-inicializar inline caches (el tamaño de self.bytecode pudo cambiar)

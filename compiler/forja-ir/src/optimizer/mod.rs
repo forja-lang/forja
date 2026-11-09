@@ -17,12 +17,12 @@ pub struct Optimizer {
 
 impl Default for Optimizer {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Optimizer {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Optimizer {
             cambios_realizados: 0,
             profundidad_expresion: 0,
@@ -35,7 +35,7 @@ impl Optimizer {
         Optimizer {
             cambios_realizados: 0,
             profundidad_expresion: 0,
-            arena: Some(crate::arena::Arena::new()),
+            arena: Some(crate::arena::Arena::nuevo()),
         }
     }
 
@@ -885,9 +885,9 @@ mod tests {
     fn optimizar_fuente(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut opt = Optimizer::new();
+        let mut opt = Optimizer::nuevo();
         opt.optimizar(&programa)
     }
 
@@ -946,9 +946,9 @@ mod tests {
     fn dce_fuente(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut dce = DeadCodeEliminator::new();
+        let mut dce = DeadCodeEliminator::nuevo();
         dce.eliminar(&programa)
     }
 
@@ -1107,9 +1107,9 @@ mod tests {
     fn constprop_fuente(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut cp = ConstPropagator::new();
+        let mut cp = ConstPropagator::nuevo();
         cp.propagar(&programa)
     }
 
@@ -1362,9 +1362,9 @@ mod tests {
         let fuente = "funcion doble(x) { retornar x + x }\nvariable y = doble(5)";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut inliner = FuncionInliner::new();
+        let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
         // La función doble debería haber sido eliminada (inlined)
         assert_eq!(inliner.inlines_realizados, 1);
@@ -1382,9 +1382,9 @@ mod tests {
         let fuente = "funcion main() { escribir(\"hola\") }\nfuncion aux(x) { retornar x }\nvariable y = aux(1)";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut inliner = FuncionInliner::new();
+        let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
         // main no debería ser inlined, pero sí aux
         assert_eq!(inliner.inlines_realizados, 1);
@@ -1401,9 +1401,9 @@ mod tests {
         let fuente = "funcion grande(x) {\n  variable a = 1\n  variable b = 2\n  variable c = 3\n  variable d = 4\n  variable e = 5\n  variable f = 6\n  variable g = 7\n  variable h = 8\n  variable i = 9\n  variable j = 10\n  variable k = 11\n  retornar x + k\n}\nvariable y = grande(5)";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut inliner = FuncionInliner::new();
+        let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
         // La función tiene 11 declaraciones (> max_inline_size=10), no se inlinea
         assert_eq!(inliner.inlines_realizados, 0);
@@ -1422,9 +1422,9 @@ mod tests {
         let fuente = "mientras (i < 10) {\n  si (modo_rapido) {\n    variable x = 1\n  } sino {\n    variable x = 2\n  }\n}";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut unswitcher = BucleUnswitcher::new();
+        let mut unswitcher = BucleUnswitcher::nuevo();
         let prog = unswitcher.desanidar(&programa);
         // Debería haber un Si externo con dos Mientras adentro
         assert_eq!(unswitcher.unswitches_realizados, 1);
@@ -1452,9 +1452,9 @@ mod tests {
         let fuente = "mientras (i < 10) {\n  si (i > 5) {\n    variable x = 1\n  }\n}";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
-        let mut unswitcher = BucleUnswitcher::new();
+        let mut unswitcher = BucleUnswitcher::nuevo();
         let prog = unswitcher.desanidar(&programa);
         assert_eq!(unswitcher.unswitches_realizados, 0);
         assert!(matches!(

@@ -47,8 +47,8 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         let mut lexer = lexer::Lexer::new(&codigo);
         let tokens = match lexer.tokenize() {
             Ok(t) => t,
-            Err(errors) => {
-                for err in &errors {
+            Err(errores) => {
+                for err in &errores {
                     eprintln!("{}", err);
                 }
                 total_fallidos += 1;
@@ -57,11 +57,11 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         };
 
         // FASE 2-3: Parser
-        let mut parser = parser::Parser::new(tokens);
+        let mut parser = parser::Parser::nuevo(tokens);
         let programa = match parser.parse() {
             Ok(p) => p,
-            Err(errors) => {
-                for err in &errors {
+            Err(errores) => {
+                for err in &errores {
                     eprintln!("{}", err);
                 }
                 total_fallidos += 1;
@@ -70,9 +70,9 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         };
 
         // FASE 4: Type Checker
-        let mut verificador = semantics::TipoChecker::new();
-        if let Err(errors) = verificador.analizar(&programa) {
-            for err in &errors {
+        let mut verificador = semantics::TipoChecker::nuevo();
+        if let Err(errores) = verificador.analizar(&programa) {
+            for err in &errores {
                 eprintln!("{}", err);
             }
             total_fallidos += 1;
@@ -82,8 +82,8 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         // FASE 5: Borrow Checker
         let mut checker =
             semantics::PrestamoChecker::con_estricto(forja::config::actual().estricto);
-        if let Err(errors) = checker.analizar(&programa) {
-            for err in &errors {
+        if let Err(errores) = checker.analizar(&programa) {
+            for err in &errores {
                 eprintln!("{}", err);
             }
             total_fallidos += 1;
@@ -91,12 +91,12 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         }
 
         // FASE 6: Transpilador a Rust (sin fn main automático para tests)
-        let mut transpiler = transpiler::Transpiler::new();
+        let mut transpiler = transpiler::Transpiler::nuevo();
         transpiler.saltar_main = true;
         let rust_code = match transpiler.transpilar(&programa) {
             Ok(codigo) => codigo,
-            Err(errors) => {
-                for err in &errors {
+            Err(errores) => {
+                for err in &errores {
                     eprintln!("{}", err);
                 }
                 total_fallidos += 1;

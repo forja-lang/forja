@@ -5,9 +5,9 @@ use forja::semantics::TipoChecker;
 fn verificar(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse()?;
-    let mut tc = TipoChecker::new();
+    let mut tc = TipoChecker::nuevo();
     tc.analizar(&programa)
 }
 

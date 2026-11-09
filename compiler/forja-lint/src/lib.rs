@@ -215,7 +215,7 @@ impl DiagnosticoLint {
     /// Convierte el diagnóstico en un [`ErrorForja`] para reutilizar el
     /// renderizado con span + código + sugerencia.
     pub fn a_error_forja(&self) -> ErrorForja {
-        let mut err = ErrorForja::new(
+        let mut err = ErrorForja::nuevo(
             ErrorTipo::ErrorSemantico,
             self.linea,
             self.columna,
@@ -1177,7 +1177,7 @@ pub fn lint_fuente(
 ) -> Result<Vec<DiagnosticoLint>, Vec<ErrorForja>> {
     let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
-    let mut parser = forja_syntax::parser::Parser::new(tokens);
+    let mut parser = forja_syntax::parser::Parser::nuevo(tokens);
     let programa = parser.parse()?;
     Ok(lint_programa(&programa, config))
 }

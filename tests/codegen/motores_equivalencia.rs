@@ -142,15 +142,17 @@ fn bytecode(fuente: &str) -> Vec<forja::bytecode::Opcode> {
 fn bytecode_raw(fuente: &str) -> Vec<forja::bytecode::Opcode> {
     use forja::bytecode::GeneradorBytecode;
     let tokens = forja::lexer::Lexer::new(fuente).tokenize().expect("lexer");
-    let prog = forja::parser::Parser::new(tokens).parse().expect("parser");
-    let mut gen = GeneradorBytecode::new();
+    let prog = forja::parser::Parser::nuevo(tokens)
+        .parse()
+        .expect("parser");
+    let mut gen = GeneradorBytecode::nuevo();
     gen.generar(&prog).expect("generar bytecode")
 }
 
 /// Ejecuta en ForjaFast directamente sobre bytecode dado.
 fn ejecutar_forjafast(bc: Vec<forja::bytecode::Opcode>) -> Vec<String> {
     use forja::vm_fast::ForjaFast;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
@@ -179,23 +181,23 @@ fn observar_tiered(bc: &[forja::bytecode::Opcode]) {
     use forja::bytecode::Opcode;
     use forja::jit_tiered::{ShouldCompilar, TieredJit};
 
-    let mut tiered = TieredJit::new();
+    let mut tiered = TieredJit::nuevo();
     for (ip, op) in bc.iter().enumerate() {
         match op {
             Opcode::DefinirFuncion(nombre, _) => {
-                tiered.register_function(nombre.as_ref());
+                tiered.register_funcion(nombre.as_ref());
             }
             Opcode::Llamar(nombre, _) => {
                 // No importa el tier resultante en una única pasada; lo relevante
                 // es que el orquestador procese la llamada sin paniquear.
-                match tiered.on_function_call(nombre.as_ref()) {
+                match tiered.on_funcion_llamada(nombre.as_ref()) {
                     ShouldCompilar::No | ShouldCompilar::Yes(_) => (),
                 };
             }
             _ => {}
         }
         // Cada instrucción actúa como una "iteración" a efectos de OSR.
-        let _osr = tiered.on_loop_iteration("main", ip);
+        let _osr = tiered.on_bucle_iteration("main", ip);
     }
 }
 

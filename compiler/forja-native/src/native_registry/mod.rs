@@ -106,14 +106,14 @@ pub struct NativoRegistro {
 
 impl Default for NativoRegistro {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl NativoRegistro {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         let mut reg = NativoRegistro {
-            tabla_simbolos: TablaSimbolos::new(),
+            tabla_simbolos: TablaSimbolos::nuevo(),
             funciones: HashMap::new(),
         };
         #[cfg(feature = "net")]

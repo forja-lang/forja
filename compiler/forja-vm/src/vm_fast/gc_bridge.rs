@@ -99,7 +99,7 @@ impl ForjaFast {
     /// Aloja en el heap de Exacto y retorna un ValorFast con TAG_OBJ + BIT_EXACTO.
     #[inline(always)]
     pub fn exacto_valor(&mut self, coeficiente: i128, escala: u32) -> ValorFast {
-        let e = ExactoVal::new(coeficiente, escala);
+        let e = ExactoVal::nuevo(coeficiente, escala);
         let _idx = self.reservar_exacto(e);
         ValorFast(ValorFast::QNAN | ValorFast::TAG_OBJ | ValorFast::BIT_EXACTO | _idx as u64)
     }
@@ -216,7 +216,7 @@ impl ForjaFast {
             let e = self.obtener_exacto(val.indice_exacto());
             ValorPortable::Exacto(e.coeficiente, e.escala)
         } else if val.es_texto() {
-            ValorPortable::Texto(Arc::clone(self.get_str(val.indice_texto())))
+            ValorPortable::Texto(Arc::clone(self.obtener_texto(val.indice_texto())))
         } else if val.es_arreglo() {
             if let Some(r) = referencia(0, val.indice_arreglo(), visitados) {
                 return r;
@@ -344,7 +344,7 @@ impl ForjaFast {
                 // lecturas dan Nulo. Se registra el descriptor con los campos en
                 // el orden del emisor.
                 if !self.runtime.class_descriptors.contains_key(&clase_sym) {
-                    let mut forma = FormaCampos::new();
+                    let mut forma = FormaCampos::nuevo();
                     for (nombre, _) in &campos {
                         let campo = self.runtime.tabla_simbolos.internar(nombre);
                         forma.agregar_campo(campo);
@@ -362,7 +362,7 @@ impl ForjaFast {
                 }
                 let id = creados.len() as u32;
                 let mut forma = self.runtime.registro_formas.obtener_o_crear(clase_sym);
-                let obj_idx = self.reservar_objeto(ObjVal::new(clase_sym, forma));
+                let obj_idx = self.reservar_objeto(ObjVal::nuevo(clase_sym, forma));
                 creados.insert(id, ValorFast::objeto(obj_idx));
                 for (nombre, valor) in campos {
                     let campo = self.runtime.tabla_simbolos.internar(&nombre);
@@ -431,7 +431,7 @@ impl ForjaFast {
     #[inline]
     pub fn canal_enviar(&mut self, chan_idx: usize, val: ValorFast) -> bool {
         let mensaje = if val.es_texto() {
-            CanalValor::Texto(Arc::clone(self.get_str(val.indice_texto())))
+            CanalValor::Texto(Arc::clone(self.obtener_texto(val.indice_texto())))
         } else if val.es_arreglo() || val.es_mapa() || val.es_objeto() || val.es_exacto() {
             CanalValor::Portable(Box::new(self.serializar_portable(val, 0)))
         } else {
@@ -577,7 +577,7 @@ impl ForjaFast {
         let predeterminado_forma = self.runtime.registro_formas.obtener_o_crear(IdSimbolo(0));
         for i in 0..self.runtime.obj_heap.len() {
             if !self.runtime.obj_marked[i] {
-                self.runtime.obj_heap[i] = ObjVal::new(IdSimbolo(0), predeterminado_forma);
+                self.runtime.obj_heap[i] = ObjVal::nuevo(IdSimbolo(0), predeterminado_forma);
                 self.runtime.formas_objeto[i] = predeterminado_forma;
                 self.runtime.obj_free.push(i as u32);
             }
@@ -610,7 +610,7 @@ impl ForjaFast {
         // Exacto no marcados → free list
         for i in 0..self.runtime.exacto_heap.len() {
             if !self.runtime.exacto_marked[i] {
-                self.runtime.exacto_heap[i] = ExactoVal::new(0, 0);
+                self.runtime.exacto_heap[i] = ExactoVal::nuevo(0, 0);
                 self.runtime.exacto_free.push(i as u32);
             }
         }

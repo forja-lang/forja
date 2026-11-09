@@ -2,7 +2,7 @@ use crate::lsp::index_stdlib::StdlibIndex;
 use crate::token::{Token, TokenTipo};
 
 #[derive(Debug, Clone)]
-pub struct SignatureInfo {
+pub struct SignatureInformacion {
     pub label: String,
     pub documentation: String,
     pub params: Vec<ParamSignature>,
@@ -20,7 +20,7 @@ pub struct SignatureResolver {
 }
 
 impl SignatureResolver {
-    pub fn new(stdlib: StdlibIndex) -> Self {
+    pub fn nuevo(stdlib: StdlibIndex) -> Self {
         SignatureResolver { stdlib }
     }
 
@@ -28,14 +28,14 @@ impl SignatureResolver {
         &self,
         tokens: &[Token],
         cursor: usize,
-        symbols: &[crate::lsp::completado::SymbolEntry],
-    ) -> Option<SignatureInfo> {
+        symbols: &[crate::lsp::completado::SymbolEntrada],
+    ) -> Option<SignatureInformacion> {
         let (func_name, arg_index) = self.encontrar_contexto_llamada(tokens, cursor)?;
 
         // Buscar en símbolos locales
         for sym in symbols {
             if sym.name == func_name {
-                return Some(SignatureInfo {
+                return Some(SignatureInformacion {
                     label: format!("{}({})", func_name, sym.params.join(", ")),
                     documentation: sym.doc.clone(),
                     params: sym
@@ -59,15 +59,15 @@ impl SignatureResolver {
                     .iter()
                     .map(|p| format!("{}: {}", p.name, p.type_str))
                     .collect();
-                return Some(SignatureInfo {
+                return Some(SignatureInformacion {
                     label: format!(
                         "{}({}){}",
                         func_name,
                         params_str.join(", "),
-                        if f.return_type.is_empty() {
+                        if f.tipo_retorno.is_empty() {
                             String::new()
                         } else {
-                            format!(" → {}", f.return_type)
+                            format!(" → {}", f.tipo_retorno)
                         }
                     ),
                     documentation: f.doc.clone(),
@@ -95,7 +95,7 @@ impl SignatureResolver {
         // Buscar hacia atrás desde el cursor un ParenAbrir y el Identificador antes
         let mut paren_depth = 0i32;
         let mut arg_index = 0usize;
-        let mut found_open = false;
+        let mut found_abrir = false;
 
         for i in (0..cursor).rev() {
             if i >= tokens.len() {
@@ -105,7 +105,7 @@ impl SignatureResolver {
                 TokenTipo::ParenCerrar => paren_depth += 1,
                 TokenTipo::ParenAbrir => {
                     if paren_depth == 0 {
-                        found_open = true;
+                        found_abrir = true;
                         // Buscar el identificador o método antes de este (
                         if i > 0 {
                             for j in (0..i).rev() {
@@ -123,14 +123,14 @@ impl SignatureResolver {
                     }
                     paren_depth -= 1;
                 }
-                TokenTipo::Coma if paren_depth == 0 && found_open => {
+                TokenTipo::Coma if paren_depth == 0 && found_abrir => {
                     arg_index += 1;
                 }
                 _ => {}
             }
         }
 
-        if found_open {
+        if found_abrir {
             if let Some(prev) = cursor.checked_sub(2) {
                 if prev < tokens.len() {
                     if let TokenTipo::Identificador(name) = &tokens[prev].kind {

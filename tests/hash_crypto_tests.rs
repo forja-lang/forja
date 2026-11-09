@@ -122,60 +122,60 @@ fn test_hex_codificar_vacio() {
 
 #[test]
 fn test_b64_codificar_hola() {
-    assert_eq!(base64::b64_encode(b"hello"), "aGVsbG8=");
+    assert_eq!(base64::b64_codificar(b"hello"), "aGVsbG8=");
 }
 
 #[test]
 fn test_b64_decodificar_hola() {
-    assert_eq!(base64::b64_decode("aGVsbG8=").unwrap(), b"hello");
+    assert_eq!(base64::b64_decodificar("aGVsbG8=").unwrap(), b"hello");
 }
 
 #[test]
 fn test_b64_codificar_vacio() {
-    assert_eq!(base64::b64_encode(b""), "");
+    assert_eq!(base64::b64_codificar(b""), "");
 }
 
 #[test]
 fn test_b64_decodificar_vacio() {
-    assert_eq!(base64::b64_decode("").unwrap(), b"");
+    assert_eq!(base64::b64_decodificar("").unwrap(), b"");
 }
 
 #[test]
 fn test_b64_codificar_3_bytes() {
-    assert_eq!(base64::b64_encode(b"abc"), "YWJj");
+    assert_eq!(base64::b64_codificar(b"abc"), "YWJj");
 }
 
 #[test]
 fn test_b64_decodificar_3_bytes() {
-    assert_eq!(base64::b64_decode("YWJj").unwrap(), b"abc");
+    assert_eq!(base64::b64_decodificar("YWJj").unwrap(), b"abc");
 }
 
 #[test]
 fn test_b64_codificar_1_byte() {
-    assert_eq!(base64::b64_encode(b"a"), "YQ==");
+    assert_eq!(base64::b64_codificar(b"a"), "YQ==");
 }
 
 #[test]
 fn test_b64_codificar_2_bytes() {
-    assert_eq!(base64::b64_encode(b"ab"), "YWI=");
+    assert_eq!(base64::b64_codificar(b"ab"), "YWI=");
 }
 
 #[test]
 fn test_b64_roundtrip_largo() {
     let data = b"Este es un mensaje de prueba para verificar el roundtrip de Base64";
-    let encoded = base64::b64_encode(data);
-    let decoded = base64::b64_decode(&encoded).unwrap();
+    let encoded = base64::b64_codificar(data);
+    let decoded = base64::b64_decodificar(&encoded).unwrap();
     assert_eq!(decoded, data);
 }
 
 #[test]
 fn test_b64_invalido_caracter() {
-    assert!(base64::b64_decode("¡Invalido!").is_err());
+    assert!(base64::b64_decodificar("¡Invalido!").is_err());
 }
 
 #[test]
 fn test_b64_invalido_longitud() {
-    assert!(base64::b64_decode("abc").is_err());
+    assert!(base64::b64_decodificar("abc").is_err());
 }
 
 // ============================================================

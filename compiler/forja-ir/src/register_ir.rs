@@ -131,7 +131,7 @@ pub struct RegProgram {
 }
 
 impl RegProgram {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         RegProgram {
             blocks: Vec::new(),
             next_vreg: 0,
@@ -157,7 +157,7 @@ impl RegProgram {
 
 impl Default for RegProgram {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_reg_program_reservar_vreg() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         assert_eq!(prog.reservar_vreg(), 0);
         assert_eq!(prog.reservar_vreg(), 1);
         assert_eq!(prog.reservar_vreg(), 2);
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_compute_live_intervals_simple() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let block = BloqueBasico {
             etiqueta: 0,
             instructions: vec![
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_compute_live_intervals_no_overlap() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let block = BloqueBasico {
             etiqueta: 0,
             instructions: vec![
@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_reg_program_instruction_cantidad() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let block = BloqueBasico {
             etiqueta: 0,
             instructions: vec![RegInstruction::Nop, RegInstruction::Nop],

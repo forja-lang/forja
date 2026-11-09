@@ -7,7 +7,7 @@ use super::*;
 /// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
 pub(crate) fn cmd_bench(args: &[String]) {
     rechazar_flags(args);
-    let (iters, path) = match args {
+    let (iters, ruta) = match args {
         [solo] => (1usize, solo.as_str()),
         [n, p] => match n.parse::<usize>() {
             Ok(n) if n > 0 => (n, p.as_str()),
@@ -25,10 +25,10 @@ pub(crate) fn cmd_bench(args: &[String]) {
     let vm_selected = cfg.motor;
     let max_archivo = cfg.max_archivo_mb;
 
-    let fuente = match forja::leer_archivo_con_limite(path, max_archivo) {
+    let fuente = match forja::leer_archivo_con_limite(ruta, max_archivo) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error al leer '{}': {}", path, e);
+            eprintln!("Error al leer '{}': {}", ruta, e);
             process::exit(1);
         }
     };
@@ -44,7 +44,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
         let t_compilar = std::time::Instant::now();
         if let Ok(exe) = compilar_llvm_nativo(&fuente) {
             let compilar_ms = t_compilar.elapsed().as_secs_f64() * 1000.0;
-            let directorio = std::path::Path::new(path)
+            let directorio = std::path::Path::new(ruta)
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or(std::path::Path::new("."));
@@ -78,7 +78,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
         // Benchmark ASM de respaldo.
 
         let t0 = std::time::Instant::now();
-        match ejecutar_asm(&fuente, path) {
+        match ejecutar_asm(&fuente, ruta) {
             Ok(salida) => {
                 let compilar_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
                 println!(
@@ -91,7 +91,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
                 let mut hot_ns_total = 0.0;
                 for _ in 0..iters {
                     let t_hot = std::time::Instant::now();
-                    let _ = ejecutar_asm(&fuente, path);
+                    let _ = ejecutar_asm(&fuente, ruta);
                     hot_ns_total += t_hot.elapsed().as_secs_f64() * 1_000_000_000.0;
                 }
                 let hot_ns = hot_ns_total / iters as f64;
@@ -193,7 +193,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
             "ForjaFast"
         };
         medir_vm!(nombre_fast, {
-            let mut v = forja_driver::vm_fast::ForjaFast::new();
+            let mut v = forja_driver::vm_fast::ForjaFast::nuevo();
             if fast_math_flag {
                 v.fijar_fast_math(true);
             }
@@ -210,7 +210,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
         // TODO: medir una ruta de ejecución real sobre `jit_tiered`.
         let nombre = "Forja JIT (tiered)";
         let t0 = std::time::Instant::now();
-        let mut jit = forja_driver::vm_fast::ForjaFast::new();
+        let mut jit = forja_driver::vm_fast::ForjaFast::nuevo();
         if fast_math_flag {
             jit.fijar_fast_math(true);
         }

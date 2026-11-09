@@ -10,7 +10,7 @@ pub struct BucleUnswitcher {
 }
 
 impl BucleUnswitcher {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         BucleUnswitcher {
             unswitches_realizados: 0,
         }
@@ -230,6 +230,6 @@ impl BucleUnswitcher {
 
 impl Default for BucleUnswitcher {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }

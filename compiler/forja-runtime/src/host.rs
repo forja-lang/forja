@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 pub trait Anfitrion {
     fn reservar_texto(&mut self, s: Arc<str>) -> u32;
-    fn get_str(&self, idx: u32) -> &Arc<str>;
+    fn obtener_texto(&self, idx: u32) -> &Arc<str>;
 
     fn reservar_arr(&mut self, valores: Vec<ValorFast>) -> u32;
     fn obtener_arr(&self, idx: u32) -> &Vec<ValorFast>;

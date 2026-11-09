@@ -16,9 +16,9 @@ fn compilar_programa(c: &mut CompilerAsm, declaraciones: Vec<Declaracion>) -> St
 }
 
 #[test]
-fn programa_con_main_no_genera_el_main_sintetico() {
+fn programa_con_principal_no_genera_el_principal_sintetico() {
     // Si el programa declara `main`, el backend no agrega el `main` sintético.
-    let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
+    let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     let asm = compilar_programa(
         &mut c,
         vec![
@@ -46,9 +46,9 @@ fn programa_con_main_no_genera_el_main_sintetico() {
 }
 
 #[test]
-fn programa_sin_main_genera_el_main_sintetico() {
+fn programa_sin_principal_genera_el_principal_sintetico() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let asm = compilar_programa(
             &mut c,
             vec![
@@ -68,7 +68,7 @@ fn programa_sin_main_genera_el_main_sintetico() {
 
 #[test]
 fn programa_con_errores_devuelve_err() {
-    let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
+    let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     let programa = Programa {
         spans: Vec::new(),
         nombres: Vec::new(),
@@ -78,14 +78,14 @@ fn programa_con_errores_devuelve_err() {
     };
     let resultado = c.compilar(&programa);
     assert!(resultado.is_err(), "un constructo no soportado debe fallar");
-    assert!(!c.errors.is_empty());
+    assert!(!c.errores.is_empty());
 }
 
 #[test]
-fn variable_en_stack_sin_valor_inicial() {
+fn variable_en_pila_sin_valor_inicial() {
     // Rama `valor: None` del camino stack: no se emite store.
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         llenar_pool(&mut c);
         c.compilar_declaracion(&decl_variable("x", Some(Tipo::Entero), None));
         assert!(c.output.is_empty(), "{t:?}: sin valor no hay asm");
@@ -98,7 +98,7 @@ fn variable_en_registro_sin_variables_registradas() {
     // mapa de variables (no debería ocurrir; el compilador no debe paniquear).
     for t in TARGETS {
         let mut c = con_variables(t);
-        c.var_reg_map.insert("huerfana".into(), "r12");
+        c.variable_reg_mapa.insert("huerfana".into(), "r12");
         // Asignación: no emite nada porque falta el tipo de la variable.
         c.compilar_declaracion(&decl_asignacion("huerfana", num(1)));
         // Identificador: tampoco emite.
@@ -108,7 +108,7 @@ fn variable_en_registro_sin_variables_registradas() {
         // Con el nombre en ambos mapas sí emite.
         c.variables.insert(
             "huerfana".into(),
-            StackVar {
+            PilaVariable {
                 offset: 0,
                 tipo: TipoAsm::Entero,
             },
@@ -119,10 +119,10 @@ fn variable_en_registro_sin_variables_registradas() {
 }
 
 #[test]
-fn emit_mov_ret_a_reg_por_tipo() {
+fn emitir_mov_ret_a_reg_por_tipo() {
     // Helper directo: cubre el arm defensivo de `TipoAsm::Decimal`.
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         for tipo in [
             TipoAsm::Entero,
             TipoAsm::Texto,
@@ -130,11 +130,11 @@ fn emit_mov_ret_a_reg_por_tipo() {
             TipoAsm::Booleano,
         ] {
             let antes = c.output.clone();
-            c.emit_mov_ret_a_reg(&tipo, "r12");
+            c.emitir_mov_ret_a_reg(&tipo, "r12");
             assert_ne!(c.output, antes, "{t:?}/{tipo:?}: debe emitir el mov");
         }
         let antes = c.output.clone();
-        c.emit_mov_ret_a_reg(&TipoAsm::Decimal, "r12");
+        c.emitir_mov_ret_a_reg(&TipoAsm::Decimal, "r12");
         assert_eq!(c.output, antes, "{t:?}: un decimal no se mueve a registro");
     }
 }
@@ -154,10 +154,10 @@ fn acumular_tamano_campo_alinea_y_reserva() {
 
 #[test]
 fn buscar_campo_offset_con_clase_no_registrada() {
-    let mut c = con_variables(TargetArch::X86_64Linux);
+    let mut c = con_variables(DestinoArch::X86_64Linux);
     c.variables.insert(
         "obj_raro".into(),
-        StackVar {
+        PilaVariable {
             offset: 8,
             tipo: TipoAsm::Clase("NoRegistrada".into()),
         },
@@ -166,18 +166,18 @@ fn buscar_campo_offset_con_clase_no_registrada() {
 }
 
 #[test]
-fn inline_funcion_con_declaracion_que_no_es_funcion() {
-    let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
+fn en_linea_funcion_con_declaracion_que_no_es_funcion() {
+    let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     c.funciones_declaraciones
         .insert("no_fn".into(), decl_clase("no_fn", vec![], vec![]));
-    c.inline_funcion("no_fn", &[]);
+    c.en_linea_funcion("no_fn", &[]);
     // No emite nada: no es una función con cuerpo.
     assert!(c.output.is_empty());
 }
 
 #[test]
 fn analisis_de_inlining_con_ramas_no_complejas() {
-    let c = CompilerAsm::with_target(TargetArch::X86_64Linux);
+    let c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
 
     // `cuando` cuyo cuerpo no tiene auto-llamadas → la condición del `if` es falsa.
     assert!(!c.tiene_auto_llamada(

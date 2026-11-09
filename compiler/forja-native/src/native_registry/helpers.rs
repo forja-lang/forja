@@ -2,7 +2,7 @@ use super::*;
 
 pub fn obtener_texto(vm: &mut dyn Anfitrion, val: ValorFast) -> Result<String, ErrFast> {
     if val.es_texto() {
-        let s = vm.get_str(val.indice_texto()).to_string();
+        let s = vm.obtener_texto(val.indice_texto()).to_string();
         Ok(s)
     } else {
         Err(ErrFast::TipoInv("se esperaba un texto".into()))
@@ -79,14 +79,14 @@ pub fn crear_valor_socket(vm: &mut dyn Anfitrion, socket_idx: u32) -> ValorFast 
 
         DescriptorClase {
             nombre: sym_socket,
-            forma: FormaCampos::new(),
+            forma: FormaCampos::nuevo(),
             mro: vec![sym_socket],
             metodos: HashMap::new(),
             rasgos: Vec::new(),
         }
     });
     let id_forma = vm.registro_formas().obtener_o_crear(sym_socket);
-    let mut obj = forja_runtime::ObjVal::new(sym_socket, id_forma);
+    let mut obj = forja_runtime::ObjVal::nuevo(sym_socket, id_forma);
     obj.campos_vec.push(ValorFast::entero(socket_idx as i64));
     let obj_idx = vm.reservar_objeto(obj);
     vm.formas_objeto_mut()[obj_idx as usize] = id_forma;

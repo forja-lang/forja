@@ -19,7 +19,7 @@ fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let (bc, _) = forja::compilar_pipeline_completa(fuente)?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut vm = ForjaFast::new();
+        let mut vm = ForjaFast::nuevo();
         vm.fijar_max_inst(50_000_000);
         vm.cargar_bytecode(bc);
         let resultado = vm.ejecutar().map_err(|e| format!("{}", e));

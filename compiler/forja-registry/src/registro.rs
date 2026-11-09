@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use forja_native::base64::b64_encode;
+use forja_native::base64::b64_codificar;
 use forja_native::hash::Sha256;
 
 /// Versión semver parseada: `mayor.menor.parche` con pre-release opcional.
@@ -214,7 +214,7 @@ pub fn firmar_hash(hash_hex: &str, clave: &str) -> String {
     datos.extend_from_slice(b"::forja-pkg::");
     datos.extend_from_slice(hash_hex.as_bytes());
     let digest = Sha256::digest(&datos);
-    b64_encode(&digest)
+    b64_codificar(&digest)
 }
 
 /// Firma `hash_hex` con Ed25519 usando la clave privada del autor (32 bytes).

@@ -7,22 +7,22 @@ use std::sync::Arc;
 fn generar(fuente: &str) -> Vec<Opcode> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     gen.generar(&programa).unwrap()
 }
 
 fn generar_con_tipos(fuente: &str) -> Vec<Opcode> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut tc = TipoChecker::new();
+    let mut tc = TipoChecker::nuevo();
     tc.analizar(&programa).unwrap();
     let tipos = tc.obtener_tipos_inferidos();
-    let mut gen = GeneradorBytecode::new();
-    gen.set_tipos_inferidos(tipos);
+    let mut gen = GeneradorBytecode::nuevo();
+    gen.fijar_tipos_inferidos(tipos);
     gen.generar(&programa).unwrap()
 }
 

@@ -88,16 +88,16 @@ fn emitir_nativo(bc: &[Opcode]) -> usize {
 fn alimentar_tiered(bc: &[Opcode]) {
     use forja::jit_tiered::{ShouldCompilar, TieredJit};
 
-    let mut tiered = TieredJit::new();
+    let mut tiered = TieredJit::nuevo();
     for (ip, op) in bc.iter().enumerate() {
         match op {
-            Opcode::DefinirFuncion(nombre, _) => tiered.register_function(nombre.as_ref()),
+            Opcode::DefinirFuncion(nombre, _) => tiered.register_funcion(nombre.as_ref()),
             Opcode::Llamar(nombre, _) => {
-                if let ShouldCompilar::Yes(_tier) = tiered.on_function_call(nombre.as_ref()) {}
+                if let ShouldCompilar::Yes(_tier) = tiered.on_funcion_llamada(nombre.as_ref()) {}
             }
             _ => {}
         }
-        let _osr = tiered.on_loop_iteration("main", ip);
+        let _osr = tiered.on_bucle_iteration("main", ip);
     }
 }
 

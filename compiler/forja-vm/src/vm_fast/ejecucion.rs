@@ -251,8 +251,8 @@ impl ForjaFast {
                             2 if a.es_texto() && b.es_texto() => {
                                 let s = format!(
                                     "{}{}",
-                                    self.get_str(a.indice_texto()),
-                                    self.get_str(b.indice_texto())
+                                    self.obtener_texto(a.indice_texto()),
+                                    self.obtener_texto(b.indice_texto())
                                 );
                                 let idx = self.reservar_texto(Arc::from(s.as_str()));
                                 self.empujar_valor(ValorFast::texto(idx));
@@ -324,7 +324,7 @@ impl ForjaFast {
                     } else if a.es_texto() {
                         let s = format!(
                             "{}{}",
-                            self.get_str(a.indice_texto()),
+                            self.obtener_texto(a.indice_texto()),
                             self.mostrar_valor(&b)
                         );
                         let idx = self.reservar_texto(Arc::from(s.as_str()));
@@ -333,7 +333,7 @@ impl ForjaFast {
                         let s = format!(
                             "{}{}",
                             self.mostrar_valor(&a),
-                            self.get_str(b.indice_texto())
+                            self.obtener_texto(b.indice_texto())
                         );
                         let idx = self.reservar_texto(Arc::from(s.as_str()));
                         self.empujar_valor(ValorFast::texto(idx));
@@ -885,7 +885,7 @@ impl ForjaFast {
                         p.record_call(nombre.as_ref());
                     }
                     let call_ip = self.ip;
-                    let sym_id = self.runtime.tabla_simbolos.internar(nombre.as_ref());
+                    let sym_id = self.simbolo_para_ip(call_ip, nombre);
                     if self.show_bytecode {
                         eprintln!("[DEBUG Call] nombre={}, nargs={}, self.stack.len={}, top_len={}, frame_count={}",
                             nombre, nargs, self.stack.len(), self.top_longitud, self.frame_count);
@@ -1062,7 +1062,7 @@ impl ForjaFast {
 
                 // ─── TAIL CALL ────────────────────────────────────────────────
                 Opcode::LlamadaFinal(nombre, nargs) => {
-                    let sym_id = self.runtime.tabla_simbolos.internar(nombre.as_ref());
+                    let sym_id = self.simbolo_para_ip(self.ip, nombre);
                     if let Some(entry) = self.lookup_funcion_entrada(sym_id) {
                         self.flush_pila();
                         let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
@@ -1199,7 +1199,7 @@ impl ForjaFast {
                             }
                             let v = self.desapilar_valor()?;
                             if v.es_texto() {
-                                let s = self.get_str(v.indice_texto());
+                                let s = self.obtener_texto(v.indice_texto());
                                 self.empujar_valor(obtener_small_entero_fast(s.len() as i64));
                             } else if v.es_arreglo() {
                                 let arr = self.obtener_arr(v.indice_arreglo());
@@ -1432,9 +1432,9 @@ impl ForjaFast {
                 }
 
                 // Debug: SetLine — información de línea para el debugger
-                Opcode::FijarLinea(line) => {
+                Opcode::FijarLinea(linea) => {
                     // registrar la línea actual para el backtrace de runtime.
-                    self.linea_actual = *line;
+                    self.linea_actual = *linea;
                     self.ip += 1;
                 }
 

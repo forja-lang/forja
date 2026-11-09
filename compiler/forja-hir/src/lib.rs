@@ -178,7 +178,7 @@ impl Hir {
         self.defs.get(id.0 as usize)
     }
 
-    pub fn item(&self, modulo: ModuloId, nombre: &str) -> Option<DefId> {
+    pub fn elemento(&self, modulo: ModuloId, nombre: &str) -> Option<DefId> {
         let id = self.interner.buscar(nombre)?;
         self.modulos
             .get(modulo.0 as usize)
@@ -187,7 +187,7 @@ impl Hir {
 
     /// `nombre` tal como se escribe (`modulo.item`), sin depender del aplanado.
     pub fn resolver_calificado(&self, modulo: ModuloId, nombre: &str) -> Resolucion {
-        match self.item(modulo, nombre) {
+        match self.elemento(modulo, nombre) {
             Some(id) => Resolucion::Elemento(id),
             None => Resolucion::NoEncontrado,
         }
@@ -244,7 +244,7 @@ mod tests {
     fn analizar(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        Parser::new(tokens).parse().unwrap()
+        Parser::nuevo(tokens).parse().unwrap()
     }
 
     #[test]
@@ -272,7 +272,7 @@ mod tests {
         let m = hir.agregar_modulo("m", &p);
         assert_eq!(hir.duplicados.len(), 1);
         assert_eq!(hir.duplicados[0].0, "f");
-        assert!(hir.item(m, "f").is_some());
+        assert!(hir.elemento(m, "f").is_some());
     }
 
     #[test]

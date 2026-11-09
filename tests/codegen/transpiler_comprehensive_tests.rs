@@ -5,9 +5,9 @@ use forja::transpiler::Transpiler;
 fn transpilar(fuente: &str) -> String {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut transpiler = Transpiler::new();
+    let mut transpiler = Transpiler::nuevo();
     transpiler.transpilar(&programa).unwrap()
 }
 

@@ -43,9 +43,9 @@ mod tests {
     fn generar_bytecode(fuente: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse()?;
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         gen.generar(&programa)
     }
 
@@ -130,16 +130,16 @@ mod tests {
 
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-        let mut verificador = TipoChecker::new();
+        let mut verificador = TipoChecker::nuevo();
         verificador
             .analizar(&programa)
             .map_err(|e| format!("{}", e[0]))?;
         let tipos_inferidos = verificador.obtener_tipos_inferidos();
 
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         gen.fijar_tipos_inferidos(tipos_inferidos);
         gen.generar(&programa)
             .map_err(|_| "Error generando bytecode".to_string())
@@ -229,14 +229,14 @@ mod tests {
 
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse()?;
 
-        let mut verificador = semantics::TipoChecker::new();
+        let mut verificador = semantics::TipoChecker::nuevo();
         verificador.analizar(&programa)?;
         let tipos_inferidos = verificador.obtener_tipos_inferidos();
 
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         gen.fijar_tipos_inferidos(tipos_inferidos);
         gen.generar_para_modulo(&programa, id_modulo)
     }
@@ -259,7 +259,7 @@ fun version() {
         let id_modulo = IdSimbolo(42);
         let bytecode_modulo = generar_bytecode_para_modulo(fuente, id_modulo).unwrap();
 
-        // El ModuloBytecode debe tener el id_modulo correcto
+        // El ModuloBytecode debe tener el id_modulo ok
         assert_eq!(bytecode_modulo.id_modulo, id_modulo);
         // Debe haber al menos un opcode
         assert!(
@@ -474,7 +474,7 @@ fun probar() {
     fn sobrecarga_funciones_con_tipos_distintos() {
         // Dos funciones con mismo nombre pero diferentes tipos de parámetros.
         // TypeChecker debe recolectar ambos como overloads y el bytecode
-        // debe resolver el nombre mangled correcto para cada llamada.
+        // debe resolver el nombre mangled ok para cada llamada.
         let fuente = "\
 funcion mcd(a: Texto, b: Texto) -> Texto {
     retornar a
@@ -487,10 +487,10 @@ variable y = mcd(10, 20)
 ";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut verificador = TipoChecker::new();
+        let mut verificador = TipoChecker::nuevo();
         // Debe analizar sin errores: ambas funciones deben coexistir
         verificador.analizar(&programa).unwrap();
         let tipos_inferidos = verificador.obtener_tipos_inferidos();
@@ -502,7 +502,7 @@ variable y = mcd(10, 20)
         assert_eq!(overloads.unwrap().len(), 2, "mcd debe tener 2 overloads");
 
         // Generar bytecode con overloads
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         gen.fijar_tipos_inferidos(tipos_inferidos);
         gen.fijar_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
@@ -547,10 +547,10 @@ variable y = mcd(10, 20)
     ";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut verificador = TipoChecker::new();
+        let mut verificador = TipoChecker::nuevo();
         verificador.analizar(&programa).unwrap();
         let funciones_overload = verificador.obtener_funciones();
 
@@ -558,7 +558,7 @@ variable y = mcd(10, 20)
         assert!(overloads.is_some(), "sumar debe estar en overloads");
         assert_eq!(overloads.unwrap().len(), 2, "sumar debe tener 2 overloads");
 
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         gen.fijar_tipos_inferidos(verificador.obtener_tipos_inferidos());
         gen.fijar_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
@@ -597,10 +597,10 @@ variable y = mcd(10, 20)
     ";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut verificador = TipoChecker::new();
+        let mut verificador = TipoChecker::nuevo();
         verificador.analizar(&programa).unwrap();
         let funciones_overload = verificador.obtener_funciones();
 
@@ -609,7 +609,7 @@ variable y = mcd(10, 20)
         assert!(overloads.is_some());
         assert_eq!(overloads.unwrap().len(), 1);
 
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         gen.fijar_tipos_inferidos(verificador.obtener_tipos_inferidos());
         gen.fijar_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();

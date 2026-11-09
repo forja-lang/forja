@@ -117,9 +117,9 @@ impl PipelineAst {
     pub fn basico() -> Self {
         Self {
             passes: vec![
-                Box::new(optimizer::Optimizer::new()),
-                Box::new(optimizer::DeadCodeEliminator::new()),
-                Box::new(optimizer::ConstPropagator::new()),
+                Box::new(optimizer::Optimizer::nuevo()),
+                Box::new(optimizer::DeadCodeEliminator::nuevo()),
+                Box::new(optimizer::ConstPropagator::nuevo()),
             ],
         }
     }
@@ -130,14 +130,16 @@ impl PipelineAst {
         let mut pipeline = Self::basico();
         pipeline
             .passes
-            .push(Box::new(optimizer::FuncionInliner::new()));
+            .push(Box::new(optimizer::FuncionInliner::nuevo()));
         pipeline
             .passes
-            .push(Box::new(optimizer::BucleUnswitcher::new()));
-        pipeline.passes.push(Box::new(optimizer::CsePasada::new()));
+            .push(Box::new(optimizer::BucleUnswitcher::nuevo()));
         pipeline
             .passes
-            .push(Box::new(optimizer::CopiaPropagation::new()));
+            .push(Box::new(optimizer::CsePasada::nuevo()));
+        pipeline
+            .passes
+            .push(Box::new(optimizer::CopiaPropagation::nuevo()));
         pipeline
     }
 
@@ -254,7 +256,7 @@ mod tests {
     fn parsear(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::nuevo(tokens);
         parser.parse().unwrap()
     }
 

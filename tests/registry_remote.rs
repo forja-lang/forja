@@ -167,7 +167,7 @@ fn servidor_rechaza_firma_que_no_corresponde() {
         descripcion: "alterado".into(),
         firma: firma_otra,
         clave_publica: publica_hex.clone(),
-        tarball_b64: forja::base64::b64_encode(&datos),
+        tarball_b64: forja::base64::b64_codificar(&datos),
     };
     let respuesta = put_publicacion(servidor.addr, "alterado", "1.0.0", &alterada);
     assert!(
@@ -182,7 +182,7 @@ fn servidor_rechaza_firma_que_no_corresponde() {
         descripcion: "correcto".into(),
         firma: forja::registro::firmar_hash_ed25519(&hash, &claves.privada),
         clave_publica: publica_hex,
-        tarball_b64: forja::base64::b64_encode(&datos),
+        tarball_b64: forja::base64::b64_codificar(&datos),
     };
     let respuesta = put_publicacion(servidor.addr, "alterado", "1.0.0", &correcta);
     assert!(

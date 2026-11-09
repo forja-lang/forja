@@ -188,7 +188,7 @@ impl ForjaFast {
                     }
                 } else if obj.es_texto() {
                     let txt_idx = obj.indice_texto();
-                    let s = self.get_str(txt_idx);
+                    let s = self.obtener_texto(txt_idx);
                     match m.as_ref() {
                         "longitud" => {
                             self.empujar_valor(ValorFast::entero(s.chars().count() as i64));
@@ -205,7 +205,7 @@ impl ForjaFast {
                         }
                         "contiene" => {
                             if !args.is_empty() && args[0].es_texto() {
-                                let sub_s = self.get_str(args[0].indice_texto());
+                                let sub_s = self.obtener_texto(args[0].indice_texto());
                                 self.empujar_valor(ValorFast::booleano(s.contains(sub_s.as_ref())));
                             } else {
                                 self.empujar_valor(ValorFast::booleano(false));
@@ -472,7 +472,7 @@ impl ForjaFast {
                     }
                 } else if obj.es_texto() {
                     let txt_idx = obj.indice_texto();
-                    let s = self.get_str(txt_idx);
+                    let s = self.obtener_texto(txt_idx);
                     let m = self.runtime.tabla_simbolos.texto(IdSimbolo(*method_sym_id));
                     match m {
                         "longitud" => {
@@ -490,7 +490,7 @@ impl ForjaFast {
                         }
                         "contiene" => {
                             if !args.is_empty() && args[0].es_texto() {
-                                let sub_s = self.get_str(args[0].indice_texto());
+                                let sub_s = self.obtener_texto(args[0].indice_texto());
                                 self.empujar_valor(ValorFast::booleano(s.contains(sub_s.as_ref())));
                             } else {
                                 self.empujar_valor(ValorFast::booleano(false));

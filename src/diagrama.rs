@@ -3,79 +3,80 @@ use crate::ast::*;
 
 pub struct DiagramGenerator {
     output: String,
-    node_id: usize,
+    nodo_id: usize,
 }
 
 impl Default for DiagramGenerator {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl DiagramGenerator {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         DiagramGenerator {
             output: String::new(),
-            node_id: 0,
+            nodo_id: 0,
         }
     }
 
     fn next_id(&mut self) -> usize {
-        let id = self.node_id;
-        self.node_id += 1;
+        let id = self.nodo_id;
+        self.nodo_id += 1;
         id
     }
 
-    fn add_node(&mut self, label: &str, shape_start: &str, shape_end: &str) -> String {
+    fn sumar_nodo(&mut self, etiqueta: &str, shape_start: &str, shape_end: &str) -> String {
         let id = format!("N{}", self.next_id());
-        if label.is_empty() {
+        if etiqueta.is_empty() {
             self.output
                 .push_str(&format!("    {id}{shape_start}{shape_end}\n"));
         } else {
-            let clean_label = label
+            let clean_etiqueta = etiqueta
                 .replace('&', "&amp;")
                 .replace('"', "&quot;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;");
             self.output.push_str(&format!(
-                "    {id}{shape_start}\"{clean_label}\"{shape_end}\n"
+                "    {id}{shape_start}\"{clean_etiqueta}\"{shape_end}\n"
             ));
         }
         id
     }
 
-    fn connect_exits(&mut self, exits: &str, target: &str) {
+    fn connect_exits(&mut self, exits: &str, destino: &str) {
         for exit in exits.split(',') {
             if exit.contains('|') {
                 let parts: Vec<&str> = exit.split('|').collect();
                 let node = parts[0];
-                let label = parts[1];
+                let etiqueta = parts[1];
                 self.output
-                    .push_str(&format!("    {} -- {} --> {}\n", node, label, target));
+                    .push_str(&format!("    {} -- {} --> {}\n", node, etiqueta, destino));
             } else {
                 self.output
-                    .push_str(&format!("    {} --> {}\n", exit, target));
+                    .push_str(&format!("    {} --> {}\n", exit, destino));
             }
         }
     }
 
     pub fn generar(&mut self, p: &Programa) -> String {
         self.output = String::new();
-        self.node_id = 0;
+        self.nodo_id = 0;
 
         self.output.push_str("graph TD\n");
 
-        let start = self.add_node("Inicio", "([", "])");
+        let inicio = self.sumar_nodo("Inicio", "([", "])");
         let (body_start, body_end) = self.gen_block(&p.declaraciones, "main");
         if let Some(bs) = body_start {
-            self.output.push_str(&format!("    {} --> {}\n", start, bs));
+            self.output
+                .push_str(&format!("    {} --> {}\n", inicio, bs));
         }
-        let end = self.add_node("Fin", "([", "])");
+        let end = self.sumar_nodo("Fin", "([", "])");
         if let Some(be) = body_end {
             self.connect_exits(&be, &end);
         } else {
             self.output
-                .push_str(&format!("    {} --> {}\n", start, end));
+                .push_str(&format!("    {} --> {}\n", inicio, end));
         }
 
         self.output.clone()
@@ -84,22 +85,22 @@ impl DiagramGenerator {
     fn gen_block(
         &mut self,
         decls: &[Declaracion],
-        _parent: &str,
+        padre: &str,
     ) -> (Option<String>, Option<String>) {
-        let mut first: Option<String> = None;
-        let mut last: Option<String> = None;
+        let mut primero: Option<String> = None;
+        let mut ultimo: Option<String> = None;
         for d in decls {
             let (e_entry, e_exit) = self.gen_decl(d);
             if let Some(entry) = e_entry {
-                if let Some(prev_last) = last {
+                if let Some(prev_last) = ultimo {
                     self.connect_exits(&prev_last, &entry);
                 } else {
-                    first = Some(entry.clone());
+                    primero = Some(entry.clone());
                 }
-                last = e_exit;
+                ultimo = e_exit;
             }
         }
-        (first, last)
+        (primero, ultimo)
     }
 
     fn gen_decl(&mut self, decl: &Declaracion) -> (Option<String>, Option<String>) {
@@ -120,11 +121,11 @@ impl DiagramGenerator {
                     .as_ref()
                     .map(|v| format!(" = {}", self.ec(v)))
                     .unwrap_or_default();
-                let node = self.add_node(&format!("{kw} {nombre}{ts}{vs}"), "[", "]");
+                let node = self.sumar_nodo(&format!("{kw} {nombre}{ts}{vs}"), "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::Asignacion { nombre, valor, .. } => {
-                let node = self.add_node(&format!("{nombre} = {}", self.ec(valor)), "[", "]");
+                let node = self.sumar_nodo(&format!("{nombre} = {}", self.ec(valor)), "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::AsignacionMiembro {
@@ -133,7 +134,7 @@ impl DiagramGenerator {
                 valor,
                 ..
             } => {
-                let node = self.add_node(
+                let node = self.sumar_nodo(
                     &format!("{}.{miembro} = {}", self.ec(objeto), self.ec(valor)),
                     "[",
                     "]",
@@ -146,7 +147,7 @@ impl DiagramGenerator {
                 valor,
                 ..
             } => {
-                let node = self.add_node(
+                let node = self.sumar_nodo(
                     &format!("{nombre}[{}] = {}", self.ec(indice), self.ec(valor)),
                     "[",
                     "]",
@@ -173,17 +174,18 @@ impl DiagramGenerator {
                     ps.join(","),
                     ret
                 ));
-                let start = self.add_node("Inicio", "([", "])");
+                let inicio = self.sumar_nodo("Inicio", "([", "])");
                 let (body_start, body_end) = self.gen_block(cuerpo, nombre);
                 if let Some(bs) = body_start {
-                    self.output.push_str(&format!("    {} --> {}\n", start, bs));
+                    self.output
+                        .push_str(&format!("    {} --> {}\n", inicio, bs));
                 }
-                let end = self.add_node("Fin", "([", "])");
+                let end = self.sumar_nodo("Fin", "([", "])");
                 if let Some(be) = body_end {
                     self.connect_exits(&be, &end);
                 } else {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", start, end));
+                        .push_str(&format!("    {} --> {}\n", inicio, end));
                 }
                 self.output.push_str("    end\n\n");
                 (None, None) // Definitions don't connect sequentially
@@ -204,18 +206,18 @@ impl DiagramGenerator {
                         m.nombre,
                         ps.join(", ")
                     ));
-                    let m_start = self.add_node("Inicio", "([", "])");
+                    let m_inicio = self.sumar_nodo("Inicio", "([", "])");
                     let (m_body_start, m_body_end) = self.gen_block(&m.cuerpo, &m.nombre);
                     if let Some(mbs) = m_body_start {
                         self.output
-                            .push_str(&format!("        {} --> {}\n", m_start, mbs));
+                            .push_str(&format!("        {} --> {}\n", m_inicio, mbs));
                     }
-                    let m_end = self.add_node("Fin", "([", "])");
+                    let m_end = self.sumar_nodo("Fin", "([", "])");
                     if let Some(mbe) = m_body_end {
                         self.connect_exits(&mbe, &m_end);
                     } else {
                         self.output
-                            .push_str(&format!("        {} --> {}\n", m_start, m_end));
+                            .push_str(&format!("        {} --> {}\n", m_inicio, m_end));
                     }
                     self.output.push_str("        end\n");
                 }
@@ -227,75 +229,75 @@ impl DiagramGenerator {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let cond_label = format!("si ({})", self.ec(condicion));
-                let cond_node = self.add_node(&cond_label, "{", "}");
+                let cond_etiqueta = format!("si ({})", self.ec(condicion));
+                let cond_nodo = self.sumar_nodo(&cond_etiqueta, "{", "}");
 
                 let (si_start, si_end) = self.gen_block(bloque_verdadero, "si");
                 if let Some(ss) = si_start {
                     self.output
-                        .push_str(&format!("    {} -- Si --> {}\n", cond_node, ss));
+                        .push_str(&format!("    {} -- Si --> {}\n", cond_nodo, ss));
                 }
 
-                let si_exit = si_end.unwrap_or_else(|| format!("{}|Si", cond_node));
+                let si_exit = si_end.unwrap_or_else(|| format!("{}|Si", cond_nodo));
 
                 let sino_exit = if let Some(bf) = bloque_falso {
                     let (sino_start, sino_end) = self.gen_block(bf, "sino");
                     if let Some(sn) = sino_start {
                         self.output
-                            .push_str(&format!("    {} -- Sino --> {}\n", cond_node, sn));
+                            .push_str(&format!("    {} -- Sino --> {}\n", cond_nodo, sn));
                     }
-                    sino_end.unwrap_or_else(|| cond_node.clone())
+                    sino_end.unwrap_or_else(|| cond_nodo.clone())
                 } else {
-                    format!("{}|Sino", cond_node)
+                    format!("{}|Sino", cond_nodo)
                 };
 
                 let merge_exits = format!("{},{}", si_exit, sino_exit);
-                (Some(cond_node), Some(merge_exits))
+                (Some(cond_nodo), Some(merge_exits))
             }
             Declaracion::Mientras { condicion, bloque } => {
-                let cond_label = format!("mientras ({})", self.ec(condicion));
-                let cond_node = self.add_node(&cond_label, "{", "}");
+                let cond_etiqueta = format!("mientras ({})", self.ec(condicion));
+                let cond_nodo = self.sumar_nodo(&cond_etiqueta, "{", "}");
 
                 let (body_start, body_end) = self.gen_block(bloque, "mientras");
                 if let Some(bs) = body_start {
                     self.output
-                        .push_str(&format!("    {} -- Si --> {}\n", cond_node, bs));
+                        .push_str(&format!("    {} -- Si --> {}\n", cond_nodo, bs));
                 }
                 if let Some(be) = body_end {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", be, cond_node));
+                        .push_str(&format!("    {} --> {}\n", be, cond_nodo));
                 } else {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", cond_node, cond_node));
+                        .push_str(&format!("    {} --> {}\n", cond_nodo, cond_nodo));
                 }
 
-                let exit_node = self.add_node("Fin Mientras", "[", "]");
+                let exit_nodo = self.sumar_nodo("Fin Mientras", "[", "]");
                 self.output
-                    .push_str(&format!("    {} -- No --> {}\n", cond_node, exit_node));
+                    .push_str(&format!("    {} -- No --> {}\n", cond_nodo, exit_nodo));
 
-                (Some(cond_node), Some(exit_node))
+                (Some(cond_nodo), Some(exit_nodo))
             }
             Declaracion::Cuando {
                 condicion, cuerpo, ..
             } => {
-                let cond_label = format!("cuando ({})", self.ec(condicion));
-                let cond_node = self.add_node(&cond_label, "{", "}");
+                let cond_etiqueta = format!("cuando ({})", self.ec(condicion));
+                let cond_nodo = self.sumar_nodo(&cond_etiqueta, "{", "}");
 
                 let (body_start, body_end) = self.gen_block(cuerpo, "cuando");
                 if let Some(bs) = body_start {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", cond_node, bs));
+                        .push_str(&format!("    {} --> {}\n", cond_nodo, bs));
                 }
-                let exit_node = self.add_node("Fin Cuando", "[", "]");
+                let exit_nodo = self.sumar_nodo("Fin Cuando", "[", "]");
                 if let Some(be) = body_end {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", be, exit_node));
+                        .push_str(&format!("    {} --> {}\n", be, exit_nodo));
                 } else {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", cond_node, exit_node));
+                        .push_str(&format!("    {} --> {}\n", cond_nodo, exit_nodo));
                 }
 
-                (Some(cond_node), Some(exit_node))
+                (Some(cond_nodo), Some(exit_nodo))
             }
             Declaracion::Para {
                 inicializacion,
@@ -303,88 +305,89 @@ impl DiagramGenerator {
                 incremento,
                 bloque,
             } => {
-                let init = inicializacion
+                let inicializar = inicializacion
                     .as_ref()
                     .map(|d| self.dc(d))
                     .unwrap_or_default();
                 let cond = condicion.as_ref().map(|e| self.ec(e)).unwrap_or_default();
                 let inc = incremento.as_ref().map(|d| self.dc(d)).unwrap_or_default();
 
-                let init_node = self.add_node(&format!("Para Init: {init}"), "[", "]");
-                let cond_node = self.add_node(&format!("Para Cond: {cond}"), "{", "}");
+                let inicializar_nodo =
+                    self.sumar_nodo(&format!("Para Init: {inicializar}"), "[", "]");
+                let cond_nodo = self.sumar_nodo(&format!("Para Cond: {cond}"), "{", "}");
                 self.output
-                    .push_str(&format!("    {} --> {}\n", init_node, cond_node));
+                    .push_str(&format!("    {} --> {}\n", inicializar_nodo, cond_nodo));
 
                 let (body_start, body_end) = self.gen_block(bloque, "para");
                 if let Some(bs) = body_start {
                     self.output
-                        .push_str(&format!("    {} -- Si --> {}\n", cond_node, bs));
+                        .push_str(&format!("    {} -- Si --> {}\n", cond_nodo, bs));
                 }
 
-                let inc_node = self.add_node(&format!("Para Inc: {inc}"), "[", "]");
+                let inc_nodo = self.sumar_nodo(&format!("Para Inc: {inc}"), "[", "]");
                 if let Some(be) = body_end {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", be, inc_node));
+                        .push_str(&format!("    {} --> {}\n", be, inc_nodo));
                 } else {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", cond_node, inc_node));
+                        .push_str(&format!("    {} --> {}\n", cond_nodo, inc_nodo));
                 }
                 self.output
-                    .push_str(&format!("    {} --> {}\n", inc_node, cond_node));
+                    .push_str(&format!("    {} --> {}\n", inc_nodo, cond_nodo));
 
-                let exit_node = self.add_node("Fin Para", "[", "]");
+                let exit_nodo = self.sumar_nodo("Fin Para", "[", "]");
                 self.output
-                    .push_str(&format!("    {} -- No --> {}\n", cond_node, exit_node));
+                    .push_str(&format!("    {} -- No --> {}\n", cond_nodo, exit_nodo));
 
-                (Some(init_node), Some(exit_node))
+                (Some(inicializar_nodo), Some(exit_nodo))
             }
             Declaracion::Repetir { cantidad, bloque } => {
                 let qty = self.ec(cantidad);
-                let cond_node = self.add_node(&format!("repetir {qty} veces"), "{", "}");
+                let cond_nodo = self.sumar_nodo(&format!("repetir {qty} veces"), "{", "}");
 
                 let (body_start, body_end) = self.gen_block(bloque, "repetir");
                 if let Some(bs) = body_start {
                     self.output
-                        .push_str(&format!("    {} -- Bucle --> {}\n", cond_node, bs));
+                        .push_str(&format!("    {} -- Bucle --> {}\n", cond_nodo, bs));
                 }
                 if let Some(be) = body_end {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", be, cond_node));
+                        .push_str(&format!("    {} --> {}\n", be, cond_nodo));
                 } else {
                     self.output
-                        .push_str(&format!("    {} --> {}\n", cond_node, cond_node));
+                        .push_str(&format!("    {} --> {}\n", cond_nodo, cond_nodo));
                 }
 
-                let exit_node = self.add_node("Fin Repetir", "[", "]");
+                let exit_nodo = self.sumar_nodo("Fin Repetir", "[", "]");
                 self.output
-                    .push_str(&format!("    {} -- Fin --> {}\n", cond_node, exit_node));
+                    .push_str(&format!("    {} -- Fin --> {}\n", cond_nodo, exit_nodo));
 
-                (Some(cond_node), Some(exit_node))
+                (Some(cond_nodo), Some(exit_nodo))
             }
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
                 let args: Vec<String> = argumentos.iter().map(|a| self.ec(a)).collect();
-                let node = self.add_node(&format!("{nombre}({})", args.join(", ")), "[", "]");
+                let node = self.sumar_nodo(&format!("{nombre}({})", args.join(", ")), "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::AccesoMiembro { objeto, miembro } => {
-                let node = self.add_node(&format!("{}.{miembro}", self.ec(objeto)), "[", "]");
+                let node = self.sumar_nodo(&format!("{}.{miembro}", self.ec(objeto)), "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::Retornar { valor } => {
-                let label = if let Some(v) = valor {
+                let etiqueta = if let Some(v) = valor {
                     format!("retornar {}", self.ec(v))
                 } else {
                     "retornar".to_string()
                 };
-                let node = self.add_node(&label, "[", "]");
+                let node = self.sumar_nodo(&etiqueta, "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::Romper => {
-                let node = self.add_node("romper", "[", "]");
+                let node = self.sumar_nodo("romper", "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::Continuar => {
-                let node = self.add_node("continuar", "[", "]");
+                let node = self.sumar_nodo("continuar", "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::Importar(r) => {
@@ -397,7 +400,7 @@ impl DiagramGenerator {
             } => {
                 let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
                 let _node =
-                    self.add_node(&format!("tipo {nombre} = {}", vars.join(" | ")), "[", "]");
+                    self.sumar_nodo(&format!("tipo {nombre} = {}", vars.join(" | ")), "[", "]");
                 (None, None)
             }
             Declaracion::Rasgo { nombre, metodos } => {
@@ -407,7 +410,7 @@ impl DiagramGenerator {
                     nombre, nombre
                 ));
                 for m in mnames {
-                    self.add_node(&format!("metodo {m}"), "[", "]");
+                    self.sumar_nodo(&format!("metodo {m}"), "[", "]");
                 }
                 self.output.push_str("    end\n\n");
                 (None, None)
@@ -429,18 +432,18 @@ impl DiagramGenerator {
                         m.nombre,
                         ps.join(", ")
                     ));
-                    let m_start = self.add_node("Inicio", "([", "])");
+                    let m_inicio = self.sumar_nodo("Inicio", "([", "])");
                     let (m_body_start, m_body_end) = self.gen_block(&m.cuerpo, &m.nombre);
                     if let Some(mbs) = m_body_start {
                         self.output
-                            .push_str(&format!("        {} --> {}\n", m_start, mbs));
+                            .push_str(&format!("        {} --> {}\n", m_inicio, mbs));
                     }
-                    let m_end = self.add_node("Fin", "([", "])");
+                    let m_end = self.sumar_nodo("Fin", "([", "])");
                     if let Some(mbe) = m_body_end {
                         self.connect_exits(&mbe, &m_end);
                     } else {
                         self.output
-                            .push_str(&format!("        {} --> {}\n", m_start, m_end));
+                            .push_str(&format!("        {} --> {}\n", m_inicio, m_end));
                     }
                     self.output.push_str("        end\n");
                 }
@@ -448,13 +451,13 @@ impl DiagramGenerator {
                 (None, None)
             }
             Declaracion::Expresion(expr) => {
-                let node = self.add_node(&self.ec(expr), "[", "]");
+                let node = self.sumar_nodo(&self.ec(expr), "[", "]");
                 (Some(node.clone()), Some(node))
             }
             Declaracion::AsignacionMultiple {
                 variables, valor, ..
             } => {
-                let node = self.add_node(
+                let node = self.sumar_nodo(
                     &format!("{} = {}", variables.join(", "), self.ec(valor)),
                     "[",
                     "]",
@@ -645,7 +648,9 @@ impl DiagramGenerator {
                 let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect();
                 format!("({}) -> {}", p.join(", "), self.ts(ret))
             }
-            Tipo::Resultado(ok, err) => format!("Resultado<{}, {}>", self.ts(ok), self.ts(err)),
+            Tipo::Resultado(ok, err) => {
+                format!("Resultado<{}, {}>", self.ts(ok), self.ts(err))
+            }
             Tipo::Opcion(inner) => format!("Opcion<{}>", self.ts(inner)),
             Tipo::RasgoObjeto(n) => format!("Rasgo<{}>", n),
             Tipo::Parametro(n) => format!("Parametro<{}>", n),

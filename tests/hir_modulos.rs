@@ -31,16 +31,16 @@ fn dos_modulos_con_el_mismo_nombre_resuelven_por_separado_en_hir() {
     let a = {
         let mut l = forja::lexer::Lexer::new("funcion obtener() { retornar 1 }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::new(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parse().unwrap()
     };
     let b = {
         let mut l = forja::lexer::Lexer::new("funcion obtener() { retornar 2 }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::new(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parse().unwrap()
     };
     let ma = hir.agregar_modulo("a", &a);
     let mb = hir.agregar_modulo("b", &b);
-    assert_ne!(hir.item(ma, "obtener"), hir.item(mb, "obtener"));
+    assert_ne!(hir.elemento(ma, "obtener"), hir.elemento(mb, "obtener"));
     assert_eq!(hir.colisiones_entre(ma, mb), vec!["obtener"]);
 }
 
@@ -52,12 +52,12 @@ fn hir_interna_nombres_entre_modulos() {
     let programa = {
         let mut l = forja::lexer::Lexer::new("funcion obtener() { retornar 1 }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::new(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parse().unwrap()
     };
     let a = hir.agregar_modulo("a", &programa);
     let b = hir.agregar_modulo("b", &programa);
-    let da = hir.def(hir.item(a, "obtener").unwrap()).unwrap();
-    let db = hir.def(hir.item(b, "obtener").unwrap()).unwrap();
+    let da = hir.def(hir.elemento(a, "obtener").unwrap()).unwrap();
+    let db = hir.def(hir.elemento(b, "obtener").unwrap()).unwrap();
     assert_eq!(da.nombre_id, db.nombre_id);
     assert_eq!(hir.nombre_de(da.nombre_id), "obtener");
 }
@@ -71,10 +71,10 @@ fn typeck_consume_hir() {
     let programa = {
         let mut l = forja::lexer::Lexer::new("funcion f(x: Entero) -> Entero { retornar x }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::new(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parse().unwrap()
     };
     hir.agregar_modulo("a", &programa);
-    let mut tc = TipoChecker::new();
+    let mut tc = TipoChecker::nuevo();
     tc.analizar_hir(&hir).expect("HIR debe typechequear");
 }
 
@@ -87,9 +87,9 @@ fn borrowck_consume_hir() {
     let programa = {
         let mut l = forja::lexer::Lexer::new("funcion f(x: Entero) -> Entero { retornar x }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::new(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parse().unwrap()
     };
     hir.agregar_modulo("a", &programa);
-    let mut bc = PrestamoChecker::new();
+    let mut bc = PrestamoChecker::nuevo();
     bc.analizar_hir(&hir).expect("HIR debe pasar préstamos");
 }

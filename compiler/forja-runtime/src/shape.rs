@@ -49,7 +49,7 @@ impl Forma {
     ///
     /// # Devuelve
     /// Una forma sin campos ni transiciones.
-    pub fn new(id: IdForma, clase: IdSimbolo) -> Self {
+    pub fn nuevo(id: IdForma, clase: IdSimbolo) -> Self {
         Forma {
             id,
             campo_a_indice: HashMap::new(),
@@ -117,7 +117,7 @@ pub struct RegistroFormas {
 
 impl Default for RegistroFormas {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -128,7 +128,7 @@ impl RegistroFormas {
     ///
     /// # Devuelve
     /// Un registro sin formas.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         RegistroFormas {
             formas: Vec::new(),
             proximo_id: 1,
@@ -149,7 +149,7 @@ impl RegistroFormas {
         }
         let id = IdForma(self.proximo_id);
         self.proximo_id += 1;
-        let forma = Forma::new(id, clase);
+        let forma = Forma::nuevo(id, clase);
         self.formas.push(forma);
         self.clase_a_forma.insert(clase, id);
         id
@@ -222,7 +222,7 @@ impl RegistroFormas {
         self.proximo_id += 1;
 
         let forma_padre = self.obtener(id_forma).unwrap();
-        let mut forma_nueva = Forma::new(id_nueva, forma_padre.clase_origen);
+        let mut forma_nueva = Forma::nuevo(id_nueva, forma_padre.clase_origen);
         forma_nueva.padre = Some(id_forma);
 
         // La forma derivada arranca con los mismos campos que la forma de origen.

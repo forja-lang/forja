@@ -151,9 +151,9 @@ impl ConstructorDesdeAst {
     }
 
     /// Crea un traductor AST → IR sin funciones ni símbolos.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ConstructorDesdeAst {
-            simbolos: TablaSimbolosIr::new(),
+            simbolos: TablaSimbolosIr::nuevo(),
             mapa_variables: HashMap::new(),
             mapa_globales: HashMap::new(),
             next_mem: IdxMemoria(0),
@@ -1396,7 +1396,7 @@ impl ConstructorDesdeAst {
         }
 
         let name_sym = self.simbolos.internar("main");
-        let mut constructor_ir = ConstructorIr::new();
+        let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = self.simbolos.clone();
         let entrada = constructor_ir.nuevo_bloque();
 
@@ -1518,7 +1518,7 @@ impl ConstructorDesdeAst {
         let in_funcion_previo = self.in_funcion;
         self.next_local = IdxMemoria(0);
 
-        let mut constructor_ir = ConstructorIr::new();
+        let mut constructor_ir = ConstructorIr::nuevo();
         // La tabla del host es la fuente de verdad de los `IdSimboloIr`: el closure la
         // clona y el resultado se devuelve al host, para que los ids del nombre
         // del closure y de sus parámetros signifiquen lo mismo en ambos.
@@ -1615,7 +1615,7 @@ impl ConstructorDesdeAst {
         let in_funcion_previo = self.in_funcion;
         self.next_local = IdxMemoria(0);
 
-        let mut constructor_ir = ConstructorIr::new();
+        let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = anfitrion.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(&nombre);
         let entrada = constructor_ir.nuevo_bloque();
@@ -1653,7 +1653,7 @@ impl ConstructorDesdeAst {
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
 
-        let mut constructor_ir = ConstructorIr::new();
+        let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = self.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(nombre);
         let entrada = constructor_ir.nuevo_bloque();
@@ -1692,7 +1692,7 @@ impl ConstructorDesdeAst {
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
 
-        let mut constructor_ir = ConstructorIr::new();
+        let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = self.simbolos.clone();
         let nombre_metodo = if metodo.nombre.is_empty() {
             "nuevo"
@@ -1738,7 +1738,7 @@ impl ConstructorDesdeAst {
 
 impl Default for ConstructorDesdeAst {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -1749,14 +1749,14 @@ mod tests {
     fn parsear_fuente(fuente: &str) -> Programa {
         let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let mut parser = forja_syntax::parser::Parser::new(tokens);
+        let mut parser = forja_syntax::parser::Parser::nuevo(tokens);
         parser.parse().unwrap()
     }
 
     #[test]
     fn test_simple_programa() {
         let prog = parsear_fuente("variable a = 1\nescribir(a + 2)");
-        let mut constructor_ir = ConstructorDesdeAst::new();
+        let mut constructor_ir = ConstructorDesdeAst::nuevo();
         let ir = constructor_ir.programa_a_ir(&prog);
         assert!(constructor_ir.soportado);
         assert_eq!(ir.funciones.len(), 1);
@@ -1767,7 +1767,7 @@ mod tests {
     fn test_if_genera_bloques() {
         let prog =
             parsear_fuente("variable x = 1\nsi (x > 0) { escribir(1) } sino { escribir(0) }");
-        let mut constructor_ir = ConstructorDesdeAst::new();
+        let mut constructor_ir = ConstructorDesdeAst::nuevo();
         let ir = constructor_ir.programa_a_ir(&prog);
         assert!(constructor_ir.soportado);
         // entrada + then + else + merge
@@ -1777,7 +1777,7 @@ mod tests {
     #[test]
     fn test_mientras_genera_bloques() {
         let prog = parsear_fuente("variable i = 0\nmientras (i < 3) { i = i + 1 }\nescribir(i)");
-        let mut constructor_ir = ConstructorDesdeAst::new();
+        let mut constructor_ir = ConstructorDesdeAst::nuevo();
         let ir = constructor_ir.programa_a_ir(&prog);
         assert!(constructor_ir.soportado);
         assert!(ir.funciones[0].bloques.len() >= 3);
@@ -1786,7 +1786,7 @@ mod tests {
     #[test]
     fn test_funciones_de_usuario_soportadas() {
         let prog = parsear_fuente("funcion f() { retornar 1 }\nescribir(f())");
-        let mut constructor_ir = ConstructorDesdeAst::new();
+        let mut constructor_ir = ConstructorDesdeAst::nuevo();
         let ir = constructor_ir.programa_a_ir(&prog);
         assert!(constructor_ir.soportado, "las funciones ya están en el IR");
         assert_eq!(ir.funciones.len(), 2, "main + f");

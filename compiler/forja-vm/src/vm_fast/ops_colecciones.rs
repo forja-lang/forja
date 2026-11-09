@@ -79,7 +79,7 @@ impl ForjaFast {
                         let k = self.desapilar_valor()?;
                         let m = self.desapilar_valor()?;
                         let map = self.obtener_mapa(m.indice_mapa());
-                        let ks = self.get_str(k.indice_texto());
+                        let ks = self.obtener_texto(k.indice_texto());
                         self.empujar_valor(
                             map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
                         );
@@ -109,7 +109,7 @@ impl ForjaFast {
                         } else if a.es_mapa() {
                             let map = self.obtener_mapa(a.indice_mapa());
                             let ks = if i.es_texto() {
-                                self.get_str(i.indice_texto()).to_string()
+                                self.obtener_texto(i.indice_texto()).to_string()
                             } else {
                                 self.mostrar_valor(&i)
                             };
@@ -124,7 +124,7 @@ impl ForjaFast {
                             // Indexar un texto devuelve el carácter (1 letra).
                             let ii = i.a_entero();
                             let c = self
-                                .get_str(a.indice_texto())
+                                .obtener_texto(a.indice_texto())
                                 .chars()
                                 .nth(usize::try_from(ii).unwrap_or(usize::MAX));
                             match c {
@@ -173,7 +173,7 @@ impl ForjaFast {
                         let k = self.desapilar_valor()?;
                         let m = self.desapilar_valor()?;
                         let v = self.desapilar_valor()?;
-                        let ks = self.get_str(k.indice_texto()).to_string();
+                        let ks = self.obtener_texto(k.indice_texto()).to_string();
                         self.obtener_mapa_mut(m.indice_mapa()).insert(ks, v);
                         self.empujar_valor(m);
                     }
@@ -192,7 +192,7 @@ impl ForjaFast {
                             self.ic_miss_cantidad[ip] = 0;
                         } else if a.es_mapa() {
                             let ks = if i.es_texto() {
-                                self.get_str(i.indice_texto()).to_string()
+                                self.obtener_texto(i.indice_texto()).to_string()
                             } else {
                                 self.mostrar_valor(&i)
                             };
@@ -233,7 +233,7 @@ impl ForjaFast {
                     // valor se convierte con su representación (antes se
                     // descartaba el par en silencio).
                     let ks = if k.es_texto() {
-                        self.get_str(k.indice_texto()).to_string()
+                        self.obtener_texto(k.indice_texto()).to_string()
                     } else {
                         self.mostrar_valor(&k)
                     };
@@ -249,7 +249,7 @@ impl ForjaFast {
                     let k = self.desapilar_valor()?;
                     let m = self.desapilar_valor()?;
                     let map = self.obtener_mapa(m.indice_mapa());
-                    let ks = self.get_str(k.indice_texto());
+                    let ks = self.obtener_texto(k.indice_texto());
                     self.empujar_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                 } else {
                     let k = self.desapilar_valor()?;
@@ -257,7 +257,7 @@ impl ForjaFast {
                     if m.es_mapa() {
                         let map = self.obtener_mapa(m.indice_mapa());
                         let ks = if k.es_texto() {
-                            self.get_str(k.indice_texto()).to_string()
+                            self.obtener_texto(k.indice_texto()).to_string()
                         } else {
                             self.mostrar_valor(&k)
                         };
@@ -285,7 +285,7 @@ impl ForjaFast {
                     let v = self.desapilar_valor()?;
                     let k = self.desapilar_valor()?;
                     let m = self.desapilar_valor()?;
-                    let ks = self.get_str(k.indice_texto()).to_string();
+                    let ks = self.obtener_texto(k.indice_texto()).to_string();
                     self.obtener_mapa_mut(m.indice_mapa()).insert(ks, v);
                     self.empujar_valor(m);
                 } else {
@@ -294,7 +294,7 @@ impl ForjaFast {
                     let m = self.desapilar_valor()?;
                     if m.es_mapa() {
                         let ks = if k.es_texto() {
-                            self.get_str(k.indice_texto()).to_string()
+                            self.obtener_texto(k.indice_texto()).to_string()
                         } else {
                             self.mostrar_valor(&k)
                         };

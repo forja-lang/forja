@@ -6,7 +6,7 @@ impl GeneradorBytecode {
         self.profundidad_actual += 1;
         if self.profundidad_actual > MAX_AST_PROFUNDIDAD {
             self.profundidad_actual -= 1;
-            self.errores.push(ErrorForja::new(
+            self.errores.push(ErrorForja::nuevo(
                 forja_syntax::error::ErrorTipo::ErrorSintactico, 0, 0,
                 "Expresión demasiado grande: se excedió la profundidad máxima en generación de bytecode.",
                 "Simplificá la expresión dividiéndola en partes más pequeñas.",
@@ -18,7 +18,7 @@ impl GeneradorBytecode {
             // `si` como elemento de layout sólo tiene sentido en apps GUI: la
             // ruta bytecode no lo puede emitir.
             Expresion::Si { .. } => {
-                self.errores.push(ErrorForja::new(
+                self.errores.push(ErrorForja::nuevo(
                     forja_syntax::error::ErrorTipo::ErrorSemantico,
                     0,
                     0,
@@ -39,7 +39,7 @@ impl GeneradorBytecode {
                         "Entero fuera de rango: el máximo es {} y el mínimo {}.",
                         ENTERO_MAX, ENTERO_MIN
                     );
-                    self.errores.push(ErrorForja::new(
+                    self.errores.push(ErrorForja::nuevo(
                         forja_syntax::error::ErrorTipo::ErrorSemantico,
                         0,
                         0,

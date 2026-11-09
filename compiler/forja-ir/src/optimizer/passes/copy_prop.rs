@@ -10,7 +10,7 @@ pub struct CopiaPropagation {
 }
 
 impl CopiaPropagation {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         CopiaPropagation { propagaciones: 0 }
     }
 
@@ -151,6 +151,6 @@ impl CopiaPropagation {
 
 impl Default for CopiaPropagation {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }

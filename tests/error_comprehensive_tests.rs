@@ -9,14 +9,14 @@ use forja::semantics::PrestamoChecker;
 
 #[test]
 fn test_error_tipo_display_lexico() {
-    let err = ErrorForja::new(ErrorTipo::ErrorLexico, 1, 1, "test", "sug");
+    let err = ErrorForja::nuevo(ErrorTipo::ErrorLexico, 1, 1, "test", "sug");
     let mensaje = format!("{}", err);
     assert!(!mensaje.is_empty());
 }
 
 #[test]
 fn test_error_tipo_error_lexico() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorLexico,
         1,
         1,
@@ -28,7 +28,7 @@ fn test_error_tipo_error_lexico() {
 
 #[test]
 fn test_error_tipo_error_sintactico() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorSintactico,
         2,
         5,
@@ -40,7 +40,7 @@ fn test_error_tipo_error_sintactico() {
 
 #[test]
 fn test_error_tipo_error_semantico() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorSemantico,
         3,
         10,
@@ -52,7 +52,7 @@ fn test_error_tipo_error_semantico() {
 
 #[test]
 fn test_error_tipo_error_de_tipo() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorDeTipo,
         4,
         15,
@@ -64,7 +64,7 @@ fn test_error_tipo_error_de_tipo() {
 
 #[test]
 fn test_error_tipo_error_interno() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorInterno,
         5,
         20,
@@ -76,7 +76,7 @@ fn test_error_tipo_error_interno() {
 
 #[test]
 fn test_error_tipo_limite_archivo() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::LimiteArchivo {
             ruta: "x.fa".into(),
             max: 10,
@@ -103,7 +103,7 @@ fn test_error_tipo_limite_archivo() {
 
 #[test]
 fn test_error_campos() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorSintactico,
         10,
         15,
@@ -118,7 +118,7 @@ fn test_error_campos() {
 
 #[test]
 fn test_error_con_linea_cero() {
-    let err = ErrorForja::new(ErrorTipo::ErrorInterno, 0, 0, "error sin linea", "");
+    let err = ErrorForja::nuevo(ErrorTipo::ErrorInterno, 0, 0, "error sin linea", "");
     assert_eq!(err.linea, 0);
 }
 
@@ -143,7 +143,7 @@ fn test_lexer_error_cadena_sin_cerrar() {
 fn test_parser_error_expression_invalida() {
     let mut lexer = Lexer::new("variable x = +");
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let resultado = parser.parse();
     assert!(resultado.is_err());
 }
@@ -156,9 +156,9 @@ fn test_parser_error_expression_invalida() {
 fn test_semantic_error_var_no_declarada() {
     let mut lexer = Lexer::new("x = 5");
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut checker = PrestamoChecker::new();
+    let mut checker = PrestamoChecker::nuevo();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
     let errores = resultado.unwrap_err();
@@ -169,9 +169,9 @@ fn test_semantic_error_var_no_declarada() {
 fn test_semantic_error_asignacion_inmutable() {
     let mut lexer = Lexer::new("constante x = 5\nx = 10");
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let programa = parser.parse().unwrap();
-    let mut checker = PrestamoChecker::new();
+    let mut checker = PrestamoChecker::nuevo();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
 }
@@ -182,7 +182,7 @@ fn test_semantic_error_asignacion_inmutable() {
 
 #[test]
 fn test_error_formato_basico() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorSintactico,
         5,
         3,
@@ -196,7 +196,7 @@ fn test_error_formato_basico() {
 
 #[test]
 fn test_error_sugerencia_incluida() {
-    let err = ErrorForja::new(
+    let err = ErrorForja::nuevo(
         ErrorTipo::ErrorSemantico,
         1,
         1,
@@ -213,7 +213,7 @@ fn test_error_sugerencia_incluida() {
 
 #[test]
 fn test_error_sin_sugerencia() {
-    let err = ErrorForja::new(ErrorTipo::ErrorLexico, 1, 1, "error", "");
+    let err = ErrorForja::nuevo(ErrorTipo::ErrorLexico, 1, 1, "error", "");
     let texto = format!("{}", err);
     assert!(texto.contains("error"));
 }
@@ -224,7 +224,7 @@ fn test_error_sin_sugerencia() {
 
 #[test]
 fn test_error_clone() {
-    let err = ErrorForja::new(ErrorTipo::ErrorSintactico, 1, 1, "msg", "sug");
+    let err = ErrorForja::nuevo(ErrorTipo::ErrorSintactico, 1, 1, "msg", "sug");
     let cloned = err.clone();
     assert_eq!(err.linea, cloned.linea);
     assert_eq!(err.mensaje, cloned.mensaje);
@@ -232,7 +232,7 @@ fn test_error_clone() {
 
 #[test]
 fn test_error_depuracion() {
-    let err = ErrorForja::new(ErrorTipo::ErrorInterno, 0, 0, "debug", "");
+    let err = ErrorForja::nuevo(ErrorTipo::ErrorInterno, 0, 0, "debug", "");
     let depuracion = format!("{:?}", err);
     assert!(!depuracion.is_empty());
 }

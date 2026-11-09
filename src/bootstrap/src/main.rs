@@ -204,7 +204,7 @@ fn tidy() -> ExitCode {
 
 fn dist() -> ExitCode {
     let epoch = env::var("SOURCE_DATE_EPOCH").unwrap_or_else(|_| "0".to_string());
-    if !ok_env(
+    if !correcto_env(
         "cargo",
         &["build", "--release", "--locked", "--bin", "forja"],
         "SOURCE_DATE_EPOCH",
@@ -212,7 +212,7 @@ fn dist() -> ExitCode {
     ) {
         return ExitCode::FAILURE;
     }
-    if !ok_env(
+    if !correcto_env(
         "cargo",
         &["build", "--profile", "dist", "--locked", "--bin", "forja"],
         "SOURCE_DATE_EPOCH",
@@ -221,11 +221,11 @@ fn dist() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let exe = if cfg!(windows) { "forja.exe" } else { "forja" };
-    let dist_dir = std::path::Path::new("target").join("dist");
-    let _ = std::fs::create_dir_all(&dist_dir);
+    let dist_directorio = std::path::Path::new("target").join("dist");
+    let _ = std::fs::create_dir_all(&dist_directorio);
     let release = std::path::Path::new("target").join("release").join(exe);
-    let dist_bin = dist_dir.join(exe);
-    let release_copy = dist_dir.join(format!("{exe}.release"));
+    let dist_bin = dist_directorio.join(exe);
+    let release_copia = dist_directorio.join(format!("{exe}.release"));
     if !ok(
         "cmd",
         &[
@@ -233,13 +233,13 @@ fn dist() -> ExitCode {
             "copy",
             "/Y",
             &release.to_string_lossy(),
-            &release_copy.to_string_lossy(),
+            &release_copia.to_string_lossy(),
         ],
     ) {
         eprintln!("⚠️  no se pudo copiar el binario release");
     }
     let mut sumas = String::new();
-    for ruta in [&dist_bin, &release_copy] {
+    for ruta in [&dist_bin, &release_copia] {
         if let Some(hash) = sha256(ruta) {
             sumas.push_str(&format!(
                 "{hash}  {}
@@ -251,7 +251,7 @@ fn dist() -> ExitCode {
     if sumas.is_empty() {
         eprintln!("⚠️  no se pudo calcular SHA256");
     } else {
-        let _ = std::fs::write(dist_dir.join("SHA256SUMS"), sumas);
+        let _ = std::fs::write(dist_directorio.join("SHA256SUMS"), sumas);
     }
     println!("✅ dist: binarios y SHA256SUMS en target/dist");
     ExitCode::SUCCESS
@@ -294,7 +294,7 @@ fn sha256(ruta: &std::path::Path) -> Option<String> {
     }
 }
 
-fn ok_env(program: &str, args: &[&str], clave: &str, valor: &str) -> bool {
+fn correcto_env(program: &str, args: &[&str], clave: &str, valor: &str) -> bool {
     println!("$ {program} {}", args.join(" "));
     match Command::new(program).args(args).env(clave, valor).status() {
         Ok(s) if s.success() => true,

@@ -139,14 +139,14 @@ fn compilar(fuente: &str) -> Vec<forja::bytecode::Opcode> {
 /// Ejecuta un bytecode en la VM canónica y devuelve su salida.
 fn ejecutar(bc: &[forja::bytecode::Opcode]) -> Vec<String> {
     use forja::vm_fast::ForjaFast;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bc.to_vec());
     vm.ejecutar().expect("la VM debe ejecutar");
-    vm.obtener_output().to_vec()
+    vm.obtener_salida().to_vec()
 }
 
 fn main() {

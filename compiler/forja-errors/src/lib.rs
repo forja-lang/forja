@@ -94,7 +94,7 @@ fn con_color(s: String) -> String {
 }
 
 /// Helpers de log: info (cyan), ok (verde), aviso (ámbar), error (rojo), debug (gris).
-pub fn info(mensaje: &str) -> String {
+pub fn informacion(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         color::negrita("INFO"),
@@ -193,7 +193,7 @@ pub fn color_mode() -> bool {
 
 pub fn registrar_informacion(mensaje: &str) {
     if nivel_actual() >= NivelDetallado::Normal {
-        eprintln!("{}", info(mensaje));
+        eprintln!("{}", informacion(mensaje));
     }
 }
 pub fn registrar_correcto(mensaje: &str) {
@@ -359,7 +359,7 @@ pub struct ErrorForja {
 }
 
 impl ErrorForja {
-    pub fn new(
+    pub fn nuevo(
         tipo: ErrorTipo,
         linea: usize,
         columna: usize,

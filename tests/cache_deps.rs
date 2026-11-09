@@ -13,7 +13,7 @@ fn directorio() -> PathBuf {
 #[test]
 fn invalida_dependientes_transitivos() {
     let d = directorio();
-    let mut c = IncrementalCache::new(&d);
+    let mut c = IncrementalCache::nuevo(&d);
     c.put("a.fa", 1, &[], &[]);
     c.put("b.fa", 1, &[], &["a.fa".into()]);
     c.put("c.fa", 1, &[], &["b.fa".into()]);

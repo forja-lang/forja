@@ -28,7 +28,7 @@ pub(crate) fn cmd_construir_asm(args: &[String]) {
 
     // Determinar target
     let destino = if let Some(ref ts) = destino_texto {
-        match compiler_asm::TargetArch::desde_str(ts) {
+        match compiler_asm::DestinoArch::desde_str(ts) {
             Some(t) => t,
             None => {
                 eprintln!(
@@ -39,7 +39,7 @@ pub(crate) fn cmd_construir_asm(args: &[String]) {
             }
         }
     } else {
-        compiler_asm::TargetArch::detect()
+        compiler_asm::DestinoArch::detect()
     };
 
     // Determinar output
@@ -60,25 +60,25 @@ pub(crate) fn cmd_construir_asm(args: &[String]) {
     let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => {
-            mostrar_errores(&fuente, &errors, error::json_mode());
+        Err(errores) => {
+            mostrar_errores(&fuente, &errores, error::json_mode());
             process::exit(1);
         }
     };
 
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => {
-            mostrar_errores(&fuente, &errors, error::json_mode());
+        Err(errores) => {
+            mostrar_errores(&fuente, &errores, error::json_mode());
             process::exit(1);
         }
     };
 
-    let asm_code = match compiler_asm::compilar_a_asm_con_target(&programa, destino) {
+    let asm_code = match compiler_asm::compilar_a_asm_con_destino(&programa, destino) {
         Ok(codigo) => codigo,
-        Err(errors) => {
-            for err in errors {
+        Err(errores) => {
+            for err in errores {
                 eprintln!("{}", err);
             }
             process::exit(1);
@@ -100,7 +100,7 @@ pub(crate) fn cmd_construir_asm(args: &[String]) {
     }
 
     // Compilar con gcc: sólo tiene sentido si el target es el de la máquina anfitriona.
-    let anfitrion = compiler_asm::TargetArch::detect();
+    let anfitrion = compiler_asm::DestinoArch::detect();
     if destino != anfitrion {
         println!(
             "ℹ️  Target cruzado ({}): no se compila con el gcc del host.",

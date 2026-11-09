@@ -3,7 +3,7 @@
 //! Contexto: el lexer decidía `LiteralExacto` recién con más de 15 decimales, así
 //! que `variable x: Exacto = 12.34` entraba como f64 y arrastraba el error
 //! binario (el mismo bug clásico de `new BigDecimal(0.1)` en Java). Estos tests
-//! fijan el comportamiento correcto: los dígitos salen del fuente.
+//! fijan el comportamiento ok: los dígitos salen del fuente.
 
 use forja_test_support::ejecutar;
 

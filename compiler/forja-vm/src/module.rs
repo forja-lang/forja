@@ -39,12 +39,12 @@ pub struct ModuloCache {
 
 impl Default for ModuloCache {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl ModuloCache {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ModuloCache {
             por_ruta: HashMap::new(),
             por_id: HashMap::new(),
@@ -63,12 +63,12 @@ pub struct ModuloResolver {
 }
 
 impl ModuloResolver {
-    pub fn new(raiz_directorio: &str) -> Self {
+    pub fn nuevo(raiz_directorio: &str) -> Self {
         ModuloResolver {
             raiz_directorio: PathBuf::from(raiz_directorio),
             cache: HashMap::new(),
             package_resolver: None,
-            module_cache: ModuloCache::new(),
+            module_cache: ModuloCache::nuevo(),
         }
     }
 
@@ -88,7 +88,7 @@ impl ModuloResolver {
     pub fn resolver_con_id(&mut self, ruta: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
         let ruta_limpia = ruta.replace('\\', "/");
         if ruta_limpia.contains("..") {
-            return Err(vec![ErrorForja::new(
+            return Err(vec![ErrorForja::nuevo(
                 crate::error::ErrorTipo::ErrorSemantico,
                 0,
                 0,
@@ -140,7 +140,7 @@ impl ModuloResolver {
             {
                 // Verificar límite de tamaño antes de leer
                 let meta = std::fs::metadata(&canonical).map_err(|e| {
-                    vec![ErrorForja::new(
+                    vec![ErrorForja::nuevo(
                         crate::error::ErrorTipo::ErrorSemantico,
                         0,
                         0,
@@ -151,7 +151,7 @@ impl ModuloResolver {
                 let tamano = meta.len();
                 let max_bytes = crate::MAX_ARCHIVO_DEFAULT_MB * 1024 * 1024;
                 if tamano > max_bytes {
-                    return Err(vec![ErrorForja::new(
+                    return Err(vec![ErrorForja::nuevo(
                         crate::error::ErrorTipo::LimiteArchivo {
                             ruta: canonical.to_string_lossy().into(),
                             max: crate::MAX_ARCHIVO_DEFAULT_MB,
@@ -164,7 +164,7 @@ impl ModuloResolver {
                     )]);
                 }
                 let fuente = std::fs::read_to_string(&canonical).map_err(|e| {
-                    vec![ErrorForja::new(
+                    vec![ErrorForja::nuevo(
                         crate::error::ErrorTipo::ErrorSemantico,
                         0,
                         0,
@@ -174,7 +174,7 @@ impl ModuloResolver {
                 })?;
                 let mut lexer = Lexer::new(&fuente);
                 let tokens = lexer.tokenize()?;
-                let mut parser = Parser::new(tokens);
+                let mut parser = Parser::nuevo(tokens);
                 let mut programa = parser.parse()?;
 
                 // Resolver imports anidados
@@ -187,7 +187,7 @@ impl ModuloResolver {
                         // Cargar la librería externa en el registro FFI
                         let ruta_clone = ruta.clone();
                         crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
-                            vec![ErrorForja::new(
+                            vec![ErrorForja::nuevo(
                                 crate::error::ErrorTipo::ErrorSemantico,
                                 0,
                                 0,
@@ -209,7 +209,7 @@ impl ModuloResolver {
                 return Ok((programa, modulo_id));
             }
             if !es_absoluta {
-                return Err(vec![ErrorForja::new(
+                return Err(vec![ErrorForja::nuevo(
                     crate::error::ErrorTipo::ErrorSemantico,
                     0,
                     0,
@@ -231,7 +231,7 @@ impl ModuloResolver {
 
                 // Verificar límite de tamaño antes de leer
                 let meta = std::fs::metadata(&ruta_resuelta).map_err(|e| {
-                    vec![ErrorForja::new(
+                    vec![ErrorForja::nuevo(
                         crate::error::ErrorTipo::ErrorSemantico,
                         0,
                         0,
@@ -242,7 +242,7 @@ impl ModuloResolver {
                 let tamano = meta.len();
                 let max_bytes = crate::MAX_ARCHIVO_DEFAULT_MB * 1024 * 1024;
                 if tamano > max_bytes {
-                    return Err(vec![ErrorForja::new(
+                    return Err(vec![ErrorForja::nuevo(
                         crate::error::ErrorTipo::LimiteArchivo {
                             ruta: ruta_str.into(),
                             max: crate::MAX_ARCHIVO_DEFAULT_MB,
@@ -255,7 +255,7 @@ impl ModuloResolver {
                     )]);
                 }
                 let fuente = std::fs::read_to_string(&ruta_resuelta).map_err(|e| {
-                    vec![ErrorForja::new(
+                    vec![ErrorForja::nuevo(
                         crate::error::ErrorTipo::ErrorSemantico,
                         0,
                         0,
@@ -265,7 +265,7 @@ impl ModuloResolver {
                 })?;
                 let mut lexer = Lexer::new(&fuente);
                 let tokens = lexer.tokenize()?;
-                let mut parser = Parser::new(tokens);
+                let mut parser = Parser::nuevo(tokens);
                 let mut programa = parser.parse()?;
 
                 let modulo_id = IdSimbolo(
@@ -284,7 +284,7 @@ impl ModuloResolver {
                         // Cargar la librería externa en el registro FFI
                         let ruta_clone = ruta.clone();
                         crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
-                            vec![ErrorForja::new(
+                            vec![ErrorForja::nuevo(
                                 crate::error::ErrorTipo::ErrorSemantico,
                                 0,
                                 0,
@@ -305,7 +305,7 @@ impl ModuloResolver {
             }
         }
 
-        Err(vec![ErrorForja::new(
+        Err(vec![ErrorForja::nuevo(
             crate::error::ErrorTipo::ErrorSemantico,
             0,
             0,
@@ -327,7 +327,7 @@ impl ModuloResolver {
             .module_cache
             .por_id
             .get(&modulo_id)
-            .map(|info| info.source_path.clone());
+            .map(|informacion| informacion.source_path.clone());
 
         let ruta = match ruta {
             Some(r) => r,
@@ -342,7 +342,7 @@ impl ModuloResolver {
                 match ruta_opt {
                     Some(r) => r,
                     None => {
-                        return Err(vec![ErrorForja::new(
+                        return Err(vec![ErrorForja::nuevo(
                             crate::error::ErrorTipo::ErrorSemantico,
                             0,
                             0,
@@ -370,7 +370,7 @@ impl ModuloResolver {
             None => return false, // No registrado → no hay cambio detectable
         };
 
-        let info = match self.module_cache.por_id.get(&modulo_id) {
+        let informacion = match self.module_cache.por_id.get(&modulo_id) {
             Some(i) => i,
             None => return false,
         };
@@ -378,32 +378,34 @@ impl ModuloResolver {
         let path = self.raiz_directorio.join(format!("{}.fa", ruta));
         let ruta_archivo = path.to_str().unwrap_or(ruta);
         let nuevo_hash = Self::hash_fuente(ruta_archivo);
-        nuevo_hash != info.source_hash && nuevo_hash != 0
+        nuevo_hash != informacion.source_hash && nuevo_hash != 0
     }
 
     /// Lista los módulos cuyo hash cambió en disco
     pub fn modulos_cambiados(&self) -> Vec<(ModuleId, String)> {
         let mut cambiados = Vec::new();
-        for (modulo_id, info) in &self.module_cache.por_id {
+        for (modulo_id, informacion) in &self.module_cache.por_id {
             let ruta_archivo = self
                 .raiz_directorio
-                .join(format!("{}.fa", info.source_path));
-            let ruta_str = ruta_archivo.to_str().unwrap_or(&info.source_path);
+                .join(format!("{}.fa", informacion.source_path));
+            let ruta_str = ruta_archivo.to_str().unwrap_or(&informacion.source_path);
             let nuevo_hash = Self::hash_fuente(ruta_str);
-            if nuevo_hash != info.source_hash && nuevo_hash != 0 {
-                cambiados.push((*modulo_id, info.source_path.clone()));
+            if nuevo_hash != informacion.source_hash && nuevo_hash != 0 {
+                cambiados.push((*modulo_id, informacion.source_path.clone()));
             }
         }
         cambiados
     }
 
     /// Agrega un módulo al cache con su información completa
-    pub fn registrar_modulo(&mut self, modulo_id: ModuleId, info: ModuloInformacion) {
+    pub fn registrar_modulo(&mut self, modulo_id: ModuleId, informacion: ModuloInformacion) {
         self.module_cache
             .por_ruta
-            .insert(info.source_path.clone(), modulo_id);
-        self.module_cache.por_id.insert(modulo_id, info.clone());
-        for import in &info.imports {
+            .insert(informacion.source_path.clone(), modulo_id);
+        self.module_cache
+            .por_id
+            .insert(modulo_id, informacion.clone());
+        for import in &informacion.imports {
             self.module_cache
                 .grafo_importaciones
                 .entry(modulo_id)
@@ -456,7 +458,7 @@ impl ModuloResolver {
 
         // Obtener fuente desde stdlib embebida
         let (fuente, _es_gui) = crate::stdlib_embedded::obtener(nombre_modulo)
-            .ok_or_else(|| vec![ErrorForja::new(
+            .ok_or_else(|| vec![ErrorForja::nuevo(
                 crate::error::ErrorTipo::ErrorSemantico,
                 0, 0,
                 &format!("Módulo embebido no encontrado: '{}'", nombre_modulo),
@@ -473,7 +475,7 @@ impl ModuloResolver {
         // Parsear el código fuente
         let mut lexer = crate::lexer::Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
-        let mut parser = crate::parser::Parser::new(tokens);
+        let mut parser = crate::parser::Parser::nuevo(tokens);
         let mut programa = parser.parse()?;
 
         // Resolver imports anidados (una stdlib puede importar otra)

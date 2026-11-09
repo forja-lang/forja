@@ -57,7 +57,7 @@ pub fn nativo_proceso_ejecutar(
     // Build resultado object: SalidaProceso { stdout, stderr, codigo_salida }
     let sym = vm.tabla_simbolos().internar("SalidaProceso");
     let id_forma = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
+    let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
     obj.campos_vec = vec![
         {
             let indice = vm.reservar_texto(Arc::from(stdout.as_str()));

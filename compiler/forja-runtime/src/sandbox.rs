@@ -34,7 +34,7 @@ pub struct SandboxRed {
 
 impl SandboxRed {
     /// Crea un sandbox que permite todos los hosts y puertos (comportamiento por defecto).
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         SandboxRed::todo_permitido()
     }
 
@@ -93,7 +93,7 @@ impl SandboxRed {
 
 impl Default for SandboxRed {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn todo_permitido_por_defecto() {
-        let s = SandboxRed::new();
+        let s = SandboxRed::nuevo();
         // Por defecto todo está permitido
         assert!(s.verificar_conexion("localhost", 80).is_ok());
         assert!(s.verificar_conexion("127.0.0.1", 8080).is_ok());
@@ -217,7 +217,7 @@ pub struct SandboxFilesystem {
 
 impl SandboxFilesystem {
     /// Crea un sandbox que permite acceso a todos los directorios (comportamiento por defecto).
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         SandboxFilesystem::todo_permitido()
     }
 
@@ -324,7 +324,7 @@ impl SandboxFilesystem {
 
 impl Default for SandboxFilesystem {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -348,7 +348,7 @@ pub struct SandboxProceso {
 
 impl SandboxProceso {
     /// Crea un sandbox que permite ejecutar cualquier comando (comportamiento por defecto).
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         SandboxProceso::todo_permitido()
     }
 
@@ -390,7 +390,7 @@ impl SandboxProceso {
 
 impl Default for SandboxProceso {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -400,7 +400,7 @@ mod tests_sandbox_fs {
 
     #[test]
     fn fs_todo_permitido_por_defecto() {
-        let s = SandboxFilesystem::new();
+        let s = SandboxFilesystem::nuevo();
         assert!(s.verificar_lectura("/tmp/test.txt").is_ok());
         assert!(s.verificar_escritura("/tmp/test.txt").is_ok());
     }
@@ -448,7 +448,7 @@ mod tests_sandbox_proc {
 
     #[test]
     fn proc_todo_permitido_por_defecto() {
-        let s = SandboxProceso::new();
+        let s = SandboxProceso::nuevo();
         assert!(s.verificar_comando("ls").is_ok());
         assert!(s.verificar_comando("cmd /c dir").is_ok());
     }

@@ -18,7 +18,7 @@ pub fn nativo_base64_codificar(
     }
 
     let texto = obtener_texto(vm, args[0])?;
-    let codificado = crate::base64::b64_encode(texto.as_bytes());
+    let codificado = crate::base64::b64_codificar(texto.as_bytes());
     let indice = vm.reservar_texto(Arc::from(codificado.as_str()));
     Ok(ValorFast::texto(indice))
 }
@@ -37,7 +37,7 @@ pub fn nativo_base64_decodificar(
     }
 
     let texto = obtener_texto(vm, args[0])?;
-    let resultado = crate::base64::b64_decode(&texto);
+    let resultado = crate::base64::b64_decodificar(&texto);
     match resultado {
         Ok(bytes) => {
             let decodificado = String::from_utf8_lossy(&bytes).to_string();

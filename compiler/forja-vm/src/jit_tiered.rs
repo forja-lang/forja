@@ -77,7 +77,7 @@ pub struct FuncionState {
 }
 
 impl FuncionState {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         FuncionState {
             tier: Tier::Interpret,
             call_count: 0,
@@ -111,7 +111,7 @@ impl FuncionState {
 
 impl Default for FuncionState {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -183,7 +183,7 @@ pub struct JitStats {
 }
 
 impl TieredJit {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         TieredJit {
             functions: HashMap::new(),
             thresholds: HotnessThresholds::default(),
@@ -265,7 +265,7 @@ impl TieredJit {
 
 impl Default for TieredJit {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -275,14 +275,14 @@ mod tests {
 
     #[test]
     fn test_funcion_empieza_at_interpret() {
-        let mut jit = TieredJit::new();
+        let mut jit = TieredJit::nuevo();
         jit.register_funcion("main");
         assert_eq!(jit.tier_of("main"), Tier::Interpret);
     }
 
     #[test]
     fn test_hotness_threshold() {
-        let mut jit = TieredJit::new();
+        let mut jit = TieredJit::nuevo();
         jit.register_funcion("foo");
 
         // Ejecutar 999 veces → no compilar
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_marcar_compiled() {
-        let mut jit = TieredJit::new();
+        let mut jit = TieredJit::nuevo();
         jit.register_funcion("bar");
 
         // Simular compilación
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_deoptimization() {
-        let mut jit = TieredJit::new();
+        let mut jit = TieredJit::nuevo();
         jit.register_funcion("baz");
 
         // Compilar
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_osr_counter() {
-        let mut jit = TieredJit::new();
+        let mut jit = TieredJit::nuevo();
 
         // Iterar menos del umbral
         for _ in 0..9999 {
@@ -369,7 +369,7 @@ mod tests {
             jit_simple_to_optimized: 100,
             osr_loop_iterations: 5,
         };
-        let mut jit = TieredJit::with_thresholds(thresholds);
+        let mut jit = TieredJit::con_thresholds(thresholds);
         jit.register_funcion("fast");
 
         // 9 calls → no compile

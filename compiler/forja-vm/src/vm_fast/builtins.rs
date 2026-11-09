@@ -96,7 +96,7 @@ impl ForjaFast {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     self.empujar_valor(obtener_small_entero_fast(
-                        self.get_str(v.indice_texto()).len() as i64,
+                        self.obtener_texto(v.indice_texto()).len() as i64,
                     ));
                 } else if v.es_arreglo() {
                     self.empujar_valor(obtener_small_entero_fast(
@@ -109,7 +109,7 @@ impl ForjaFast {
             BuiltinFast::Upper => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    let s = self.get_str(v.indice_texto()).to_uppercase();
+                    let s = self.obtener_texto(v.indice_texto()).to_uppercase();
                     let idx = self.reservar_texto(Arc::from(s.as_str()));
                     self.empujar_valor(ValorFast::texto(idx));
                 } else {
@@ -119,7 +119,7 @@ impl ForjaFast {
             BuiltinFast::Lower => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    let s = self.get_str(v.indice_texto()).to_lowercase();
+                    let s = self.obtener_texto(v.indice_texto()).to_lowercase();
                     let idx = self.reservar_texto(Arc::from(s.as_str()));
                     self.empujar_valor(ValorFast::texto(idx));
                 } else {
@@ -131,8 +131,8 @@ impl ForjaFast {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && sub.es_texto() {
                     self.empujar_valor(ValorFast::booleano(
-                        self.get_str(v.indice_texto())
-                            .contains(self.get_str(sub.indice_texto()).as_ref()),
+                        self.obtener_texto(v.indice_texto())
+                            .contains(self.obtener_texto(sub.indice_texto()).as_ref()),
                     ));
                 } else {
                     self.empujar_valor(ValorFast::booleano(false));
@@ -142,8 +142,8 @@ impl ForjaFast {
                 let sep = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && sep.es_texto() {
-                    let s = self.get_str(v.indice_texto()).clone();
-                    let sep_s = self.get_str(sep.indice_texto()).clone();
+                    let s = self.obtener_texto(v.indice_texto()).clone();
+                    let sep_s = self.obtener_texto(sep.indice_texto()).clone();
                     let parts: Vec<ValorFast> = s
                         .split(sep_s.as_ref())
                         .map(|p| {
@@ -160,7 +160,7 @@ impl ForjaFast {
             BuiltinFast::Trim => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    let s = self.get_str(v.indice_texto()).trim().to_string();
+                    let s = self.obtener_texto(v.indice_texto()).trim().to_string();
                     let idx = self.reservar_texto(Arc::from(s.as_str()));
                     self.empujar_valor(ValorFast::texto(idx));
                 } else {
@@ -170,7 +170,7 @@ impl ForjaFast {
             BuiltinFast::Reverse => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    let r: String = self.get_str(v.indice_texto()).chars().rev().collect();
+                    let r: String = self.obtener_texto(v.indice_texto()).chars().rev().collect();
                     let idx = self.reservar_texto(Arc::from(r.as_str()));
                     self.empujar_valor(ValorFast::texto(idx));
                 } else {
@@ -225,8 +225,8 @@ impl ForjaFast {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && prefix.es_texto() {
                     let resultado = self
-                        .get_str(v.indice_texto())
-                        .starts_with(self.get_str(prefix.indice_texto()).as_ref());
+                        .obtener_texto(v.indice_texto())
+                        .starts_with(self.obtener_texto(prefix.indice_texto()).as_ref());
                     self.empujar_valor(ValorFast::booleano(resultado));
                 } else {
                     self.empujar_valor(ValorFast::booleano(false));
@@ -238,8 +238,8 @@ impl ForjaFast {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && suffix.es_texto() {
                     let resultado = self
-                        .get_str(v.indice_texto())
-                        .ends_with(self.get_str(suffix.indice_texto()).as_ref());
+                        .obtener_texto(v.indice_texto())
+                        .ends_with(self.obtener_texto(suffix.indice_texto()).as_ref());
                     self.empujar_valor(ValorFast::booleano(resultado));
                 } else {
                     self.empujar_valor(ValorFast::booleano(false));
@@ -250,7 +250,7 @@ impl ForjaFast {
                 let idx_val = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && idx_val.es_entero() {
-                    let s = self.get_str(v.indice_texto()).clone();
+                    let s = self.obtener_texto(v.indice_texto()).clone();
                     let i = idx_val.a_entero();
                     if i >= 0 && (i as usize) < s.chars().count() {
                         let c: String = s.chars().nth(i as usize).into_iter().collect();
@@ -268,8 +268,8 @@ impl ForjaFast {
                 let sub = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && sub.es_texto() {
-                    let haystack = self.get_str(v.indice_texto()).clone();
-                    let needle = self.get_str(sub.indice_texto()).clone();
+                    let haystack = self.obtener_texto(v.indice_texto()).clone();
+                    let needle = self.obtener_texto(sub.indice_texto()).clone();
                     let pos: i64 = haystack
                         .find(needle.as_ref())
                         .map(|b| haystack[..b].chars().count() as i64)
@@ -285,7 +285,7 @@ impl ForjaFast {
                 let inicio_arg = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && inicio_arg.es_entero() && longitud_arg.es_entero() {
-                    let s = self.get_str(v.indice_texto()).clone();
+                    let s = self.obtener_texto(v.indice_texto()).clone();
                     let inicio = inicio_arg.a_entero().max(0) as usize;
                     let len = longitud_arg.a_entero().max(0) as usize;
                     let chars: Vec<char> = s.chars().collect();
@@ -307,10 +307,10 @@ impl ForjaFast {
                 let old_s = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && old_s.es_texto() && nuevo_s.es_texto() {
-                    let s = self.get_str(v.indice_texto()).clone();
-                    let old = self.get_str(old_s.indice_texto()).clone();
-                    let new = self.get_str(nuevo_s.indice_texto()).clone();
-                    let resultado = s.replace(old.as_ref(), new.as_ref());
+                    let s = self.obtener_texto(v.indice_texto()).clone();
+                    let old = self.obtener_texto(old_s.indice_texto()).clone();
+                    let nuevo = self.obtener_texto(nuevo_s.indice_texto()).clone();
+                    let resultado = s.replace(old.as_ref(), nuevo.as_ref());
                     let idx = self.reservar_texto(Arc::from(resultado.as_str()));
                     self.empujar_valor(ValorFast::texto(idx));
                 } else {
@@ -321,7 +321,7 @@ impl ForjaFast {
             BuiltinFast::ParseEntero => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    let s = self.get_str(v.indice_texto());
+                    let s = self.obtener_texto(v.indice_texto());
                     match s.trim().parse::<i64>() {
                         Ok(n) => self.empujar_valor(obtener_small_entero_fast(n)),
                         Err(_) => self.empujar_valor(ValorFast::nulo()),
@@ -338,7 +338,7 @@ impl ForjaFast {
             BuiltinFast::ParseFlotante => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    let s = self.get_str(v.indice_texto());
+                    let s = self.obtener_texto(v.indice_texto());
                     match s.trim().parse::<f64>() {
                         Ok(f) => self.empujar_valor(ValorFast::flotante(f)),
                         Err(_) => self.empujar_valor(ValorFast::nulo()),
@@ -356,7 +356,7 @@ impl ForjaFast {
                 let cantidad_val = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && cantidad_val.es_entero() {
-                    let s = self.get_str(v.indice_texto()).clone();
+                    let s = self.obtener_texto(v.indice_texto()).clone();
                     let n = cantidad_val.a_entero().max(0) as usize;
                     let resultado = s.repeat(n);
                     let idx = self.reservar_texto(Arc::from(resultado.as_str()));
@@ -371,7 +371,7 @@ impl ForjaFast {
                 let sep_val = self.desapilar_valor()?;
                 let arr_val = self.desapilar_valor()?;
                 if arr_val.es_arreglo() && sep_val.es_texto() {
-                    let sep = self.get_str(sep_val.indice_texto()).clone();
+                    let sep = self.obtener_texto(sep_val.indice_texto()).clone();
                     let arr = self.obtener_arr(arr_val.indice_arreglo()).clone();
                     // Recolecta las representaciones de texto antes de reservar el resultado
                     let parts: Vec<String> = arr.iter().map(|v| self.mostrar_valor(v)).collect();

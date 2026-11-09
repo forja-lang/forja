@@ -90,7 +90,7 @@ fn test_tk_doc_comment_exact() {
 fn parsear(fuente: &str) -> forja::ast::Programa {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     parser.parse().unwrap()
 }
 
@@ -638,9 +638,9 @@ fn test_uop_expandir_fijar_linea() {
 fn test_extremo_a_extremo_bytecode_generacion_correcto() {
     let mut lex = Lexer::new("variable x = 42\nescribir(x)");
     let tokens = lex.tokenize().unwrap();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     let prog = parser.parse().unwrap();
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     let bc = gen.generar(&prog).unwrap();
     assert!(bc.len() > 2);
     assert!(bc.contains(&Opcode::Detener));

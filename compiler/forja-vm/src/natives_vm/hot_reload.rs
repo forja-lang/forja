@@ -62,7 +62,7 @@ pub fn nativo_recargar_modulo(
     };
 
     // Generar nuevo bytecode para el módulo
-    let mut gen = GeneradorBytecode::new();
+    let mut gen = GeneradorBytecode::nuevo();
     let modulo_bytecode = match gen.generar_para_modulo(&programa, modulo_id) {
         Ok(mbc) => mbc,
         Err(e) => {
@@ -111,7 +111,7 @@ pub fn nativo_version_modulo(
     let version = vm
         .module_registry
         .get(&modulo_id)
-        .map(|info| info.version as i64)
+        .map(|informacion| informacion.version as i64)
         .unwrap_or(-1i64);
 
     Ok(ValorFast::entero(version))
@@ -151,7 +151,7 @@ pub fn nativo_recargar_todo(
         };
 
         // Generar nuevo bytecode
-        let mut gen = GeneradorBytecode::new();
+        let mut gen = GeneradorBytecode::nuevo();
         let modulo_bytecode = match gen.generar_para_modulo(&programa, *modulo_id) {
             Ok(mbc) => mbc,
             Err(e) => {

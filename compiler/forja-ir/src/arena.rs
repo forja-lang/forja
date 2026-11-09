@@ -17,7 +17,7 @@ struct Chunk {
 }
 
 impl Chunk {
-    fn new(tamano: usize) -> Self {
+    fn nuevo(tamano: usize) -> Self {
         let layout = Layout::from_size_align(tamano, 16).unwrap();
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
@@ -71,14 +71,14 @@ pub struct Arena {
 
 impl Arena {
     /// Crea una arena con chunk tamano por defecto (64KB).
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self::con_tamano_bloque(64 * 1024)
     }
 
     /// Crea una arena con un chunk tamano específico.
     pub fn con_tamano_bloque(chunk_tamano: usize) -> Self {
         Arena {
-            chunks: vec![Chunk::new(chunk_tamano)],
+            chunks: vec![Chunk::nuevo(chunk_tamano)],
             tamano_bloque_predeterminado: chunk_tamano,
             total_allocated: 0,
         }
@@ -95,7 +95,7 @@ impl Arena {
         }
         // Crear chunk nuevo
         let chunk_tamano = self.tamano_bloque_predeterminado.max(tamano + align);
-        self.chunks.push(Chunk::new(chunk_tamano));
+        self.chunks.push(Chunk::nuevo(chunk_tamano));
         self.chunks.len() - 1
     }
 
@@ -128,8 +128,8 @@ impl Arena {
         let idx = self.obtener_chunk_indice_for(tamano, align);
         let ptr = self.chunks[idx].reservar_bytes(tamano, align) as *mut T;
         unsafe {
-            for (i, item) in slice.iter().enumerate() {
-                ptr.add(i).write(item.clone());
+            for (i, elemento) in slice.iter().enumerate() {
+                ptr.add(i).write(elemento.clone());
             }
             self.total_allocated += tamano;
             std::slice::from_raw_parts(ptr, slice.len())
@@ -166,7 +166,7 @@ impl Arena {
 
 impl Default for Arena {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -183,9 +183,9 @@ pub struct ScopedArena {
 }
 
 impl ScopedArena {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ScopedArena {
-            arena: Arena::new(),
+            arena: Arena::nuevo(),
             pila_ambitos: Vec::new(),
         }
     }
@@ -243,7 +243,7 @@ impl ScopedArena {
 
 impl Default for ScopedArena {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_arena_reservar_basico() {
-        let mut arena = Arena::new();
+        let mut arena = Arena::nuevo();
         let x = arena.alloc(42u64);
         assert_eq!(*x, 42);
         *x = 100;
@@ -262,14 +262,14 @@ mod tests {
 
     #[test]
     fn test_arena_reservar_slice() {
-        let mut arena = Arena::new();
+        let mut arena = Arena::nuevo();
         let slice = arena.reservar_slice(&[1, 2, 3, 4, 5]);
         assert_eq!(slice, &[1, 2, 3, 4, 5]);
     }
 
     #[test]
     fn test_arena_reiniciar() {
-        let mut arena = Arena::new();
+        let mut arena = Arena::nuevo();
         arena.alloc(42u64);
         arena.alloc(100u64);
         assert!(arena.bytes_allocated() > 0);
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_arena_different_types() {
-        let mut arena = Arena::new();
+        let mut arena = Arena::nuevo();
         let a = arena.alloc(42i32);
         assert_eq!(*a, 42);
         let b = arena.alloc(2.5f64);
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_scoped_arena() {
-        let mut arena = ScopedArena::new();
+        let mut arena = ScopedArena::nuevo();
         arena.alloc(1u64);
 
         arena.empujar_scope();

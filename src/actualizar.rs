@@ -96,13 +96,13 @@ pub fn modo_portable() -> bool {
         .unwrap_or(false)
 }
 
-fn dir_portable() -> Option<PathBuf> {
+fn directorio_portable() -> Option<PathBuf> {
     ruta_ejecutable()?.parent().map(|p| p.to_path_buf())
 }
 
-fn dir_datos() -> Option<PathBuf> {
+fn directorio_datos() -> Option<PathBuf> {
     if modo_portable() {
-        return dir_portable();
+        return directorio_portable();
     }
 
     if let Ok(pd) = std::env::var("ProgramData") {
@@ -125,7 +125,7 @@ fn dir_datos() -> Option<PathBuf> {
 }
 
 pub fn ruta_manifiesto() -> Option<PathBuf> {
-    let p = dir_datos()?.join("install.json");
+    let p = directorio_datos()?.join("install.json");
     if p.exists() {
         Some(p)
     } else {
@@ -152,7 +152,9 @@ pub fn leer_manifiesto() -> Option<Manifiesto> {
 }
 
 fn guardar_manifiesto(m: &Manifiesto) {
-    let Some(dir) = dir_datos() else { return };
+    let Some(dir) = directorio_datos() else {
+        return;
+    };
     let _ = fs::create_dir_all(&dir);
 
     let features = m
@@ -175,7 +177,7 @@ fn guardar_manifiesto(m: &Manifiesto) {
 // ── Configuración opt-in ──────────────────────────────────────────────────
 
 fn leer_config() -> Vec<(String, String)> {
-    let Some(dir) = dir_datos() else {
+    let Some(dir) = directorio_datos() else {
         return Vec::new();
     };
     let Ok(texto) = fs::read_to_string(dir.join("config.txt")) else {
@@ -196,7 +198,9 @@ fn leer_opcion(clave: &str) -> bool {
 }
 
 fn guardar_opcion(clave: &str, activo: bool) {
-    let Some(dir) = dir_datos() else { return };
+    let Some(dir) = directorio_datos() else {
+        return;
+    };
     let _ = fs::create_dir_all(&dir);
 
     let mut opciones = leer_config();
@@ -231,7 +235,7 @@ pub enum Canal {
 }
 
 fn leer_canal() -> Canal {
-    let Some(dir) = dir_datos() else {
+    let Some(dir) = directorio_datos() else {
         return Canal::Estable;
     };
     match fs::read_to_string(dir.join("canal.txt")) {
@@ -241,7 +245,9 @@ fn leer_canal() -> Canal {
 }
 
 fn guardar_canal(canal: Canal) {
-    let Some(dir) = dir_datos() else { return };
+    let Some(dir) = directorio_datos() else {
+        return;
+    };
     let _ = fs::create_dir_all(&dir);
     let _ = fs::write(
         dir.join("canal.txt"),
@@ -441,7 +447,7 @@ pub fn es_mas_nueva(nueva: &str, actual: &str) -> bool {
 fn version_disponible(actual: &str) -> Option<String> {
     let canal = leer_canal();
 
-    if let Some(dir) = dir_datos() {
+    if let Some(dir) = directorio_datos() {
         let cache = dir.join("update-check.json");
         if let Ok(texto) = fs::read_to_string(&cache) {
             if let Ok(json) = serde_json::from_str::<Value>(&texto) {
@@ -461,7 +467,7 @@ fn version_disponible(actual: &str) -> Option<String> {
 
     let release = nuevo_release(canal)?;
 
-    if let Some(dir) = dir_datos() {
+    if let Some(dir) = directorio_datos() {
         let _ = fs::create_dir_all(&dir);
         let _ = fs::write(
             dir.join("update-check.json"),
@@ -478,7 +484,7 @@ fn version_disponible(actual: &str) -> Option<String> {
     Some(release.version)
 }
 
-pub fn avisar_update() {
+pub fn avisar_actualizar() {
     let actual = env!("CARGO_PKG_VERSION");
     let Some(nueva) = version_disponible(actual) else {
         return;
@@ -519,7 +525,7 @@ pub fn auto_si_habilitado() {
     }
 }
 
-fn temp_dir() -> Option<PathBuf> {
+fn temporal_directorio() -> Option<PathBuf> {
     std::env::var("TEMP")
         .or_else(|_| std::env::var("TMPDIR"))
         .ok()
@@ -533,7 +539,7 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
         return 1;
     };
 
-    let Some(temp) = temp_dir() else {
+    let Some(temp) = temporal_directorio() else {
         return 1;
     };
 
@@ -626,7 +632,7 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
     for sub in ["stdlib", "ejemplos"] {
         let origen = raiz.join(sub);
         if origen.is_dir() {
-            copiados += copiar_dir_delta(&origen, &destino.join(sub), &mut fallos);
+            copiados += copiar_directorio_delta(&origen, &destino.join(sub), &mut fallos);
         }
     }
 
@@ -675,7 +681,7 @@ fn copiar_si_cambia(origen: &Path, destino: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
-fn copiar_dir_delta(origen: &Path, destino: &Path, fallos: &mut i32) -> i32 {
+fn copiar_directorio_delta(origen: &Path, destino: &Path, fallos: &mut i32) -> i32 {
     let mut copiados = 0;
     let Ok(entradas) = fs::read_dir(origen) else {
         return 0;
@@ -688,7 +694,7 @@ fn copiar_dir_delta(origen: &Path, destino: &Path, fallos: &mut i32) -> i32 {
         let hacia = destino.join(entrada.file_name());
 
         if desde.is_dir() {
-            copiados += copiar_dir_delta(&desde, &hacia, fallos);
+            copiados += copiar_directorio_delta(&desde, &hacia, fallos);
             continue;
         }
 
@@ -761,7 +767,7 @@ fn aplicar_actualizacion() -> i32 {
         return 1;
     };
 
-    let Some(temp) = temp_dir() else {
+    let Some(temp) = temporal_directorio() else {
         return 1;
     };
 
@@ -784,7 +790,7 @@ fn aplicar_actualizacion() -> i32 {
         Ok(s) if s.success() => {
             println!("Listo: Forja quedó en la versión {}.", release.version);
             let _ = fs::remove_file(
-                dir_datos()
+                directorio_datos()
                     .map(|d| d.join("update-check.json"))
                     .unwrap_or_default(),
             );
@@ -852,7 +858,9 @@ pub fn actualizar(args: &[String]) -> i32 {
 
         // Copia local: la desinstalación borra el ejecutable cacheado del bundle
         // que estamos usando, así que no se puede relanzar desde ahí.
-        let Some(temp) = temp_dir() else { return 1 };
+        let Some(temp) = temporal_directorio() else {
+            return 1;
+        };
         let setup = temp.join("forja-setup-cambio.exe");
 
         if let Err(e) = fs::copy(&setup_original, &setup) {
@@ -925,7 +933,7 @@ pub fn desinstalar() -> i32 {
 
         match estado {
             Ok(s) if s.success() => {
-                if let Some(dir) = dir_datos() {
+                if let Some(dir) = directorio_datos() {
                     let _ = fs::remove_dir_all(&dir);
                 }
                 println!("Forja se desinstaló.");
@@ -1051,7 +1059,7 @@ pub fn telemetria(args: &[String]) -> i32 {
 }
 
 fn carpeta_reportes() -> Option<PathBuf> {
-    Some(dir_datos()?.join("reportes"))
+    Some(directorio_datos()?.join("reportes"))
 }
 
 /// Guarda un reporte local de fallo si la telemetría está activa.
@@ -1161,7 +1169,7 @@ fn ruta_instalador() -> Option<PathBuf> {
 }
 
 fn ruta_pedido() -> PathBuf {
-    dir_datos()
+    directorio_datos()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("setup-request.txt")
 }

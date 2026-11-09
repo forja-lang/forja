@@ -264,7 +264,7 @@ pub struct RegisterAllocator {
 }
 
 impl RegisterAllocator {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         RegisterAllocator {
             intervals: Vec::new(),
             assignments: HashMap::new(),
@@ -443,7 +443,7 @@ impl RegisterAllocator {
 
 impl Default for RegisterAllocator {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_simple_allocation() {
-        let mut ra = RegisterAllocator::new();
+        let mut ra = RegisterAllocator::nuevo();
         // Dos variables con vida no superpuesta
         ra.add_interval(LiveInterval {
             virt_reg: 0,
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_spill_needed() {
-        let mut ra = RegisterAllocator::new();
+        let mut ra = RegisterAllocator::nuevo();
         // 15 variables con vida superpuesta (más que los 9 GP temp registers)
         for i in 0..15 {
             ra.add_interval(LiveInterval {
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_no_overlap_reuses_reg() {
-        let mut ra = RegisterAllocator::new();
+        let mut ra = RegisterAllocator::nuevo();
         // 3 variables sin superposición → todas usan el mismo registro
         ra.add_interval(LiveInterval {
             virt_reg: 0,
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_float_vs_integer() {
-        let mut ra = RegisterAllocator::new();
+        let mut ra = RegisterAllocator::nuevo();
         // Variable entera con vida superpuesta
         ra.add_interval(LiveInterval {
             virt_reg: 0,

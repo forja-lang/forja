@@ -39,8 +39,8 @@ fn literales_e_identificadores() {
     }
 
     // Identificador en registro con tipo decimal (rama defensiva).
-    let mut c = con_variables(TargetArch::X86_64Linux);
-    c.alloc_var_reg("dec");
+    let mut c = con_variables(DestinoArch::X86_64Linux);
+    c.reservar_variable_reg("dec");
     let antes = c.output.len();
     let _ = c.compilar_expresion_asm(&id("dec"));
     assert!(
@@ -49,7 +49,7 @@ fn literales_e_identificadores() {
     );
 
     // Identificador que corresponde a una función declarada → call.
-    let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
+    let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     c.funciones.push("mi_funcion".into());
     let _ = c.compilar_expresion_asm(&id("mi_funcion"));
     assert!(c.output.contains("call") || c.output.contains("bl "));
@@ -121,7 +121,7 @@ fn acceso_a_miembros_e_instanciacion() {
         assert!(!c.output.is_empty());
 
         // Instanciación sin constructor: solo malloc.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.recolectar_clases(&[decl_clase(
             "Punto",
             vec![campo("x", None), campo("y", None)],
@@ -135,7 +135,7 @@ fn acceso_a_miembros_e_instanciacion() {
         assert!(!c.output.contains("Punto.nuevo"));
 
         // Instanciación con constructor y más argumentos que registros.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.recolectar_clases(&[decl_clase(
             "ConCtor",
             vec![campo("x", None)],
@@ -149,7 +149,7 @@ fn acceso_a_miembros_e_instanciacion() {
         assert!(c.output.contains("ConCtor.nuevo"), "{t:?}");
 
         // Instanciación de una clase inexistente: ret = 0.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let _ = c.compilar_expresion_asm(&Expresion::Instanciacion {
             clase: "NoExiste".into(),
             argumentos: vec![],
@@ -239,13 +239,13 @@ fn constructos_no_soportados_registran_error_sin_paniquear() {
             let _ = c.compilar_expresion_asm(expr);
         }
         assert!(
-            !c.errors.is_empty(),
+            !c.errores.is_empty(),
             "{t:?}: los constructos no soportados fallan"
         );
         // Un mismo fault dos veces no duplica el error.
-        let antes = c.errors.len();
+        let antes = c.errores.len();
         let _ = c.compilar_expresion_asm(&Expresion::Mapa(vec![]));
-        assert_eq!(c.errors.len(), antes, "{t:?}: errores deduplicados");
+        assert_eq!(c.errores.len(), antes, "{t:?}: errores deduplicados");
     }
 }
 
@@ -254,7 +254,7 @@ fn asignaciones_como_expresion() {
     for t in TARGETS {
         // Variable en registro.
         let mut c = con_variables(t);
-        c.alloc_var_reg("ent");
+        c.reservar_variable_reg("ent");
         let _ = c.compilar_expresion_asm(&Expresion::Asignacion {
             variable: "ent".into(),
             valor: Box::new(num(3)),
@@ -301,18 +301,18 @@ fn asignaciones_como_expresion() {
 fn resultado_anterior_y_opciones() {
     for t in TARGETS {
         // `resultado` con postcondiciones activas.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         c.postcondiciones_activas = true;
         let _ = c.compilar_expresion_asm(&Expresion::Resultado);
         assert!(c.output.contains("resultado"));
 
         // `resultado` sin postcondiciones activas.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let _ = c.compilar_expresion_asm(&Expresion::Resultado);
         assert!(c.output.contains("sin postcondición activa"), "{t:?}");
 
         // `anterior`, `Nada` y `Ninguno`.
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let _ = c.compilar_expresion_asm(&Expresion::Anterior(Box::new(num(1))));
         assert!(c.output.contains("anterior()"));
         assert_eq!(c.compilar_expresion_asm(&Expresion::Nada), "");
@@ -366,7 +366,7 @@ fn llamadas_a_metodos() {
         // Objeto en registro y argumentos extra a la pila.
         let mut c = con_variables(t);
         registrar_clase_c(&mut c);
-        c.alloc_var_reg("obj");
+        c.reservar_variable_reg("obj");
         let argumentos: Vec<Expresion> = (0..9).map(num).collect();
         c.compilar_llamada_funcion("obj.metodo", &argumentos, true);
         assert!(c.output.contains("C.metodo"), "{t:?}");
@@ -380,7 +380,7 @@ fn llamadas_a_metodos() {
 
 #[test]
 fn buscar_campo_offset_todos_los_casos() {
-    let mut c = con_variables(TargetArch::X86_64Linux);
+    let mut c = con_variables(DestinoArch::X86_64Linux);
     registrar_clase_c(&mut c);
 
     // Variable de tipo clase: encuentra el offset del campo.
@@ -420,7 +420,7 @@ fn buscar_campo_offset_todos_los_casos() {
 #[test]
 fn metodos_de_clase_se_generan_como_funciones() {
     for t in TARGETS {
-        let mut c = CompilerAsm::with_target(t);
+        let mut c = CompilerAsm::con_destino(t);
         let m = metodo(
             "sumar",
             vec![param("v", Some(Tipo::Entero))],

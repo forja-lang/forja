@@ -18,13 +18,13 @@ fn analizar(fuente: &str) -> Result<(), String> {
     let tokens = forja::lexer::Lexer::new(fuente)
         .tokenize()
         .map_err(|e| format!("lexer: {e:?}"))?;
-    let programa = forja::parser::Parser::new(tokens)
+    let programa = forja::parser::Parser::nuevo(tokens)
         .parse()
         .map_err(|e| format!("parser: {e:?}"))?;
 
-    let mut tc = forja::semantics::TipoChecker::new();
+    let mut tc = forja::semantics::TipoChecker::nuevo();
     tc.analizar(&programa).map_err(|e| format!("{e:?}"))?;
-    let mut bc = forja::semantics::PrestamoChecker::new();
+    let mut bc = forja::semantics::PrestamoChecker::nuevo();
     bc.analizar(&programa).map_err(|e| format!("{e:?}"))?;
     Ok(())
 }
@@ -42,7 +42,7 @@ fn infiere_retorno_de_funcion_sin_anotacion() {
         "se esperaba un error: el retorno inferido de `cuarenta` es Entero, no Texto"
     );
 
-    // La misma función con el tipo correcto no debe fallar.
+    // La misma función con el tipo ok no debe fallar.
     let buena = "funcion cuarenta() {\n    retornar 42\n}\nvariable x: Entero = cuarenta()\n";
     assert!(analizar(buena).is_ok(), "no debería fallar: {buena}");
 }

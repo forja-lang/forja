@@ -6,7 +6,7 @@ fn parsear(codigo: &str) {
     let tokens = lexer
         .tokenize()
         .unwrap_or_else(|e| panic!("error léxico en ejemplo:\n{codigo}\n{e:?}"));
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::nuevo(tokens);
     if let Err(e) = parser.parse() {
         panic!("error de parseo en ejemplo:\n{codigo}\n{e:?}");
     }

@@ -20,8 +20,8 @@ use forja::vm_fast::ForjaFast;
 fn ejecutar_con_gc(fuente: &str, umbral_presion: usize) -> (Vec<String>, ForjaFast) {
     let (bytecode, _contratos) =
         forja::compilar_pipeline_completa(fuente).expect("el pipeline debe compilar");
-    let mut vm = ForjaFast::new();
-    vm.set_gc_pressure_threshold(umbral_presion);
+    let mut vm = ForjaFast::nuevo();
+    vm.fijar_gc_pressure_threshold(umbral_presion);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().expect("la VM debe ejecutar sin error");
     let salida = vm.obtener_salida().to_vec();
@@ -56,7 +56,7 @@ fn gc_recolecta_bajo_asignacion_intensiva() {
         t.slots_recolectados,
         t.pausa_media_ns(),
         t.pausa_max_ns,
-        vm.heap_slots()
+        vm.monticulo_slots()
     );
 }
 
@@ -65,7 +65,7 @@ fn gc_mantiene_la_memoria_acotada() {
     // Sin recolección, 40k iteraciones acumularían ~80k slots. Con GC, el heap
     // debe mantenerse acotado gracias al reuso de las free lists.
     let (_salida, vm) = ejecutar_con_gc(SRC_ASIGNACION_INTENSIVA, 1_000);
-    let slots = vm.heap_slots();
+    let slots = vm.monticulo_slots();
     assert!(
         slots < 5_000,
         "el heap no está acotado: {slots} slots ocupados (posible fuga)"
@@ -117,16 +117,16 @@ funcion main() {
 main()
 "#;
     let (bytecode, _contratos) = forja::compilar_pipeline_completa(fuente).expect("compila");
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     // Umbral altísimo: no recolecta automáticamente durante el llenado.
-    vm.set_gc_pressure_threshold(usize::MAX);
+    vm.fijar_gc_pressure_threshold(usize::MAX);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().expect("ejecuta");
     assert_eq!(vm.obtener_salida(), &["ok".to_string()]);
 
-    let antes = vm.heap_slots();
+    let antes = vm.monticulo_slots();
     vm.forzar_gc();
-    let despues = vm.heap_slots();
+    let despues = vm.monticulo_slots();
     let t = vm.gc_telemetry();
     assert_eq!(
         t.colecciones, 1,
@@ -162,9 +162,9 @@ escribir(total)
     let (salida, vm) = ejecutar_con_gc(fuente, 200);
     assert_eq!(salida, vec!["4498500"], "la recepción perdió datos");
     assert!(
-        vm.chan_heap_slots() < 20,
+        vm.chan_monticulo_slots() < 20,
         "fuga de canales: {} slots activos",
-        vm.chan_heap_slots()
+        vm.chan_monticulo_slots()
     );
     assert!(vm.gc_telemetry().colecciones > 0, "el GC no se ejecutó");
 }
@@ -188,9 +188,9 @@ escribir(total)
     // asignación; forzamos una colección para medir el estado estable.
     vm.forzar_gc();
     assert!(
-        vm.thread_heap_slots() < 10,
+        vm.hilo_monticulo_slots() < 10,
         "fuga de hilos: {} slots activos",
-        vm.thread_heap_slots()
+        vm.hilo_monticulo_slots()
     );
 }
 
@@ -225,7 +225,7 @@ escribir(total)
     assert_eq!(salida, vec![iters.to_string()], "salida incorrecta en soak");
     let t = vm.gc_telemetry();
     assert!(t.colecciones > 0, "el soak no ejecutó colecciones");
-    let slots = vm.heap_slots();
+    let slots = vm.monticulo_slots();
     assert!(
         slots < 10_000,
         "posible fuga en soak: {slots} slots vivos tras {iters} iteraciones"

@@ -7,8 +7,8 @@ use forja::parser::Parser;
 fn ir(fuente: &str) -> forja::ir::ProgramaIr {
     let mut l = Lexer::new(fuente);
     let t = l.tokenize().unwrap();
-    let p = Parser::new(t).parse().unwrap();
-    ConstructorDesdeAst::new().programa_a_ir(&p)
+    let p = Parser::nuevo(t).parse().unwrap();
+    ConstructorDesdeAst::nuevo().programa_a_ir(&p)
 }
 
 #[test]

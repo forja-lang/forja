@@ -14,7 +14,7 @@ pub fn compilar(fuente: &str) -> Result<Vec<Opcode>, String> {
 /// Compila y ejecuta un fuente en la VM canónica.
 pub fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let (bc, contratos) = forja::compilar_pipeline_completa(fuente).map_err(|e| e.to_string())?;
-    let mut vm = forja::vm_fast::ForjaFast::new();
+    let mut vm = forja::vm_fast::ForjaFast::nuevo();
     vm.contratos = contratos;
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
@@ -145,7 +145,7 @@ pub fn ruta_ejemplo(nombre: &str) -> PathBuf {
 /// Compila y ejecuta sin verificar contratos (variante rápida).
 pub fn ejecutar_vm(fuente: &str) -> Result<Vec<String>, String> {
     let bc = compilar(fuente)?;
-    let mut vm = forja::vm_fast::ForjaFast::new();
+    let mut vm = forja::vm_fast::ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]

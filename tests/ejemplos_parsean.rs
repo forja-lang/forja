@@ -31,7 +31,7 @@ fn todos_los_ejemplos_parsean() {
                 continue;
             }
         };
-        if let Err(e) = Parser::new(tokens).parse() {
+        if let Err(e) = Parser::nuevo(tokens).parse() {
             fallos.push(format!("{nombre}: parseo: {:?}", e.first()));
         }
     }

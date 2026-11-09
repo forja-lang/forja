@@ -4,7 +4,7 @@
 use super::*;
 
 fn compilador_con_funciones(decls: Vec<Declaracion>) -> CompilerAsm {
-    let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
+    let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     for decl in decls {
         if let Declaracion::Funcion { nombre, .. } = &decl {
             c.funciones.push(nombre.clone());
@@ -16,7 +16,7 @@ fn compilador_con_funciones(decls: Vec<Declaracion>) -> CompilerAsm {
 }
 
 #[test]
-fn es_candidata_inline_por_nombre() {
+fn es_candidata_en_linea_por_nombre() {
     // Función simple → candidata.
     let simple = decl_funcion(
         "simple",
@@ -24,14 +24,14 @@ fn es_candidata_inline_por_nombre() {
         vec![retornar(Some(id("x")))],
     );
     let c = compilador_con_funciones(vec![simple]);
-    assert!(c.es_candidata_inline_por_nombre("simple"));
+    assert!(c.es_candidata_en_linea_por_nombre("simple"));
     // Nombre desconocido → no candidata.
-    assert!(!c.es_candidata_inline_por_nombre("desconocida"));
+    assert!(!c.es_candidata_en_linea_por_nombre("desconocida"));
 
     // Declaración que no es función → no candidata.
     let clase = decl_clase("C", vec![], vec![]);
-    let c = CompilerAsm::with_target(TargetArch::X86_64Linux);
-    assert!(!c.es_candidata_inline(&clase));
+    let c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
+    assert!(!c.es_candidata_en_linea(&clase));
 
     // Cuerpo con más de 5 declaraciones → no candidata.
     let larga = decl_funcion(
@@ -42,7 +42,7 @@ fn es_candidata_inline_por_nombre() {
             .collect::<Vec<_>>(),
     );
     let c = compilador_con_funciones(vec![larga]);
-    assert!(!c.es_candidata_inline_por_nombre("larga"));
+    assert!(!c.es_candidata_en_linea_por_nombre("larga"));
 
     // Autorreferencia → no candidata.
     let recursiva = decl_funcion(
@@ -51,7 +51,7 @@ fn es_candidata_inline_por_nombre() {
         vec![retornar(Some(llamada("recursiva", vec![])))],
     );
     let c = compilador_con_funciones(vec![recursiva]);
-    assert!(!c.es_candidata_inline_por_nombre("recursiva"));
+    assert!(!c.es_candidata_en_linea_por_nombre("recursiva"));
 
     // Closure → no candidata.
     let con_closure = decl_funcion(
@@ -63,7 +63,7 @@ fn es_candidata_inline_por_nombre() {
         })],
     );
     let c = compilador_con_funciones(vec![con_closure]);
-    assert!(!c.es_candidata_inline_por_nombre("con_closure"));
+    assert!(!c.es_candidata_en_linea_por_nombre("con_closure"));
 
     // Pattern matching con constructor → no candidata.
     let con_match = decl_funcion(
@@ -78,7 +78,7 @@ fn es_candidata_inline_por_nombre() {
         })],
     );
     let c = compilador_con_funciones(vec![con_match]);
-    assert!(!c.es_candidata_inline_por_nombre("con_match"));
+    assert!(!c.es_candidata_en_linea_por_nombre("con_match"));
 
     // Pattern matching simple (sin constructores) → sí candidata.
     let con_match_simple = decl_funcion(
@@ -93,7 +93,7 @@ fn es_candidata_inline_por_nombre() {
         })],
     );
     let c = compilador_con_funciones(vec![con_match_simple]);
-    assert!(c.es_candidata_inline_por_nombre("con_match_simple"));
+    assert!(c.es_candidata_en_linea_por_nombre("con_match_simple"));
 }
 
 #[test]
@@ -483,7 +483,7 @@ fn expr_tiene_constructos_complejos_recorre_todas_las_expresiones() {
 }
 
 #[test]
-fn inline_funcion_emite_cuerpo_en_el_punto_de_llamada() {
+fn en_linea_funcion_emite_cuerpo_en_el_punto_de_llamada() {
     for t in TARGETS {
         // Argumentos de menos: los faltantes se rellenan con 0.
         let decl = decl_funcion(
@@ -497,7 +497,7 @@ fn inline_funcion_emite_cuerpo_en_el_punto_de_llamada() {
         let mut c = compilador_con_funciones(vec![decl]);
         c.arch = t;
         let vars_antes = c.variables.len();
-        c.inline_funcion("inc", &[num(41)]);
+        c.en_linea_funcion("inc", &[num(41)]);
         assert!(
             c.variables.len() == vars_antes,
             "{t:?}: el inline restaura las variables del caller"
@@ -519,12 +519,12 @@ fn inline_funcion_emite_cuerpo_en_el_punto_de_llamada() {
         );
         let mut c = compilador_con_funciones(vec![decl]);
         c.arch = t;
-        c.inline_funcion("mixta", &[]);
+        c.en_linea_funcion("mixta", &[]);
     }
 
     // Función inexistente: registra un comentario de error en el asm.
-    let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
-    c.inline_funcion("no_existe", &[]);
+    let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
+    c.en_linea_funcion("no_existe", &[]);
     assert!(c
         .output
         .contains("ERROR: función 'no_existe' no encontrada"));

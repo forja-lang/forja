@@ -102,7 +102,7 @@ fn compilar_pipeline_nucleo(
 
 /// PrestamoChecker con el modo estricto de la configuración vigente
 /// (`estricto: true` en `forja.yaml`).
-fn borrow_checker() -> semantics::PrestamoChecker {
+fn prestamo_checker() -> semantics::PrestamoChecker {
     semantics::PrestamoChecker::con_estricto(config::actual().estricto)
 }
 
@@ -158,7 +158,7 @@ fn nombres_funciones_externas() -> Vec<String> {
         ]
         .map(String::from),
     );
-    nombres.extend(native_registry::NativoRegistro::new().nombres());
+    nombres.extend(native_registry::NativoRegistro::nuevo().nombres());
     nombres
 }
 
@@ -196,25 +196,25 @@ fn compilar_pipeline_nucleo_emision(
         .splice(0..0, prelude::generar_prelude());
 
     // FASE: Type Checker + inferencia de tipos
-    let mut type_checker = semantics::TipoChecker::new();
+    let mut tipo_checker = semantics::TipoChecker::nuevo();
     // modo estricto opt-in (`estricto: true` en forja.yaml o en la sesión).
-    type_checker.fijar_estricto(estricto);
+    tipo_checker.fijar_estricto(estricto);
     if estricto {
-        type_checker.fijar_funciones_externas(nombres_funciones_externas());
+        tipo_checker.fijar_funciones_externas(nombres_funciones_externas());
         // si el programa importa módulos, el checker no puede saber qué
         // funciones aportan (la stdlib se inlinea después y los módulos GUI los
         // resuelve gui-rt en runtime). El chequeo de "función declarada" queda
         // entonces limitado a programas de un solo archivo.
-        type_checker.fijar_exigir_funciones_declaradas(!hay_imports);
+        tipo_checker.fijar_exigir_funciones_declaradas(!hay_imports);
     }
-    type_checker
+    tipo_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
-    let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+    let tipos_inferidos = tipo_checker.obtener_tipos_inferidos();
 
     // FASE: Borrow Checker (ownership y préstamos)
-    let mut borrow_checker = semantics::PrestamoChecker::con_estricto(estricto);
-    borrow_checker
+    let mut prestamo_checker = semantics::PrestamoChecker::con_estricto(estricto);
+    prestamo_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
 
@@ -253,7 +253,7 @@ fn compilar_pipeline_nucleo_emision(
         let ast = ir_emision::emitir_bytecode_canonico(
             &programa,
             tipos_inferidos.clone(),
-            type_checker.obtener_funciones(),
+            tipo_checker.obtener_funciones(),
         );
         match ast {
             Ok(bc) => return Ok(bc),
@@ -274,7 +274,7 @@ fn compilar_pipeline_nucleo_emision(
     let bc = optimizer_pipeline::optimizar_bytecode(bc);
     // los contratos se compilan con el generador AST (sus condiciones no
     // forman parte del CFG de la función) y se adjuntan a la emisión IR.
-    let mut gen_contratos = bytecode::GeneradorBytecode::new();
+    let mut gen_contratos = bytecode::GeneradorBytecode::nuevo();
     // las condiciones leen globales por índice y tipos declarados, igual
     // que en la ruta AST.
     gen_contratos.fijar_globales(globales.clone());
@@ -296,7 +296,7 @@ pub fn compilar_desde_ir(
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     let mut lexer = lexer::Lexer::new(source);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let programa = parser::Parser::new(tokens)
+    let programa = parser::Parser::nuevo(tokens)
         .parse()
         .map_err(|e| format!("{}", e[0]))?;
     compilar_pipeline_nucleo_emision(
@@ -356,7 +356,7 @@ pub mod lsp;
 /// Calcula un hash u64 a partir de una cadena de código fuente.
 /// Usado por la compilación incremental para detectar cambios en el source.
 #[cfg(not(target_arch = "wasm32"))]
-fn hash_source(source: &str) -> u64 {
+fn hash_fuente(source: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
@@ -368,12 +368,12 @@ fn hash_source(source: &str) -> u64 {
 /// y genera versiones especializadas concretas.
 /// Se ejecuta después del type checker y borrow checker, antes del optimizador.
 fn monomorphize_programa(programa: &mut ast::Programa) {
-    let mut mono = monomorph::Monomorphizer::new();
+    let mut mono = monomorph::Monomorphizer::nuevo();
     mono.extract_generics(programa);
-    mono.collect_instantiations(programa);
+    mono.recolectar_instantiations(programa);
     mono.specialize();
 
-    let specializations = mono.get_specializations();
+    let specializations = mono.obtener_specializations();
     if !specializations.is_empty() {
         programa.declaraciones.extend(specializations);
     }
@@ -396,16 +396,16 @@ pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = parser.parse()?;
 
     // FASE 4: Type Checker (inferencia de tipos + compatibilidad)
-    let mut type_checker = semantics::TipoChecker::new();
-    type_checker.analizar(&programa)?;
+    let mut tipo_checker = semantics::TipoChecker::nuevo();
+    tipo_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker (ownership y préstamos)
-    let mut borrow_checker = borrow_checker();
-    borrow_checker.analizar(&programa)?;
+    let mut prestamo_checker = prestamo_checker();
+    prestamo_checker.analizar(&programa)?;
 
     Ok(programa)
 }
@@ -426,15 +426,15 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
-    let mut type_checker = semantics::TipoChecker::new();
-    type_checker.analizar(&programa)?;
+    let mut tipo_checker = semantics::TipoChecker::nuevo();
+    tipo_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
-    let mut checker = borrow_checker();
+    let mut checker = prestamo_checker();
     checker.analizar(&programa)?;
 
     // FASE 5.5: Monomorfización
@@ -446,7 +446,7 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
     let programa = optimizer_pipeline::PipelineAst::completo().ejecutar(programa);
 
     // FASE 7: Transpilador
-    let mut transpiler = transpiler::Transpiler::new();
+    let mut transpiler = transpiler::Transpiler::nuevo();
     let rust_code = transpiler.transpilar(&programa)?;
 
     Ok(rust_code)
@@ -465,15 +465,15 @@ pub fn transpilar_a_rust_con_ast(
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
-    let mut type_checker = semantics::TipoChecker::new();
-    type_checker.analizar(&programa)?;
+    let mut tipo_checker = semantics::TipoChecker::nuevo();
+    tipo_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
-    let mut checker = borrow_checker();
+    let mut checker = prestamo_checker();
     checker.analizar(&programa)?;
 
     // FASE 5.5: Monomorfización
@@ -484,7 +484,7 @@ pub fn transpilar_a_rust_con_ast(
     let programa = optimizer_pipeline::PipelineAst::basico().ejecutar(programa);
 
     // FASE 7: Transpilador
-    let mut transpiler = transpiler::Transpiler::new();
+    let mut transpiler = transpiler::Transpiler::nuevo();
     let rust_code = transpiler.transpilar(&programa)?;
 
     Ok((programa.declaraciones, rust_code))
@@ -495,7 +495,7 @@ pub fn compilar_a_asm_desde_ir(
     ir: &forja_ir::ir::ProgramaIr,
 ) -> Result<String, Vec<error::ErrorForja>> {
     let ast = ir.ast.as_ref().ok_or_else(|| {
-        vec![error::ErrorForja::new(
+        vec![error::ErrorForja::nuevo(
             error::ErrorTipo::ErrorInterno,
             0,
             0,
@@ -520,7 +520,7 @@ pub fn transpilar_desde_ir(
     ir: &forja_ir::ir::ProgramaIr,
 ) -> Result<String, Vec<error::ErrorForja>> {
     let ast = ir.ast.as_ref().ok_or_else(|| {
-        vec![error::ErrorForja::new(
+        vec![error::ErrorForja::nuevo(
             error::ErrorTipo::ErrorInterno,
             0,
             0,
@@ -528,7 +528,7 @@ pub fn transpilar_desde_ir(
             "",
         )]
     })?;
-    transpiler::Transpiler::new().transpilar(ast)
+    transpiler::Transpiler::nuevo().transpilar(ast)
 }
 
 /// Resuelve los imports en un programa Forja usando un ModuloResolver.
@@ -543,17 +543,17 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     // 1. Lexer + Parser del código fuente principal
     let mut lexer = lexer::Lexer::new(source);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // 2. Resolver imports recursivamente con ModuloResolver
-    let project_dir = if root_dir.is_file() {
+    let project_directorio = if root_dir.is_file() {
         root_dir.parent().unwrap_or(std::path::Path::new("."))
     } else {
         root_dir
     };
-    let mut module_resolver = ModuloResolver::new(project_dir.to_str().unwrap_or("."));
-    module_resolver.package_resolver = Some(PaqueteResolver::new(project_dir));
+    let mut modulo_resolver = ModuloResolver::nuevo(project_directorio.to_str().unwrap_or("."));
+    modulo_resolver.package_resolver = Some(PaqueteResolver::nuevo(project_directorio));
 
     // los imports se inlinean, así que `colecciones.mapa(...)` quedaría
     // como acceso a una variable inexistente. El HIR dice qué nombres exporta
@@ -579,7 +579,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
                 final_decls.push(decl);
                 continue;
             }
-            let sub_prog = module_resolver
+            let sub_prog = modulo_resolver
                 .resolver(ruta)
                 .map_err(|e| format!("{}", e[0]))?;
             let alias = ruta.rsplit('/').next().unwrap_or(ruta.as_str()).to_string();
@@ -615,7 +615,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
 /// `HashMap` es la resolución HIR: solo se reescribe si el miembro está
 /// realmente exportado por ese módulo.
 trait AliasModulos {
-    fn resuelve(&self, alias: &str, item: &str) -> bool;
+    fn resuelve(&self, alias: &str, elemento: &str) -> bool;
 }
 
 impl AliasModulos for std::collections::HashSet<String> {
@@ -625,9 +625,9 @@ impl AliasModulos for std::collections::HashSet<String> {
 }
 
 impl AliasModulos for std::collections::HashMap<String, std::collections::HashSet<String>> {
-    fn resuelve(&self, alias: &str, item: &str) -> bool {
+    fn resuelve(&self, alias: &str, elemento: &str) -> bool {
         self.get(alias)
-            .is_some_and(|nombres| nombres.contains(item) || nombres.contains("*"))
+            .is_some_and(|nombres| nombres.contains(elemento) || nombres.contains("*"))
     }
 }
 
@@ -908,7 +908,7 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
     fn parsear(source: &str) -> Result<ast::Programa, String> {
         let mut lexer = lexer::Lexer::new(source);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-        let mut parser = parser::Parser::new(tokens);
+        let mut parser = parser::Parser::nuevo(tokens);
         parser.parse().map_err(|e| format!("{}", e[0]))
     }
 
@@ -1091,7 +1091,7 @@ fn compilar_pipeline_completa_con_estricto(
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 2-3: Parser
-        let mut parser = parser::Parser::new(tokens);
+        let mut parser = parser::Parser::nuevo(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 4+: núcleo único del pipeline a bytecode (sin lógica duplicada).
@@ -1112,7 +1112,7 @@ fn compilar_pipeline_completa_con_estricto(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_modulo(
     source: &str,
-    module_id: ModuleId,
+    modulo_id: ModuleId,
 ) -> Result<bytecode::ModuloBytecode, String> {
     use bytecode::GeneradorBytecode;
 
@@ -1125,19 +1125,19 @@ pub fn compilar_modulo(
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 2: Parser
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 3: Type Checker + Type Inference
-    let mut type_checker = semantics::TipoChecker::new();
-    type_checker
+    let mut tipo_checker = semantics::TipoChecker::nuevo();
+    tipo_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
-    let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+    let tipos_inferidos = tipo_checker.obtener_tipos_inferidos();
 
     // FASE 3b: Borrow Checker (verificación de ownership y préstamos)
-    let mut borrow_checker = borrow_checker();
-    borrow_checker
+    let mut prestamo_checker = prestamo_checker();
+    prestamo_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
 
@@ -1149,18 +1149,18 @@ pub fn compilar_modulo(
     let programa = optimizer_pipeline::PipelineAst::basico().ejecutar(programa);
 
     // FASE 5: Generar ModuloBytecode con generar_para_modulo()
-    let funciones_overload = type_checker.obtener_funciones();
-    let mut gen = GeneradorBytecode::new();
+    let funciones_overload = tipo_checker.obtener_funciones();
+    let mut gen = GeneradorBytecode::nuevo();
     gen.fijar_tipos_inferidos(tipos_inferidos);
     gen.fijar_funciones_overload(funciones_overload);
-    let mut module_bc = gen
-        .generar_para_modulo(&programa, module_id)
+    let mut modulo_bytecode = gen
+        .generar_para_modulo(&programa, modulo_id)
         .map_err(|_| "Error generando bytecode para módulo".to_string())?;
 
     // FASE 6: Optimizar bytecode interno — punto único (`optimizer_pipeline`).
-    module_bc.codigos = optimizer_pipeline::optimizar_bytecode(module_bc.codigos);
+    modulo_bytecode.codigos = optimizer_pipeline::optimizar_bytecode(modulo_bytecode.codigos);
 
-    Ok(module_bc)
+    Ok(modulo_bytecode)
 }
 
 /// Compila código Forja a bytecode con caché incremental.
@@ -1171,17 +1171,17 @@ pub fn compilar_modulo(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_con_cache(
     source: &str,
-    module_path: &str,
+    modulo_ruta: &str,
     root_dir: &std::path::Path,
 ) -> Result<Vec<bytecode::Opcode>, String> {
     // 1. Calcular hash del source
-    let source_hash = hash_source(source);
+    let fuente_hash = hash_fuente(source);
 
     // 2. Intentar cargar caché incremental
-    let mut cache = incremental_cache::IncrementalCache::new(root_dir);
+    let mut cache = incremental_cache::IncrementalCache::nuevo(root_dir);
 
     // 3. Verificar cache hit
-    if let Some(cached_opcodes) = cache.get(module_path, source_hash) {
+    if let Some(cached_opcodes) = cache.get(modulo_ruta, fuente_hash) {
         // Cache hit — retornar bytecode cacheado
         return Ok(cached_opcodes);
     }
@@ -1207,7 +1207,7 @@ pub fn compilar_con_cache(
     let (bytecode, _contratos) = compilar_pipeline_nucleo(programa, tiene_imports(source))?;
 
     // 5. Guardar en caché
-    cache.put(module_path, source_hash, &bytecode, &imports);
+    cache.put(modulo_ruta, fuente_hash, &bytecode, &imports);
     let _ = cache.guardar_en_disco();
 
     Ok(bytecode)
@@ -1220,7 +1220,7 @@ pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Ve
     use vm_fast::ForjaFast;
 
     let bytecode = compilar_con_cache(source, "main", root_dir)?;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
@@ -1244,13 +1244,13 @@ pub fn compilar_modulos_paralelo(
     if modulos.len() < UMBRAL_PARALELO {
         return modulos
             .into_iter()
-            .map(|(source, module_id)| compilar_modulo(&source, module_id))
+            .map(|(source, modulo_id)| compilar_modulo(&source, modulo_id))
             .collect();
     }
 
     let resultados: Vec<Result<bytecode::ModuloBytecode, String>> = modulos
         .into_par_iter()
-        .map(|(source, module_id)| compilar_modulo(&source, module_id))
+        .map(|(source, modulo_id)| compilar_modulo(&source, modulo_id))
         .collect();
 
     resultados.into_iter().collect()
@@ -1279,7 +1279,7 @@ pub fn ejecutar_con_opciones(
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa(source)?;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     #[cfg(target_pointer_width = "64")]
@@ -1302,7 +1302,7 @@ pub fn ejecutar_con_sesion(
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa_con_sesion(source, sesion)?;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = sesion.contratos();
     #[cfg(target_pointer_width = "64")]
@@ -1350,7 +1350,7 @@ fn ejecutar_con_opciones_desde_impl(
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa_desde(source, root_dir)?;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     #[cfg(target_pointer_width = "64")]
@@ -1387,7 +1387,7 @@ pub fn ejecutar_con_opciones_desde_backtrace(
     use vm_fast::ForjaFast;
     let (bytecode, contratos) =
         compilar_pipeline_completa_desde(source, root_dir).map_err(|e| (e, Vec::new()))?;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     // en modo backtrace activamos errores estrictos para que la división
@@ -1415,7 +1415,7 @@ pub fn ejecutar_con_opciones_desde_backtrace(
 pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, _contratos) = compilar_pipeline_completa(source)?;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_salida().to_vec())
@@ -1485,7 +1485,7 @@ where
 pub fn alimentar_tiered_jit(bc: &[bytecode::Opcode]) {
     use jit_tiered::{ShouldCompilar, TieredJit};
 
-    let mut tiered = TieredJit::new();
+    let mut tiered = TieredJit::nuevo();
     for (ip, op) in bc.iter().enumerate() {
         match op {
             bytecode::Opcode::DefinirFuncion(nombre, _) => {
@@ -1510,7 +1510,7 @@ pub(crate) fn ejecutar_bytecode_en_vm(
     bytecode: Vec<bytecode::Opcode>,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
@@ -1539,7 +1539,7 @@ pub fn emitir_codigo_nativo(bc: &[bytecode::Opcode]) -> Vec<u8> {
 
     let prog = pila_to_reg(bc);
     let intervals = compute_live_intervals(&prog);
-    let mut allocator = RegisterAllocator::new();
+    let mut allocator = RegisterAllocator::nuevo();
     for intervalo in intervals {
         allocator.add_interval(intervalo);
     }
@@ -1594,10 +1594,10 @@ fn ejecutar_con_pgo_impl(
     let (bytecode, contratos) = compilar_pipeline_completa(source)?;
 
     // 2. Cargar perfil previo si existe
-    let mgr = pgo::ProfileManager::new(root_dir);
+    let mgr = pgo::ProfileManager::nuevo(root_dir);
     let perfil_previo = mgr.load();
 
-    let mut vm = ForjaFast::new();
+    let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
@@ -1639,7 +1639,7 @@ fn ejecutar_con_pgo_impl(
             for (ip, c) in recolectado.hot_ips {
                 *perfil.hot_ips.entry(ip).or_insert(0) += c;
             }
-            let _ = mgr.save(&perfil);
+            let _ = mgr.guardar(&perfil);
             eprintln!("[PGO] Perfil guardado en {}", mgr.profile_ruta().display());
         }
     }
@@ -1654,15 +1654,15 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
-    let mut type_checker = semantics::TipoChecker::new();
-    type_checker.analizar(&programa)?;
+    let mut tipo_checker = semantics::TipoChecker::nuevo();
+    tipo_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
-    let mut checker = borrow_checker();
+    let mut checker = prestamo_checker();
     checker.analizar(&programa)?;
 
     // FASE 5.5: Monomorfización
@@ -1674,7 +1674,7 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
 
     // FASE 7: Backend LLVM (generación de texto IR)
     let ir = backend_llvm::compilar_a_llvm_texto(&programa.declaraciones).map_err(|e| {
-        vec![error::ErrorForja::new(
+        vec![error::ErrorForja::nuevo(
             error::ErrorTipo::ErrorInterno,
             0,
             0,
@@ -1740,17 +1740,17 @@ fn memoizar_puras(ir: &str) -> String {
                     }
                 }
                 if pura {
-                    let key = format!("@forja_cache_keys_{name}");
+                    let clave = format!("@forja_cache_keys_{name}");
                     let val = format!("@forja_cache_values_{name}");
                     globals.push(format!(
-                        "{key} = internal global [4096 x i64] zeroinitializer"
+                        "{clave} = internal global [4096 x i64] zeroinitializer"
                     ));
                     globals.push(format!(
                         "{val} = internal global [4096 x i64] zeroinitializer"
                     ));
                     out.push(l.to_string());
                     out.push(format!("  %cache_idx_{name} = urem i64 %p0, 4096"));
-                    out.push(format!("  %cache_kp_{name} = getelementptr [4096 x i64], [4096 x i64]* {key}, i64 0, i64 %cache_idx_{name}"));
+                    out.push(format!("  %cache_kp_{name} = getelementptr [4096 x i64], [4096 x i64]* {clave}, i64 0, i64 %cache_idx_{name}"));
                     out.push(format!("  %cache_vp_{name} = getelementptr [4096 x i64], [4096 x i64]* {val}, i64 0, i64 %cache_idx_{name}"));
                     out.push(format!(
                         "  %cache_k_{name} = load i64, i64* %cache_kp_{name}"
@@ -1818,16 +1818,16 @@ fn normalizar_llvm(ir: &str) -> String {
     let mut top = Vec::new();
     let mut cuerpo = Vec::new();
     let mut depth = 0i32;
-    let mut en_main = false;
+    let mut en_principal = false;
     for l in lineas {
         let t = l.trim_start();
         if t.starts_with("define ") && t.contains("@main") {
-            en_main = true;
+            en_principal = true;
             cuerpo.push(l.clone());
             depth = 1;
             continue;
         }
-        if !en_main {
+        if !en_principal {
             if depth == 0 && (t.starts_with('%') || t.starts_with("call ")) {
                 top.push(l.clone());
             } else {
@@ -1844,27 +1844,27 @@ fn normalizar_llvm(ir: &str) -> String {
         }
     }
     let mut out = Vec::new();
-    let mut dentro_main = false;
+    let mut dentro_principal = false;
     let mut depth2 = 0i32;
-    let mut main_abierto = false;
+    let mut principal_abierto = false;
     for l in cuerpo {
         let t = l.trim_start();
         if t.starts_with("define ") && t.contains("@main") {
             out.push("define i32 @main() {".to_string());
-            dentro_main = true;
-            main_abierto = true;
+            dentro_principal = true;
+            principal_abierto = true;
             depth2 = 1;
             continue;
         }
-        if dentro_main {
-            if main_abierto && t.starts_with('%') && t.ends_with(':') {
+        if dentro_principal {
+            if principal_abierto && t.starts_with('%') && t.ends_with(':') {
                 out.push(l.clone());
 
-                main_abierto = false;
+                principal_abierto = false;
                 continue;
             }
             if t == "}" {
-                dentro_main = false;
+                dentro_principal = false;
             }
             if t.starts_with("ret i64 0") && depth2 == 1 {
                 out.push("  ret i32 0".to_string());
@@ -1915,8 +1915,8 @@ fn normalizar_llvm(ir: &str) -> String {
                         while k < b.len() && b[k].is_ascii_digit() {
                             k += 1;
                         }
-                        let key = x[j + 1..k].to_string();
-                        mapa.entry(key).or_insert_with(|| {
+                        let clave = x[j + 1..k].to_string();
+                        mapa.entry(clave).or_insert_with(|| {
                             let v = orden;
                             orden += 1;
                             v
@@ -1938,8 +1938,8 @@ fn normalizar_llvm(ir: &str) -> String {
                         while k < b.len() && b[k].is_ascii_digit() {
                             k += 1;
                         }
-                        let key = &y[j + 1..k];
-                        if let Some(v) = mapa.get(key) {
+                        let clave = &y[j + 1..k];
+                        if let Some(v) = mapa.get(clave) {
                             out.push_str(&format!("%v{v}"));
                         } else {
                             out.push_str(&y[j..k]);
@@ -2093,13 +2093,13 @@ pub fn formatear(codigo: &str) -> String {
         Err(_) => return codigo.to_string(),
     };
 
-    let mut parser = parser::Parser::new(tokens);
+    let mut parser = parser::Parser::nuevo(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
         Err(_) => return codigo.to_string(),
     };
 
-    let mut f = formatter::Formatter::new();
+    let mut f = formatter::Formatter::nuevo();
     f.formatear(&programa)
 }
 

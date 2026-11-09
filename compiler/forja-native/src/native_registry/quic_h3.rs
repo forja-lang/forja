@@ -94,7 +94,7 @@ pub fn nativo_json_parsear(
     if args.is_empty() || !args[0].es_texto() {
         return Ok(ValorFast::nulo());
     }
-    let texto = vm.get_str(args[0].indice_texto()).to_string();
+    let texto = vm.obtener_texto(args[0].indice_texto()).to_string();
     let mut arr = Vec::with_capacity(2);
     match serde_json::from_str::<serde_json::Value>(&texto) {
         Ok(v) => {
@@ -155,7 +155,7 @@ pub fn json_stringificar_valor(vm: &dyn Anfitrion, val: ValorFast) -> String {
         return f.to_string();
     }
     if val.es_texto() {
-        let s = vm.get_str(val.indice_texto());
+        let s = vm.obtener_texto(val.indice_texto());
         return json_escapar_texto(s);
     }
     if val.es_booleano() {

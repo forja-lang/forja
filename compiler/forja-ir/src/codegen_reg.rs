@@ -55,7 +55,7 @@ pub struct CodegenReg<'a> {
 }
 
 impl<'a> CodegenReg<'a> {
-    pub fn new(assignments: &'a HashMap<VirtReg, Location>) -> Self {
+    pub fn nuevo(assignments: &'a HashMap<VirtReg, Location>) -> Self {
         CodegenReg {
             assignments,
             bytes: Vec::with_capacity(1024),
@@ -1062,7 +1062,7 @@ mod tests {
 
     #[test]
     fn test_codegen_basic() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let v0 = prog.reservar_vreg();
         let v1 = prog.reservar_vreg();
         let v2 = prog.reservar_vreg();
@@ -1093,7 +1093,7 @@ mod tests {
 
     #[test]
     fn test_codegen_prologue_y_epilogo() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
@@ -1131,7 +1131,7 @@ mod tests {
 
     #[test]
     fn test_codegen_sin_spill_no_reserva_frame() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[test]
     fn test_codegen_call_emite_call_rax() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
@@ -1200,7 +1200,7 @@ mod tests {
 
     #[test]
     fn test_codegen_call_sin_tabla_usa_stub() {
-        let mut prog = RegProgram::new();
+        let mut prog = RegProgram::nuevo();
         let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,

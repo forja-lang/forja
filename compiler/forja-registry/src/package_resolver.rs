@@ -12,7 +12,7 @@ pub struct PaqueteResolver {
 }
 
 impl PaqueteResolver {
-    pub fn new(directorio_proyecto: &Path) -> Self {
+    pub fn nuevo(directorio_proyecto: &Path) -> Self {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());

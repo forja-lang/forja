@@ -96,12 +96,12 @@ pub struct Runtime {
 
 impl Default for Runtime {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl Runtime {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Runtime {
             obj_heap: Vec::new(),
             str_heap: Vec::new(),
@@ -113,7 +113,7 @@ impl Runtime {
             class_descriptors: HashMap::new(),
             clases_derive_igual: HashSet::new(),
             clases_derive_mostrar: HashSet::new(),
-            registro_formas: RegistroFormas::new(),
+            registro_formas: RegistroFormas::nuevo(),
             formas_objeto: Vec::new(),
             map_marked: Vec::new(),
             obj_free: Vec::new(),
@@ -140,7 +140,7 @@ impl Runtime {
             thread_rx: Vec::new(),
             thread_marked: Vec::new(),
             thread_free: Vec::new(),
-            tabla_simbolos: TablaSimbolos::new(),
+            tabla_simbolos: TablaSimbolos::nuevo(),
             socket_heap: Vec::new(),
         }
     }

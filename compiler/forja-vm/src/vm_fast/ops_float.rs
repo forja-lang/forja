@@ -246,7 +246,7 @@ impl ForjaFast {
                 } else if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() == b.a_flotante()
                 } else if a.es_texto() && b.es_texto() {
-                    self.get_str(a.indice_texto()) == self.get_str(b.indice_texto())
+                    self.obtener_texto(a.indice_texto()) == self.obtener_texto(b.indice_texto())
                 } else if a.es_booleano() && b.es_booleano() {
                     a.a_booleano() == b.a_booleano()
                 } else if a.es_exacto() && b.es_exacto() {
@@ -294,7 +294,7 @@ impl ForjaFast {
                 } else if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() != b.a_flotante()
                 } else if a.es_texto() && b.es_texto() {
-                    self.get_str(a.indice_texto()) != self.get_str(b.indice_texto())
+                    self.obtener_texto(a.indice_texto()) != self.obtener_texto(b.indice_texto())
                 } else if a.es_booleano() && b.es_booleano() {
                     a.a_booleano() != b.a_booleano()
                 } else if a.es_exacto() && b.es_exacto() {
@@ -374,7 +374,7 @@ impl ForjaFast {
                     );
                     aa < bb
                 } else if a.es_texto() && b.es_texto() {
-                    self.get_str(a.indice_texto()) < self.get_str(b.indice_texto())
+                    self.obtener_texto(a.indice_texto()) < self.obtener_texto(b.indice_texto())
                 } else {
                     false
                 }));
@@ -417,7 +417,7 @@ impl ForjaFast {
                     );
                     aa > bb
                 } else if a.es_texto() && b.es_texto() {
-                    self.get_str(a.indice_texto()) > self.get_str(b.indice_texto())
+                    self.obtener_texto(a.indice_texto()) > self.obtener_texto(b.indice_texto())
                 } else {
                     false
                 }));
@@ -460,7 +460,7 @@ impl ForjaFast {
                     );
                     aa <= bb
                 } else if a.es_texto() && b.es_texto() {
-                    self.get_str(a.indice_texto()) <= self.get_str(b.indice_texto())
+                    self.obtener_texto(a.indice_texto()) <= self.obtener_texto(b.indice_texto())
                 } else {
                     false
                 }));
@@ -503,7 +503,7 @@ impl ForjaFast {
                     );
                     aa >= bb
                 } else if a.es_texto() && b.es_texto() {
-                    self.get_str(a.indice_texto()) >= self.get_str(b.indice_texto())
+                    self.obtener_texto(a.indice_texto()) >= self.obtener_texto(b.indice_texto())
                 } else {
                     false
                 }));

@@ -527,7 +527,7 @@ impl TablaSimbolosIr {
     ///
     /// # Devuelve
     /// Una tabla sin símbolos.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         TablaSimbolosIr {
             nombres: Vec::new(),
             indice_por_nombre: HashMap::new(),
@@ -586,7 +586,7 @@ impl TablaSimbolosIr {
 
 impl Default for TablaSimbolosIr {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -610,7 +610,7 @@ pub struct ConstructorIr {
 
 impl ConstructorIr {
     /// Crea un constructor de IR vacío.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ConstructorIr {
             bloques: Vec::new(),
             proximo_id_bloque: IdBloque(0),
@@ -618,7 +618,7 @@ impl ConstructorIr {
             proximo_id_valor: IdValor(0),
             instrucciones_actuales: Vec::new(),
             terminador_actual: None,
-            simbolos: TablaSimbolosIr::new(),
+            simbolos: TablaSimbolosIr::nuevo(),
         }
     }
 
@@ -1199,7 +1199,7 @@ impl std::fmt::Display for IdxMemoria {
 
 impl Default for ConstructorIr {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -1209,7 +1209,7 @@ mod tests {
 
     #[test]
     fn test_symbol_tabla() {
-        let mut st = TablaSimbolosIr::new();
+        let mut st = TablaSimbolosIr::nuevo();
         let id1 = st.internar("main");
         let id2 = st.internar("foo");
         let id1b = st.internar("main");
@@ -1221,7 +1221,7 @@ mod tests {
 
     #[test]
     fn test_ir_builder_basic() {
-        let mut builder = ConstructorIr::new();
+        let mut builder = ConstructorIr::nuevo();
         let _entry = builder.nuevo_bloque();
         let v0 = builder.emitir_const_entero(42);
         let v1 = builder.emitir_const_entero(10);
@@ -1239,7 +1239,7 @@ mod tests {
 
     #[test]
     fn test_ir_builder_branches() {
-        let mut builder = ConstructorIr::new();
+        let mut builder = ConstructorIr::nuevo();
         let entrada = builder.nuevo_bloque(); // id 0
         let condicion = builder.emitir_const_booleano(true);
         let then_bb = builder.reservar_id_bloque(); // id 1
@@ -1266,7 +1266,7 @@ mod tests {
 
     #[test]
     fn ids_de_simbolo_son_tipados_e_internados() {
-        let mut tabla = TablaSimbolosIr::new();
+        let mut tabla = TablaSimbolosIr::nuevo();
         let a = tabla.internar("alpha");
         let b = tabla.internar("beta");
         assert_ne!(a, b);

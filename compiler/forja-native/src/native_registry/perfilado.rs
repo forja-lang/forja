@@ -54,7 +54,7 @@ pub fn nativo_perfilado_detener(
     // build ReportePerfilado object
     let sym = vm.tabla_simbolos().internar("ReportePerfilado");
     let id_forma = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
+    let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
     obj.campos_vec = vec![
         {
             let indice = vm.reservar_texto(Arc::from(etiqueta.as_str()));
@@ -80,7 +80,7 @@ pub fn nativo_perfilado_reportes(
     for (etiqueta, (tiempo_total, iteraciones)) in mapa.iter() {
         let sym = vm.tabla_simbolos().internar("ReportePerfilado");
         let id_forma = vm.registro_formas().obtener_o_crear(sym);
-        let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
+        let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
         obj.campos_vec = vec![
             {
                 let indice = vm.reservar_texto(Arc::from(etiqueta.as_str()));

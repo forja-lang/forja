@@ -219,7 +219,7 @@ fn ejecutar_ambos(fuente: &str) -> Vec<String> {
     use std::path::Path;
 
     fn correr(bc: Vec<Opcode>) -> Vec<String> {
-        let mut vm = ForjaFast::new();
+        let mut vm = ForjaFast::nuevo();
         vm.fijar_max_inst(2_000_000);
         vm.cargar_bytecode(bc);
         vm.ejecutar().expect("la VM debe ejecutar sin error");

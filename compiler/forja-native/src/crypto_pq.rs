@@ -23,13 +23,13 @@ pub struct Poly {
 }
 
 impl Poly {
-    fn new() -> Self {
+    fn nuevo() -> Self {
         Self { coeffs: [0i16; N] }
     }
 
     /// Deserializa desde bytes LE (2 bytes por coeficiente)
     fn from_bytes(bytes: &[u8]) -> Self {
-        let mut p = Self::new();
+        let mut p = Self::nuevo();
         let n = N.min(bytes.len() / 2);
         for i in 0..n {
             let lo = bytes[i * 2] as u16;
@@ -56,7 +56,7 @@ impl Poly {
 
 /// Suma coeficiente a coeficiente con reducción modular
 fn add(a: &Poly, b: &Poly) -> Poly {
-    let mut c = Poly::new();
+    let mut c = Poly::nuevo();
     for i in 0..N {
         c.coeffs[i] = ((a.coeffs[i] as i32 + b.coeffs[i] as i32).rem_euclid(Q as i32)) as i16;
     }
@@ -65,7 +65,7 @@ fn add(a: &Poly, b: &Poly) -> Poly {
 
 /// Resta coeficiente a coeficiente con reducción modular
 fn sub(a: &Poly, b: &Poly) -> Poly {
-    let mut c = Poly::new();
+    let mut c = Poly::nuevo();
     for i in 0..N {
         c.coeffs[i] = ((a.coeffs[i] as i32 - b.coeffs[i] as i32).rem_euclid(Q as i32)) as i16;
     }
@@ -75,7 +75,7 @@ fn sub(a: &Poly, b: &Poly) -> Poly {
 /// Negación modular de todos los coeficientes
 #[allow(dead_code)]
 fn neg(a: &Poly) -> Poly {
-    let mut c = Poly::new();
+    let mut c = Poly::nuevo();
     for i in 0..N {
         c.coeffs[i] = ((-(a.coeffs[i] as i32)).rem_euclid(Q as i32)) as i16;
     }
@@ -103,7 +103,7 @@ fn mul_naive(a: &Poly, b: &Poly) -> Poly {
             c[idx] = (c[idx] + ai * bj * sign).rem_euclid(q);
         }
     }
-    let mut out = Poly::new();
+    let mut out = Poly::nuevo();
     for (o, &ci) in out.coeffs.iter_mut().zip(c.iter()) {
         *o = ci as i16;
     }
@@ -117,7 +117,7 @@ fn mul_naive(a: &Poly, b: &Poly) -> Poly {
 /// Para cada coeficiente se toman 2 bits del seed:
 ///   a = bit[2i], b = bit[2i+1]  ⇒  coeff = a - b ∈ {-1, 0, 1}
 fn sample_cbd(seed: &[u8]) -> Poly {
-    let mut p = Poly::new();
+    let mut p = Poly::nuevo();
     for i in 0..N {
         let byte_idx = i / 4;
         let bit_off = (i % 4) * 2;
@@ -139,7 +139,7 @@ fn sample_cbd(seed: &[u8]) -> Poly {
 /// suficientes bytes y rejection sampling para asegurar uniformidad en Z_q.
 fn sample_uniform(seed: &[u8], nonce: u8) -> Poly {
     use crate::hash::Sha256;
-    let mut p = Poly::new();
+    let mut p = Poly::nuevo();
     let mut idx = 0;
     let mut counter: u8 = 0;
     while idx < N {
@@ -251,7 +251,7 @@ pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
 
     // Mensaje: 32 bytes → 256 bits, cada bit se codifica como mensaje[i] = (Q/2) * bit
     let mensaje_seed = random_bytes(32)?;
-    let mut mensaje = Poly::new();
+    let mut mensaje = Poly::nuevo();
     for i in 0..256.min(N) {
         let byte = mensaje_seed[i / 8];
         let bit = (byte >> (i % 8)) & 1;
@@ -303,7 +303,7 @@ pub fn pq_decaps(sk: &[u8], ct: &[u8]) -> Result<Vec<u8>, &'static str> {
     let u = Poly::from_bytes(&ct[..poly_bytes]);
 
     // Deserializar v (comprimido a 4 bits)
-    let mut v = Poly::new();
+    let mut v = Poly::nuevo();
     for i in 0..N {
         let compressed = (ct[poly_bytes + i] & 0x0F) as i16;
         v.coeffs[i] = decompress(compressed, 4);
@@ -354,13 +354,13 @@ mod tests {
     #[test]
     fn poly_add_sub_neg() {
         let a = {
-            let mut p = Poly::new();
+            let mut p = Poly::nuevo();
             p.coeffs[0] = 1000;
             p.coeffs[1] = 3328; // Q-1
             p
         };
         let b = {
-            let mut p = Poly::new();
+            let mut p = Poly::nuevo();
             p.coeffs[0] = 2000;
             p.coeffs[1] = 1;
             p
@@ -385,13 +385,13 @@ mod tests {
     fn poly_mul_naive() {
         // a = x^2 + 1, b = x + 1
         let a = {
-            let mut p = Poly::new();
+            let mut p = Poly::nuevo();
             p.coeffs[0] = 1;
             p.coeffs[2] = 1;
             p
         };
         let b = {
-            let mut p = Poly::new();
+            let mut p = Poly::nuevo();
             p.coeffs[0] = 1;
             p.coeffs[1] = 1;
             p
@@ -408,7 +408,7 @@ mod tests {
         // (x^(N-1)+1)(x+1) = x^N + x^(N-1) + x + 1 ≡ -1 + x^(N-1) + x + 1 (mod x^N+1)
         // = x^(N-1) + x
         let a2 = {
-            let mut p = Poly::new();
+            let mut p = Poly::nuevo();
             p.coeffs[0] = 1;
             p.coeffs[N - 1] = 1;
             p

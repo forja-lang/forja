@@ -16,7 +16,7 @@
 use crate::registro::{
     desempaquetar, ruta_index, sha256_hex, verificar_firma, Index, Semver, VersionPublicada,
 };
-use forja_native::base64::{b64_decode, b64_encode};
+use forja_native::base64::{b64_codificar, b64_decodificar};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -167,7 +167,7 @@ pub fn publicar_remoto(
         descripcion: descripcion.to_string(),
         firma,
         clave_publica,
-        tarball_b64: b64_encode(datos),
+        tarball_b64: b64_codificar(datos),
     };
     let cuerpo = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
     let ruta = format!("/api/v1/packages/{}/{}", nombre, version);
@@ -263,8 +263,8 @@ pub fn configurado() -> bool {
 pub fn decodificar_publicacion(cuerpo: &[u8]) -> Result<(Publicacion, Vec<u8>), String> {
     let pub_data: Publicacion =
         serde_json::from_slice(cuerpo).map_err(|e| format!("publicación inválida: {}", e))?;
-    let datos =
-        b64_decode(&pub_data.tarball_b64).map_err(|e| format!("tarball base64 inválido: {}", e))?;
+    let datos = b64_decodificar(&pub_data.tarball_b64)
+        .map_err(|e| format!("tarball base64 inválido: {}", e))?;
     Ok((pub_data, datos))
 }
 
