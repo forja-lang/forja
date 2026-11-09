@@ -3,7 +3,7 @@
 // Contenido:
 //   1. CSPRNG (random bytes via OS)
 //   2. Tiempo constante (constant_time_equal)
-//   3. AES-256 (S-box, key expansion, ECB, CBC, GCM)
+//   3. AES-256 (S-box, clave expansion, ECB, CBC, GCM)
 //   4. ChaCha20 + Poly1305 (AEAD RFC 8439)
 //   5. PBKDF2-HMAC-SHA256 (con salt automático)
 
@@ -79,7 +79,7 @@ pub fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 3. AES-256 — S-box, key schedule, ECB, CBC, GCM
+// 3. AES-256 — S-box, clave schedule, ECB, CBC, GCM
 // ═════════════════════════════════════════════════════════════════════════════
 
 // S-box de AES (Rijndael)
@@ -122,7 +122,7 @@ const SBOX_INV: [u8; 256] = [
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d,
 ];
 
-// Rcon para key expansion (AES-256: 14 rounds -> 60 palabras)
+// Rcon para clave expansion (AES-256: 14 rounds -> 60 palabras)
 const RCON: [u8; 15] = [
     0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a,
 ];
@@ -318,38 +318,38 @@ pub fn aes256_cbc_encrypt(clave: &[u8; 32], iv: &[u8; 16], datos: &[u8]) -> Vec<
     let w = aes256_key_expand(clave);
     let blocks = datos.len().div_ceil(16);
     let mut out = Vec::with_capacity(blocks * 16);
-    let mut prev = *iv;
+    let mut anterior = *iv;
 
     for i in 0..blocks {
         let end = ((i + 1) * 16).min(datos.len());
-        let start = i * 16;
+        let inicio = i * 16;
         let mut block = [0u8; 16];
-        let size = end - start;
-        block[..size].copy_from_slice(&datos[start..end]);
+        let tamano = end - inicio;
+        block[..tamano].copy_from_slice(&datos[inicio..end]);
         // PKCS7 padding
-        if size < 16 {
-            let pad = (16 - size) as u8;
-            block[size..].fill(pad);
+        if tamano < 16 {
+            let relleno = (16 - tamano) as u8;
+            block[tamano..].fill(relleno);
         } else if i == blocks - 1 {
             // Último bloque exacto: agregar un bloque completo de padding
             let mut extra = [0u8; 16];
             extra.iter_mut().for_each(|b| *b = 16);
-            // XOR con prev y cifrar
+            // XOR con anterior y cifrar
             for j in 0..16 {
-                block[j] ^= prev[j];
+                block[j] ^= anterior[j];
             }
             let encrypted = aes256_encrypt_block(&block, &w);
             out.extend_from_slice(&encrypted);
-            prev = encrypted;
+            anterior = encrypted;
             block = extra;
         }
 
         for j in 0..16 {
-            block[j] ^= prev[j];
+            block[j] ^= anterior[j];
         }
         let encrypted = aes256_encrypt_block(&block, &w);
         out.extend_from_slice(&encrypted);
-        prev = encrypted;
+        anterior = encrypted;
     }
     out
 }
@@ -366,32 +366,32 @@ pub fn aes256_cbc_decrypt(
     let w = aes256_key_expand(clave);
     let blocks = datos.len() / 16;
     let mut out = Vec::with_capacity(datos.len());
-    let mut prev = *iv;
+    let mut anterior = *iv;
 
     for i in 0..blocks {
         let block: &[u8; 16] = &datos[i * 16..(i + 1) * 16].try_into().unwrap();
         let decrypted = aes256_decrypt_block(block, &w);
         let mut plain = [0u8; 16];
         for j in 0..16 {
-            plain[j] = decrypted[j] ^ prev[j];
+            plain[j] = decrypted[j] ^ anterior[j];
         }
-        prev = *block;
+        anterior = *block;
 
         if i < blocks - 1 {
             out.extend_from_slice(&plain);
         } else {
             // Último bloque: remover padding PKCS7
-            let pad = plain[15] as usize;
-            if pad == 0 || pad > 16 {
+            let relleno = plain[15] as usize;
+            if relleno == 0 || relleno > 16 {
                 return Err("AES-CBC: padding inválido");
             }
             // Verificar todos los bytes de padding
-            for j in 0..pad {
-                if plain[15 - j] != pad as u8 {
+            for j in 0..relleno {
+                if plain[15 - j] != relleno as u8 {
                     return Err("AES-CBC: padding inválido");
                 }
             }
-            out.extend_from_slice(&plain[..16 - pad]);
+            out.extend_from_slice(&plain[..16 - relleno]);
         }
     }
     Ok(out)
@@ -481,11 +481,11 @@ pub fn aes256_gcm_encrypt(clave: &[u8; 32], nonce: &[u8; 12], datos: &[u8], ad: 
     let mut ghash_input = Vec::new();
     ghash_input.extend_from_slice(ad);
     // Padding A to 16 bytes
-    let a_pad = (16 - ad.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, a_pad));
+    let relleno_a = (16 - ad.len() % 16) % 16;
+    ghash_input.extend(std::iter::repeat_n(0u8, relleno_a));
     ghash_input.extend_from_slice(&cifrado);
-    let c_pad = (16 - cifrado.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, c_pad));
+    let relleno_c = (16 - cifrado.len() % 16) % 16;
+    ghash_input.extend(std::iter::repeat_n(0u8, relleno_c));
     // Longitudes en bits
     ghash_input.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
     ghash_input.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
@@ -503,9 +503,9 @@ pub fn aes256_gcm_encrypt(clave: &[u8; 32], nonce: &[u8; 12], datos: &[u8], ad: 
     }
 
     // Retornar cifrado || tag
-    let mut result = cifrado;
-    result.extend_from_slice(&tag);
-    result
+    let mut resultado = cifrado;
+    resultado.extend_from_slice(&tag);
+    resultado
 }
 
 /// AES-256-GCM: descifrado autenticado
@@ -529,11 +529,11 @@ pub fn aes256_gcm_decrypt(
 
     let mut ghash_input = Vec::new();
     ghash_input.extend_from_slice(ad);
-    let a_pad = (16 - ad.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, a_pad));
+    let relleno_a = (16 - ad.len() % 16) % 16;
+    ghash_input.extend(std::iter::repeat_n(0u8, relleno_a));
     ghash_input.extend_from_slice(cifrado);
-    let c_pad = (16 - cifrado.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, c_pad));
+    let relleno_c = (16 - cifrado.len() % 16) % 16;
+    ghash_input.extend(std::iter::repeat_n(0u8, relleno_c));
     ghash_input.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
     ghash_input.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
 
@@ -574,15 +574,19 @@ fn qr(a: u32, b: u32, c: u32, d: u32) -> (u32, u32, u32, u32) {
     (a3, b3, c3, d3)
 }
 
-fn chacha20_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
+fn chacha20_block(clave: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     let mut state = [0u32; 16];
     state[0] = 0x61707865;
     state[1] = 0x3320646e;
     state[2] = 0x79622d32;
     state[3] = 0x6b206574;
     for i in 0..8 {
-        state[4 + i] =
-            u32::from_le_bytes([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
+        state[4 + i] = u32::from_le_bytes([
+            clave[i * 4],
+            clave[i * 4 + 1],
+            clave[i * 4 + 2],
+            clave[i * 4 + 3],
+        ]);
     }
     state[12] = counter;
     for i in 0..3 {
@@ -653,13 +657,13 @@ fn chacha20_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
 }
 
 /// Cifra/descifra con ChaCha20 (XOR keystream)
-pub fn chacha20_xor(key: &[u8; 32], nonce: &[u8; 12], data: &[u8]) -> Vec<u8> {
+pub fn chacha20_xor(clave: &[u8; 32], nonce: &[u8; 12], data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len());
     let mut counter = 0u32;
     let mut offset = 0;
 
     while offset < data.len() {
-        let keystream = chacha20_block(key, nonce, counter);
+        let keystream = chacha20_block(clave, nonce, counter);
         let end = (offset + 64).min(data.len());
         for i in offset..end {
             out.push(data[i] ^ keystream[i - offset]);
@@ -785,10 +789,10 @@ fn clamp_r_limbs(r_bytes: &[u8; 16]) -> [u64; 5] {
 }
 
 /// Poly1305 MAC (RFC 8439) — implementación con 5 limbos de 26 bits
-pub fn poly1305_mac(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
+pub fn poly1305_mac(clave: &[u8; 32], data: &[u8]) -> [u8; 16] {
     // Extraer r (con clamping) y s (módulo 2^128)
-    let r_bytes: &[u8; 16] = key[..16].try_into().unwrap();
-    let s = u128::from_le_bytes(key[16..32].try_into().unwrap());
+    let r_bytes: &[u8; 16] = clave[..16].try_into().unwrap();
+    let s = u128::from_le_bytes(clave[16..32].try_into().unwrap());
     let r_limbs = clamp_r_limbs(r_bytes);
 
     let mut h = [0u64; 5];
@@ -842,7 +846,7 @@ pub fn chacha20_poly1305_encrypt(
     datos: &[u8],
     ad: &[u8],
 ) -> Vec<u8> {
-    // Generar Poly1305 key usando ChaCha20 con counter=0
+    // Generar Poly1305 clave usando ChaCha20 con counter=0
     let poly_key_block = chacha20_block(clave, nonce, 0);
     let mut poly_key = [0u8; 32];
     poly_key.copy_from_slice(&poly_key_block[..32]);
@@ -864,22 +868,22 @@ pub fn chacha20_poly1305_encrypt(
         out
     };
 
-    // Construir input para Poly1305: A || pad(A) || C || pad(C) || len(A) || len(C)
+    // Construir input para Poly1305: A || relleno(A) || C || relleno(C) || len(A) || len(C)
     let mut poly_input = Vec::new();
     poly_input.extend_from_slice(ad);
-    let a_pad = (16 - ad.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, a_pad));
+    let relleno_a = (16 - ad.len() % 16) % 16;
+    poly_input.extend(std::iter::repeat_n(0u8, relleno_a));
     poly_input.extend_from_slice(&cifrado);
-    let c_pad = (16 - cifrado.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, c_pad));
+    let relleno_c = (16 - cifrado.len() % 16) % 16;
+    poly_input.extend(std::iter::repeat_n(0u8, relleno_c));
     poly_input.extend_from_slice(&(ad.len() as u64).to_le_bytes());
     poly_input.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
 
     let tag = poly1305_mac(&poly_key, &poly_input);
 
-    let mut result = cifrado;
-    result.extend_from_slice(&tag);
-    result
+    let mut resultado = cifrado;
+    resultado.extend_from_slice(&tag);
+    resultado
 }
 
 /// ChaCha20-Poly1305 AEAD: descifrado y verificación
@@ -902,11 +906,11 @@ pub fn chacha20_poly1305_decrypt(
 
     let mut poly_input = Vec::new();
     poly_input.extend_from_slice(ad);
-    let a_pad = (16 - ad.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, a_pad));
+    let relleno_a = (16 - ad.len() % 16) % 16;
+    poly_input.extend(std::iter::repeat_n(0u8, relleno_a));
     poly_input.extend_from_slice(cifrado);
-    let c_pad = (16 - cifrado.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, c_pad));
+    let relleno_c = (16 - cifrado.len() % 16) % 16;
+    poly_input.extend(std::iter::repeat_n(0u8, relleno_c));
     poly_input.extend_from_slice(&(ad.len() as u64).to_le_bytes());
     poly_input.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
 
@@ -939,12 +943,17 @@ pub fn chacha20_poly1305_decrypt(
 /// password: contraseña
 /// salt: salt criptográfico
 /// iterations: número de iteraciones (recomendado >= 600000 para OWASP 2024)
-/// dk_len: longitud deseada de la clave derivada en bytes
-pub fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, dk_len: usize) -> Vec<u8> {
-    let mut dk = Vec::with_capacity(dk_len);
+/// largo_dk: longitud deseada de la clave derivada en bytes
+pub fn pbkdf2_hmac_sha256(
+    password: &[u8],
+    salt: &[u8],
+    iterations: u32,
+    largo_dk: usize,
+) -> Vec<u8> {
+    let mut dk = Vec::with_capacity(largo_dk);
     let mut block_index: u32 = 1;
 
-    while dk.len() < dk_len {
+    while dk.len() < largo_dk {
         // U_1 = HMAC(password, salt || INT_32_BE(i))
         let mut input = Vec::with_capacity(salt.len() + 4);
         input.extend_from_slice(salt);
@@ -961,7 +970,7 @@ pub fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, dk_len:
             }
         }
 
-        dk.extend_from_slice(&t[..t.len().min(dk_len - dk.len())]);
+        dk.extend_from_slice(&t[..t.len().min(largo_dk - dk.len())]);
         block_index += 1;
     }
     dk
@@ -1099,28 +1108,28 @@ fn scrypt_smix(b: &[u8], n: usize, r: usize) -> Vec<u8> {
 /// n: costo de CPU/memoria (potencia de 2, ej: 16384)
 /// r: tamaño de bloque (ej: 8)
 /// p: paralelismo (ej: 1)
-/// dk_len: longitud de clave derivada en bytes
+/// largo_dk: longitud de clave derivada en bytes
 pub fn scrypt(
     password: &[u8],
     salt: &[u8],
     n: usize,
     r: usize,
     p: usize,
-    dk_len: usize,
+    largo_dk: usize,
 ) -> Vec<u8> {
     // Paso 1: B = PBKDF2(P, S, 1, p * 128 * r)
     let b = pbkdf2_hmac_sha256(password, salt, 1, p * 128 * r);
 
     // Paso 2: ROMix cada bloque
-    let mut result = Vec::new();
+    let mut resultado = Vec::new();
     for i in 0..p {
         let bi = &b[i * 128 * r..(i + 1) * 128 * r];
         let mixed = scrypt_smix(bi, n, r);
-        result.extend_from_slice(&mixed);
+        resultado.extend_from_slice(&mixed);
     }
 
     // Paso 3: DK = PBKDF2(P, B', 1, dkLen)
-    pbkdf2_hmac_sha256(password, &result, 1, dk_len)
+    pbkdf2_hmac_sha256(password, &resultado, 1, largo_dk)
 }
 
 pub fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
@@ -1141,7 +1150,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constant_time_equal() {
+    fn prueba_constant_time_equal() {
         assert!(constant_time_equal(b"abc", b"abc"));
         assert!(!constant_time_equal(b"abc", b"abd"));
         assert!(!constant_time_equal(b"abc", b"abcd"));
@@ -1149,8 +1158,8 @@ mod tests {
 
     #[test]
     fn test_aes256_ecb_roundtrip() {
-        let key = [0x2b; 32];
-        let w = aes256_key_expand(&key);
+        let clave = [0x2b; 32];
+        let w = aes256_key_expand(&clave);
         let block = [0x6b; 16];
         let encrypted = aes256_encrypt_block(&block, &w);
         let decrypted = aes256_decrypt_block(&encrypted, &w);
@@ -1159,65 +1168,65 @@ mod tests {
 
     #[test]
     fn test_aes256_cbc_roundtrip() {
-        let key = [0x2b; 32];
+        let clave = [0x2b; 32];
         let iv = [0x00; 16];
         let data = b"Hola mundo AES-256!";
-        let encrypted = aes256_cbc_encrypt(&key, &iv, data);
-        let decrypted = aes256_cbc_decrypt(&key, &iv, &encrypted).unwrap();
+        let encrypted = aes256_cbc_encrypt(&clave, &iv, data);
+        let decrypted = aes256_cbc_decrypt(&clave, &iv, &encrypted).unwrap();
         assert_eq!(&decrypted, data);
     }
 
     #[test]
     fn test_aes256_gcm_roundtrip() {
-        let key = [0x2b; 32];
+        let clave = [0x2b; 32];
         let nonce = [0x01; 12];
         let data = b"Mensaje secreto con GCM";
         let ad = b"Datos asociados";
-        let encrypted = aes256_gcm_encrypt(&key, &nonce, data, ad);
-        let decrypted = aes256_gcm_decrypt(&key, &nonce, &encrypted, ad).unwrap();
+        let encrypted = aes256_gcm_encrypt(&clave, &nonce, data, ad);
+        let decrypted = aes256_gcm_decrypt(&clave, &nonce, &encrypted, ad).unwrap();
         assert_eq!(&decrypted, data);
     }
 
     #[test]
     fn test_aes256_gcm_tamper() {
-        let key = [0x2b; 32];
+        let clave = [0x2b; 32];
         let nonce = [0x01; 12];
         let data = b"test";
-        let mut encrypted = aes256_gcm_encrypt(&key, &nonce, data, b"");
+        let mut encrypted = aes256_gcm_encrypt(&clave, &nonce, data, b"");
         // Alterar un byte del cifrado
         encrypted[0] ^= 1;
-        assert!(aes256_gcm_decrypt(&key, &nonce, &encrypted, b"").is_err());
+        assert!(aes256_gcm_decrypt(&clave, &nonce, &encrypted, b"").is_err());
     }
 
     #[test]
     fn test_chacha20_roundtrip() {
-        let key = [0x2b; 32];
+        let clave = [0x2b; 32];
         let nonce = [0x01; 12];
         let data = b"ChaCha20 stream cipher test";
-        let encrypted = chacha20_xor(&key, &nonce, data);
-        let decrypted = chacha20_xor(&key, &nonce, &encrypted);
+        let encrypted = chacha20_xor(&clave, &nonce, data);
+        let decrypted = chacha20_xor(&clave, &nonce, &encrypted);
         assert_eq!(&decrypted, data);
     }
 
     #[test]
     fn test_chacha20_poly1305_roundtrip() {
-        let key = [0x2b; 32];
+        let clave = [0x2b; 32];
         let nonce = [0x01; 12];
         let data = b"ChaCha20-Poly1305 AEAD test";
         let ad = b"Datos asociados";
-        let encrypted = chacha20_poly1305_encrypt(&key, &nonce, data, ad);
-        let decrypted = chacha20_poly1305_decrypt(&key, &nonce, &encrypted, ad).unwrap();
+        let encrypted = chacha20_poly1305_encrypt(&clave, &nonce, data, ad);
+        let decrypted = chacha20_poly1305_decrypt(&clave, &nonce, &encrypted, ad).unwrap();
         assert_eq!(&decrypted, data);
     }
 
     #[test]
     fn test_chacha20_poly1305_tamper() {
-        let key = [0x2b; 32];
+        let clave = [0x2b; 32];
         let nonce = [0x01; 12];
         let data = b"test";
-        let mut encrypted = chacha20_poly1305_encrypt(&key, &nonce, data, b"");
+        let mut encrypted = chacha20_poly1305_encrypt(&clave, &nonce, data, b"");
         encrypted[0] ^= 1;
-        assert!(chacha20_poly1305_decrypt(&key, &nonce, &encrypted, b"").is_err());
+        assert!(chacha20_poly1305_decrypt(&clave, &nonce, &encrypted, b"").is_err());
     }
 
     #[test]
@@ -1231,7 +1240,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_verify_password() {
+    fn hash_verify_password() {
         let hash = hash_password("MiClaveSegura123!").unwrap();
         assert!(hash.starts_with("$pbkdf2-sha256$"));
         assert!(verify_password("MiClaveSegura123!", &hash));
@@ -1239,7 +1248,7 @@ mod tests {
     }
 
     #[test]
-    fn test_random_bytes() {
+    fn prueba_random_bytes() {
         let a = random_bytes(32).unwrap();
         let b = random_bytes(32).unwrap();
         assert_eq!(a.len(), 32);
@@ -1254,7 +1263,7 @@ mod tests {
         // El test vector del RFC 8439 Section 2.8.2 es para Poly1305-AES,
         // que tiene una estructura de clave diferente a standalone Poly1305.
         // Aquí usamos vectores generados con referencia Python.
-        let key: [u8; 32] = [
+        let clave: [u8; 32] = [
             0xdc, 0x97, 0xfc, 0xb3, 0x5e, 0x28, 0xbf, 0x02, 0x2e, 0x0f, 0x8a, 0x3f, 0xb3, 0x0f,
             0x92, 0x85, 0xc9, 0x32, 0x56, 0x05, 0x4f, 0x2d, 0x09, 0xf1, 0x37, 0x9a, 0xbc, 0xea,
             0x43, 0xb6, 0x10, 0x39,
@@ -1262,27 +1271,27 @@ mod tests {
 
         // empty
         assert_eq!(
-            hex_encode(&poly1305_mac(&key, b"")),
+            hex_encode(&poly1305_mac(&clave, b"")),
             "c93256054f2d09f1379abcea43b61039"
         );
         // 5 bytes
         assert_eq!(
-            hex_encode(&poly1305_mac(&key, b"Hello")),
+            hex_encode(&poly1305_mac(&clave, b"Hello")),
             "724a8babd1c756b143e551a9a6221696"
         );
         // 16 bytes
         assert_eq!(
-            hex_encode(&poly1305_mac(&key, &[b'A'; 16])),
+            hex_encode(&poly1305_mac(&clave, &[b'A'; 16])),
             "ad5ef76e4f5d1363129a12ebdfca02e1"
         );
         // 32 bytes
         assert_eq!(
-            hex_encode(&poly1305_mac(&key, &[b'A'; 32])),
+            hex_encode(&poly1305_mac(&clave, &[b'A'; 32])),
             "a3767d22e24bff460da9be377fbb7aee"
         );
         // 33 bytes (partial block)
         assert_eq!(
-            hex_encode(&poly1305_mac(&key, &[b'A'; 33])),
+            hex_encode(&poly1305_mac(&clave, &[b'A'; 33])),
             "8f614e60aaab74afb3d96bd7cd84e2dc"
         );
     }
