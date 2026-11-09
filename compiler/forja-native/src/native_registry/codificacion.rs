@@ -19,8 +19,8 @@ pub fn native_base64_codificar(
 
     let texto = obtener_texto(vm, args[0])?;
     let codificado = crate::base64::b64_encode(texto.as_bytes());
-    let idx = vm.alloc_str(Arc::from(codificado.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(codificado.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Decodifica un texto Base64 a texto plano
@@ -41,13 +41,13 @@ pub fn native_base64_decodificar(
     match resultado {
         Ok(bytes) => {
             let decodificado = String::from_utf8_lossy(&bytes).to_string();
-            let idx = vm.alloc_str(Arc::from(decodificado.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(decodificado.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(_) => {
             // Retornar cadena vacía para indicar error (la capa Forja lo maneja)
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
     }
 }
