@@ -7,14 +7,14 @@ use super::*;
 /// Los archivos que no parsean se reportan como advertencia y NO cuentan como
 /// fallo (para no romper el CI por ejemplos con sintaxis obsoleta).
 pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) -> bool {
-    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("⚠️  {}: {}", path, e);
             return true;
         }
     };
-    let mut lexer = lexer::Lexer::new(&source);
+    let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errores) => {
@@ -42,18 +42,18 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
         }
     };
     let mut fmt = formatter::Formatter::new();
-    let comentarios = lexer::extraer_comentarios(&source);
-    let output = fmt.formatear_con_comentarios(&programa, &comentarios);
+    let comentarios = lexer::extraer_comentarios(&fuente);
+    let salida = fmt.formatear_con_comentarios(&programa, &comentarios);
 
     if check {
-        if output == source {
+        if salida == fuente {
             true
         } else {
             eprintln!("❌ {} necesita formateo", path);
             false
         }
     } else if let Some(out) = out_path {
-        match fs::write(out, &output) {
+        match fs::write(out, &salida) {
             Ok(_) => {
                 println!("✅ Código formateado: {}", out);
                 true
@@ -64,7 +64,7 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
             }
         }
     } else {
-        match fs::write(path, &output) {
+        match fs::write(path, &salida) {
             Ok(_) => {
                 println!("✅ Código formateado: {}", path);
                 true
@@ -210,14 +210,14 @@ pub(crate) fn lint_un_archivo(
     deny_warnings: bool,
     json_mode: bool,
 ) -> (usize, usize) {
-    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("⚠️  {}: {}", path, e);
             return (0, 0);
         }
     };
-    let diags = match linter::lint_source(&source, config.clone()) {
+    let diags = match linter::lint_source(&fuente, config.clone()) {
         Ok(d) => d,
         Err(errores) => {
             let detalle = errores
@@ -282,22 +282,22 @@ pub(crate) fn cmd_doc(args: &[String]) {
         eprintln!("Uso: forja documentar <archivo.fa> [salida.html]");
         process::exit(1);
     };
-    let output_path = match args.get(1) {
+    let ruta_salida = match args.get(1) {
         Some(salida) => Some(salida.clone()),
         None => {
-            let input = std::path::Path::new(path);
-            Some(input.with_extension("html").to_string_lossy().to_string())
+            let entrada = std::path::Path::new(path);
+            Some(entrada.with_extension("html").to_string_lossy().to_string())
         }
     };
 
-    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
             process::exit(1);
         }
     };
-    let mut lexer = lexer::Lexer::new(&source);
+    let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
@@ -320,7 +320,7 @@ pub(crate) fn cmd_doc(args: &[String]) {
 
     let html = generar_doc_html(&programa.declaraciones);
 
-    if let Some(out) = output_path {
+    if let Some(out) = ruta_salida {
         match fs::write(&out, &html) {
             Ok(_) => println!("✅ Documentación generada: {}", out),
             Err(e) => {
@@ -367,12 +367,12 @@ pub(crate) fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
                 doc,
                 ..
             } => {
-                let params: Vec<&str> = parametros.iter().map(|p| p.nombre.as_str()).collect();
+                let parametros: Vec<&str> = parametros.iter().map(|p| p.nombre.as_str()).collect();
                 html.push_str("<div class='doc-block'>");
                 html.push_str(&format!(
                     "<span class='tag tag-fn'>función</span> <h3>{}({})</h3>",
                     nombre,
-                    params.join(", ")
+                    parametros.join(", ")
                 ));
                 if let Some(doc_text) = doc {
                     html.push_str(&format!(
