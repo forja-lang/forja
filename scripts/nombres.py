@@ -50,7 +50,7 @@ PRESTAMOS = set(
     bytecode opcode uop token hash buffer socket byte bit ptr mut id idx vm jit gc ast hir
     ir ffi json http tls sql sandbox arena mutex crate span runtime vec std dce cse
     struct trait enum descriptor ref prop handle
-    Node ViewState Widget View Size Border BorderWidth Rect Point Color Insets Spacer
+    UpdateCtx NativeFn FreeConsole FreeLibrary2 TextInput TextField Node ViewState Widget View Size Border BorderWidth Rect Point Color Insets Spacer
     build rebuild on_pointer_event on_text_event on_access_event on_status_change
     width height children child label text view widget border padding gap alignment
     message event changed focus blur ci_class ci_id class_id
@@ -68,7 +68,8 @@ TRAITS_STD = set(
 
 # Nombres que son de otro dominio y no se traducen.
 EXENTAS_GLOBALES = set(
-    """Output Target close munmap msync main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
+    """UpdateCtx NativeFn FreeConsole FreeLibrary2 TextInput TextField Node ViewState Widget View Size Border BorderWidth Rect Point Color Insets Spacer build rebuild on_pointer_event on_text_event on_access_event on_status_change width height children child label text view widget border padding gap alignment message event changed focus blur ci_class ci_id class_id
+    Output Target close munmap msync main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
     WriteProcessMemory ReadProcessMemory VirtualAlloc VirtualFree CreateProcessW
     GetProcAddress CreateToolhelp32Snapshot GetLastError GetStdHandle GetConsoleMode
     GetConsoleWindow GetConsoleScreenBufferInfo GetAsyncKeyState SetConsoleMode
@@ -93,7 +94,7 @@ EXENTOS = {
     "src/tools/forja-lsp/src/main.rs",  # LSP / tower-lsp
     "src/tools/forja-dap/src/main.rs",  # DAP / VS Code
 }
-EXENTOS_PREFIJOS = ("src/lsp/",)  # structs del protocolo LSP que habla el editor
+EXENTOS_PREFIJOS = ("src/lsp/", "library/gui-rt/src/icons.rs")  # structs del protocolo LSP que habla el editor
 
 # Directorios que no son código propio.
 EXCLUIDOS = ("target", "node_modules", "patches", "fuzz", ".git", "docs", "scratch")
