@@ -1544,7 +1544,7 @@ pub fn emitir_codigo_nativo(bc: &[bytecode::Opcode]) -> Vec<u8> {
         allocator.add_interval(intervalo);
     }
     let _ = allocator.allocate();
-    let spill = allocator.spill_count();
+    let spill = allocator.cantidad_derrames();
     let sin_llamadas: HashMap<String, u64> = HashMap::new();
     emit_program_with_calls(&prog, allocator.get_assignments(), spill, &sin_llamadas)
 }
