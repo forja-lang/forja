@@ -22,7 +22,7 @@ const MAX_AST_PROFUNDIDAD: u32 = 10000;
 /// Generador de bytecode a partir del AST de Forja
 pub struct GeneradorBytecode {
     pub codigos: Vec<Opcode>,
-    label_counter: usize,
+    contador_etiquetas: usize,
     errores: Vec<ErrorForja>,
     /// Tipos inferidos por el TypeChecker (compile-time type information).
     ///
@@ -100,8 +100,8 @@ pub struct GeneradorBytecode {
     /// Profundidad actual de recursión al generar expresiones.
     /// Previene stack overflow en ASTs con expresiones muy anidadas.
     profundidad_actual: u32,
-    /// Pila de (label_inicio, label_fin) de bucles activos para romper/continuar
-    loop_stack: Vec<(usize, usize)>,
+    /// Pila de (etiqueta_inicio, etiqueta_fin) de bucles activos para romper/continuar
+    pila_bucles: Vec<(usize, usize)>,
 
     /// Nombres de funciones declaradas como `asincrona`.
     /// Cuando se llama a una función en este set, se emite ThreadSpawn en vez de Call.
@@ -120,7 +120,7 @@ impl GeneradorBytecode {
     pub fn new() -> Self {
         GeneradorBytecode {
             codigos: Vec::new(),
-            label_counter: 0,
+            contador_etiquetas: 0,
             errores: Vec::new(),
             tipos_inferidos: None,
             tipos_ambito: std::collections::HashMap::new(),
@@ -145,7 +145,7 @@ impl GeneradorBytecode {
             closure_defs: Vec::new(),
             clases_con_constructor: std::collections::HashSet::new(),
             profundidad_actual: 0,
-            loop_stack: Vec::new(),
+            pila_bucles: Vec::new(),
             funciones_overload: None,
             funciones_asincronas: std::collections::HashSet::new(),
             funciones_definidas: std::collections::HashSet::new(),
@@ -538,11 +538,11 @@ pub struct ModuloBytecode {
     /// Código del módulo, listo para cargarse en la VM.
     pub codigos: Vec<Opcode>,
     /// Identificador del nombre del módulo.
-    pub module_id: IdSimbolo,
+    pub id_modulo: IdSimbolo,
     /// Variables globales del módulo: nombre y si son mutables.
     pub global_var_indices: Vec<(String, bool)>,
     /// Identificadores de las funciones definidas en el módulo.
-    pub function_sym_ids: Vec<IdSimbolo>,
+    pub ids_simbolos_funcion: Vec<IdSimbolo>,
 }
 
 impl GeneradorBytecode {
@@ -551,7 +551,7 @@ impl GeneradorBytecode {
     pub fn generar_para_modulo(
         &mut self,
         programa: &Programa,
-        module_id: IdSimbolo,
+        id_modulo: IdSimbolo,
     ) -> Result<ModuloBytecode, Vec<ErrorForja>> {
         // Reiniciar estado del generador para este módulo
         self.codigos.clear();
@@ -560,7 +560,7 @@ impl GeneradorBytecode {
 
         // Variables globales del módulo (ámbito módulo)
         let mut global_var_indices: Vec<(String, bool)> = Vec::new();
-        let mut function_sym_ids: Vec<IdSimbolo> = Vec::new();
+        let mut ids_simbolos_funcion: Vec<IdSimbolo> = Vec::new();
 
         // Primera pasada: identificar variables globales y funciones
         for decl in &programa.declaraciones {
@@ -573,12 +573,12 @@ impl GeneradorBytecode {
                 }
                 Declaracion::Funcion { nombre, .. } => {
                     // Generar un IdSimbolo temporal para la función
-                    let temp_id = IdSimbolo(
+                    let id_temporal = IdSimbolo(
                         nombre
                             .bytes()
                             .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
                     );
-                    function_sym_ids.push(temp_id);
+                    ids_simbolos_funcion.push(id_temporal);
                 }
                 Declaracion::Clase {
                     nombre, metodos, ..
@@ -590,12 +590,12 @@ impl GeneradorBytecode {
                             &metodo.nombre
                         };
                         let full_name = format!("{}.{}", nombre, nombre_metodo);
-                        let temp_id = IdSimbolo(
+                        let id_temporal = IdSimbolo(
                             full_name
                                 .bytes()
                                 .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
                         );
-                        function_sym_ids.push(temp_id);
+                        ids_simbolos_funcion.push(id_temporal);
                     }
                 }
                 Declaracion::Implementacion {
@@ -605,12 +605,12 @@ impl GeneradorBytecode {
                 } => {
                     for metodo in metodos {
                         let full_name = format!("{}.{}", clase_nombre, metodo.nombre);
-                        let temp_id = IdSimbolo(
+                        let id_temporal = IdSimbolo(
                             full_name
                                 .bytes()
                                 .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
                         );
-                        function_sym_ids.push(temp_id);
+                        ids_simbolos_funcion.push(id_temporal);
                     }
                 }
                 _ => {}
@@ -629,9 +629,9 @@ impl GeneradorBytecode {
 
         Ok(ModuloBytecode {
             codigos,
-            module_id,
+            id_modulo,
             global_var_indices,
-            function_sym_ids,
+            ids_simbolos_funcion,
         })
     }
 }
@@ -640,19 +640,19 @@ impl ModuloBytecode {
     /// Escanea los codigos del módulo y extrae (nombre_función, ip_start, vars_size)
     /// para cada FunctionDef, calculando vars_size recorriendo el cuerpo de cada función.
     pub fn desglosar(&self) -> Vec<(String, usize, usize)> {
-        let mut func_ranges: Vec<(usize, usize)> = Vec::new();
+        let mut rangos_funciones: Vec<(usize, usize)> = Vec::new();
         for (i, op) in self.codigos.iter().enumerate() {
             if let Opcode::DefinirFuncion(_, _) = op {
-                func_ranges.push((i, self.codigos.len()));
-                if func_ranges.len() > 1 {
-                    let prev = func_ranges.len() - 2;
-                    func_ranges[prev].1 = i;
+                rangos_funciones.push((i, self.codigos.len()));
+                if rangos_funciones.len() > 1 {
+                    let anterior = rangos_funciones.len() - 2;
+                    rangos_funciones[anterior].1 = i;
                 }
             }
         }
 
         let mut resultado = Vec::new();
-        for (range_start, range_end) in &func_ranges {
+        for (range_start, range_end) in &rangos_funciones {
             let (nombre, params) = match &self.codigos[*range_start] {
                 Opcode::DefinirFuncion(n, p) => (n.clone(), p.clone()),
                 _ => unreachable!(),
