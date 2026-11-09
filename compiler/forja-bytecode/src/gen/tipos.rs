@@ -173,16 +173,16 @@ impl GeneradorBytecode {
             // a % b = a - (a/b)*b
             // FIX: Usamos variable temporal para evitar doble evaluación de b.
             // El patrón anterior evaluaba derecha dos veces (bug si tiene side effects).
-            let temp_name = Arc::from(format!("__mod_t{}", self.label_counter));
-            self.label_counter += 1;
+            let nombre_temporal = Arc::from(format!("__mod_t{}", self.contador_etiquetas));
+            self.contador_etiquetas += 1;
             self.generar_expresion(izquierda); // [a]
             self.generar_expresion(derecha); // [a, b]
-            self.emitir(Opcode::Declarar(Arc::clone(&temp_name), false)); // declara temp
-            self.emitir(Opcode::Guardar(Arc::clone(&temp_name))); // [a] (b guardado en temp)
+            self.emitir(Opcode::Declarar(Arc::clone(&nombre_temporal), false)); // declara temp
+            self.emitir(Opcode::Guardar(Arc::clone(&nombre_temporal))); // [a] (b guardado en temp)
             self.emitir(Opcode::Duplicar); // [a, a]
-            self.emitir(Opcode::Cargar(Arc::clone(&temp_name))); // [a, a, b]
+            self.emitir(Opcode::Cargar(Arc::clone(&nombre_temporal))); // [a, a, b]
             self.emitir(Opcode::Dividir); // [a, a/b]
-            self.emitir(Opcode::Cargar(Arc::clone(&temp_name))); // [a, a/b, b]
+            self.emitir(Opcode::Cargar(Arc::clone(&nombre_temporal))); // [a, a/b, b]
             self.emitir(Opcode::Multiplicar); // [a, (a/b)*b]
             self.emitir(Opcode::Restar); // [a % b]
             return;
@@ -407,8 +407,8 @@ impl GeneradorBytecode {
     }
 
     pub(crate) fn nueva_label(&mut self) -> usize {
-        let label = self.label_counter;
-        self.label_counter += 1;
+        let label = self.contador_etiquetas;
+        self.contador_etiquetas += 1;
         label
     }
 
