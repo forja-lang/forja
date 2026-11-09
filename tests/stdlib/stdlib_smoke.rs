@@ -65,15 +65,24 @@ fn modulos_publicos_tienen_al_menos_una_funcion() {
 #[test]
 fn toml_parsea_y_genera() {
     let raiz = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    // Se llama calificado (`toml.parsear`): con el espacio de nombres actual,
+    // `parsear` sin calificar puede resolver a otro módulo (csv, json, url).
+    // `parsear`/`generar` devuelven `Resultado`, por eso `desenvolver`.
     let fuente = r#"
 importar std/toml
-variable m = parsear("nombre = \"Ana\"\n[db]\npuerto = 5432\nactivo = true\n")
+funcion desenvolver(v) {
+    coincidir (v) {
+        caso Ok(x) -> { retornar x }
+        caso _ -> { retornar nulo }
+    }
+}
+variable m = desenvolver(toml.parsear("nombre = \"Ana\"\n[db]\npuerto = 5432\nactivo = true\n"))
 escribir(m["nombre"])
 escribir(m["db"]["puerto"])
 escribir(m["db"]["activo"])
-variable t = generar({"nombre": "Ana", "db": {"puerto": 5432}})
-escribir(t.contiene("[db]"))
-escribir(t.contiene("nombre = \"Ana\""))
+variable t = desenvolver(toml.generar({"nombre": "Ana", "db": {"puerto": 5432}}))
+escribir(contiene(t, "[db]"))
+escribir(contiene(t, "nombre = \"Ana\""))
 "#;
     let salida = forja_test_support::ejecutar_desde(fuente, raiz).expect("toml falló");
     assert_eq!(

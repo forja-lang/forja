@@ -45,11 +45,13 @@ pub fn nativo_archivo_leer(
             let indice = vm.reservar_texto(Arc::from(contenido.as_str()));
             Ok(ValorFast::texto(indice))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -75,11 +77,13 @@ pub fn nativo_archivo_escribir(
     }
     match std::fs::write(&ruta, contenido.as_bytes()) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -113,11 +117,13 @@ pub fn nativo_archivo_eliminar(
     }
     match std::fs::remove_file(&ruta) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -139,11 +145,13 @@ pub fn nativo_archivo_copiar(
     }
     match std::fs::copy(&origen, &destino) {
         Ok(_) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -165,11 +173,13 @@ pub fn nativo_archivo_mover(
     }
     match std::fs::rename(&origen, &destino) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -193,11 +203,13 @@ pub fn nativo_archivo_tamano(
             let tamano = meta.len() as i64;
             Ok(ValorFast::entero(tamano))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -218,11 +230,13 @@ pub fn nativo_directorio_crear(
     }
     match std::fs::create_dir_all(&ruta) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -243,11 +257,13 @@ pub fn nativo_directorio_eliminar(
     }
     match std::fs::remove_dir_all(&ruta) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -278,11 +294,13 @@ pub fn nativo_directorio_listar(
             let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
             Ok(ValorFast::texto(indice))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -326,11 +344,13 @@ pub fn nativo_archivo_informacion(
             let indice = vm.reservar_texto(Arc::from(informacion.as_str()));
             Ok(ValorFast::texto(indice))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -363,11 +383,13 @@ pub fn nativo_archivo_leer_binario(
             let indice = vm.reservar_texto(Arc::from(hex_texto.as_str()));
             Ok(ValorFast::texto(indice))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
@@ -405,10 +427,12 @@ pub fn nativo_archivo_escribir_binario(
         .collect();
     match std::fs::write(&ruta, &octetos) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "{}: {}",
-            codigo_error_archivo(&e),
-            e
-        ))),
+        // Los módulos de std/archivo esperan el centinela -1 para devolver
+        // un `Error(...)`. Un `Err` acá aborta el programa, así que un archivo
+        // inexistente mataba el proceso en vez de poder manejarse.
+        Err(e) => {
+            eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }

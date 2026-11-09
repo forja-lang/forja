@@ -1011,10 +1011,14 @@ impl ForjaFast {
                                     self.empujar_valor(val);
                                 }
                                 Err(e) => {
+                                    // Un nativo que falla es un error de ejecución, no
+                                    // un `nulo` silencioso: antes `archivo.leer_archivo`
+                                    // de un archivo inexistente o una función mal
+                                    // tipada devolvían nulo y el programa seguía.
                                     if std::env::var("FORJA_DEBUG_NATIVAS").is_ok() {
                                         eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
                                     }
-                                    self.empujar_valor(ValorFast::nulo());
+                                    return Err(e);
                                 }
                             }
                         } else {
