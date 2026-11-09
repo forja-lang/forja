@@ -16,12 +16,36 @@
 
 /* ── memoria ──────────────────────────────────────────────────────────── */
 
+/* Arena: la memoria de un programa Forja no se libera durante la corrida (la
+ * ruta nativa no tiene GC), así que en vez de un `calloc` por objeto se reparte
+ * desde bloques de 1 MB, alineado a 16 bytes (ABI). Los pedidos grandes van
+ * directo a `calloc`. */
+#define FORJA_ARENA_BLOQUE (1024 * 1024)
+static char *arena_actual = NULL;
+static int64_t arena_restante = 0;
+
 void *forja_alloc(int64_t bytes) {
-    void *p = calloc(1, (size_t)(bytes > 0 ? bytes : 1));
-    if (!p) {
-        fputs("forja: sin memoria\n", stderr);
-        exit(1);
+    int64_t n = bytes > 0 ? bytes : 1;
+    n = (n + 15) & ~(int64_t)15;
+    if (n > FORJA_ARENA_BLOQUE / 4) {
+        void *p = calloc(1, (size_t)n);
+        if (!p) {
+            fputs("forja: sin memoria\n", stderr);
+            exit(1);
+        }
+        return p;
     }
+    if (n > arena_restante) {
+        arena_actual = (char *)calloc(1, FORJA_ARENA_BLOQUE);
+        if (!arena_actual) {
+            fputs("forja: sin memoria\n", stderr);
+            exit(1);
+        }
+        arena_restante = FORJA_ARENA_BLOQUE;
+    }
+    void *p = arena_actual;
+    arena_actual += n;
+    arena_restante -= n;
     return p;
 }
 
