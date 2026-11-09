@@ -17,7 +17,7 @@ pub fn postprocesar_globales(codigos: Vec<Opcode>, globales: &[(String, bool)]) 
     use std::collections::HashSet;
 
     let indice_global = |nombre: &str| globales.iter().position(|(g, _)| g == nombre);
-    let mut result = Vec::with_capacity(codigos.len());
+    let mut resultado = Vec::with_capacity(codigos.len());
     // El backend AST emite primero el código de nivel superior, luego `Halt` y
     // después los cuerpos de funciones (métodos, hilos y closures incluidos).
     // Solo el tramo previo a `Halt` es ámbito global.
@@ -53,29 +53,29 @@ pub fn postprocesar_globales(codigos: Vec<Opcode>, globales: &[(String, bool)]) 
         match &op {
             Opcode::Declarar(nombre, mutable) if !sombreado => {
                 if let Some(g) = indice_global(nombre) {
-                    result.push(Opcode::DeclararIndiceGlobal(g, *mutable));
+                    resultado.push(Opcode::DeclararIndiceGlobal(g, *mutable));
                 } else {
-                    result.push(op);
+                    resultado.push(op);
                 }
             }
             Opcode::Cargar(nombre) if !sombreado => {
                 if let Some(g) = indice_global(nombre) {
-                    result.push(Opcode::CargarIndiceGlobal(g));
+                    resultado.push(Opcode::CargarIndiceGlobal(g));
                 } else {
-                    result.push(op);
+                    resultado.push(op);
                 }
             }
             Opcode::Guardar(nombre) if !sombreado => {
                 if let Some(g) = indice_global(nombre) {
-                    result.push(Opcode::GuardarIndiceGlobal(g));
+                    resultado.push(Opcode::GuardarIndiceGlobal(g));
                 } else {
-                    result.push(op);
+                    resultado.push(op);
                 }
             }
-            _ => result.push(op),
+            _ => resultado.push(op),
         }
     }
-    result
+    resultado
 }
 
 /// Optimiza bytecode reemplazando Load/Store/Declare(String) por LoadIdx/StoreIdx/DeclareIdx(usize)
@@ -86,24 +86,24 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
     use std::collections::HashMap;
 
     // Primera pasada: detectar posiciones de FunctionDef para saber los ámbitos
-    let mut func_starts: Vec<usize> = Vec::new(); // índices donde comienza cada FunctionDef
+    let mut inicios_funciones: Vec<usize> = Vec::new(); // índices donde comienza cada FunctionDef
     for (i, op) in bytecode.iter().enumerate() {
         if matches!(op, Opcode::DefinirFuncion(_, _)) {
-            func_starts.push(i);
+            inicios_funciones.push(i);
         }
     }
-    func_starts.push(bytecode.len()); // centinela: "fin del último ámbito"
+    inicios_funciones.push(bytecode.len()); // centinela: "fin del último ámbito"
 
-    let mut result: Vec<Opcode> = Vec::with_capacity(bytecode.len());
+    let mut resultado: Vec<Opcode> = Vec::with_capacity(bytecode.len());
 
     // Procesar cada ámbito por separado
-    let mut scope_start = 0;
-    for &scope_end in &func_starts {
-        // Este ámbito abarca bytecode[scope_start..scope_end]
+    let mut inicio_ambito = 0;
+    for &scope_end in &inicios_funciones {
+        // Este ámbito abarca bytecode[inicio_ambito..scope_end]
         let mut var_indices: HashMap<String, usize> = HashMap::new();
         let mut next_idx: usize = 0;
 
-        for op in &bytecode[scope_start..scope_end] {
+        for op in &bytecode[inicio_ambito..scope_end] {
             match op {
                 Opcode::DefinirFuncion(_name, params) => {
                     // Los parámetros de la función empiezan en índice 0 de este ámbito
@@ -114,7 +114,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                             idx
                         });
                     }
-                    result.push(op.clone());
+                    resultado.push(op.clone());
                 }
                 Opcode::Cargar(name) => {
                     let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
@@ -122,7 +122,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                         next_idx += 1;
                         i
                     });
-                    result.push(Opcode::CargarIndice(idx));
+                    resultado.push(Opcode::CargarIndice(idx));
                 }
                 Opcode::Guardar(name) => {
                     // En el bytecode original, `Declare` NO hace pop (solo declara
@@ -138,11 +138,11 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                         next_idx += 1;
                         i
                     });
-                    if matches!(result.last(), Some(Opcode::DeclararIndice(last, _)) if *last == idx)
+                    if matches!(resultado.last(), Some(Opcode::DeclararIndice(last, _)) if *last == idx)
                     {
                         continue; // DeclareIdx ya hizo pop y store; no duplicar
                     }
-                    result.push(Opcode::GuardarIndice(idx));
+                    resultado.push(Opcode::GuardarIndice(idx));
                 }
                 Opcode::Declarar(name, mutable) => {
                     let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
@@ -150,21 +150,21 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                         next_idx += 1;
                         i
                     });
-                    result.push(Opcode::DeclararIndice(idx, *mutable));
+                    resultado.push(Opcode::DeclararIndice(idx, *mutable));
                 }
                 Opcode::Llamar(_, _) => {
-                    result.push(op.clone());
+                    resultado.push(op.clone());
                 }
                 _ => {
-                    result.push(op.clone());
+                    resultado.push(op.clone());
                 }
             }
         }
 
-        scope_start = scope_end; // pasar al siguiente ámbito
+        inicio_ambito = scope_end; // pasar al siguiente ámbito
     }
 
-    result
+    resultado
 }
 
 /// Fusión de codigos: combina patrones Push+Declare/Store en un solo opcode
@@ -184,10 +184,10 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
 /// - MulInt + StoreIdx(idx) → MulStoreIdx(idx)
 /// - PushEntero(n) + AddInt → PushAddInt(n)
 /// - Dup + AddInt → DupAddInt
-/// - LoadIdx(idx) + JumpSiFalso(target) → LoadJumpSiFalso(idx, target)
-/// - LoadIdx(idx) + Jump(target) → LoadJump(idx, target)
+/// - LoadIdx(idx) + JumpSiFalso(destino) → LoadJumpSiFalso(idx, destino)
+/// - LoadIdx(idx) + Jump(destino) → LoadJump(idx, destino)
 pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
-    let mut result = Vec::with_capacity(bc.len());
+    let mut resultado = Vec::with_capacity(bc.len());
     let mut i = 0;
 
     while i < bc.len() {
@@ -219,7 +219,7 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                     ) = (&bc[i + 3], &bc[i + 5], &bc[i + 6])
                     {
                         // Reemplazar 7 ops con Modulo2(a)
-                        result.push(Opcode::ModuloDos(*a1));
+                        resultado.push(Opcode::ModuloDos(*a1));
                         i += 7;
                         continue;
                     }
@@ -233,14 +233,14 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 match (&bc[i], &bc[i + 1], &bc[i + 2]) {
                     (Opcode::CargarIndice(a), Opcode::PushEntero(n), Opcode::Sumar)
                     | (Opcode::CargarIndice(a), Opcode::PushEntero(n), Opcode::SumarEntero) => {
-                        result.push(Opcode::CargarSumarEntero(*a, *n));
+                        resultado.push(Opcode::CargarSumarEntero(*a, *n));
                         i += 3;
                         continue;
                     }
                     // LoadIdx(idx) + PushDecimal(d) + Add/AddFloat → LoadAddFloat(idx, d)
                     (Opcode::CargarIndice(a), Opcode::PushDecimal(d), Opcode::Sumar)
                     | (Opcode::CargarIndice(a), Opcode::PushDecimal(d), Opcode::SumarDecimal) => {
-                        result.push(Opcode::CargarSumarDecimal(*a, *d));
+                        resultado.push(Opcode::CargarSumarDecimal(*a, *d));
                         i += 3;
                         continue;
                     }
@@ -252,125 +252,125 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             match (&bc[i], &bc[i + 1]) {
                 // Existentes
                 (Opcode::PushEntero(n), Opcode::DeclararIndice(idx, _)) => {
-                    result.push(Opcode::DeclararOperacionEntero(*idx, *n));
+                    resultado.push(Opcode::DeclararOperacionEntero(*idx, *n));
                     i += 2;
                     continue;
                 }
                 (Opcode::PushBooleano(b), Opcode::DeclararIndice(idx, _)) => {
-                    result.push(Opcode::DeclararOperacionBooleano(*idx, *b));
+                    resultado.push(Opcode::DeclararOperacionBooleano(*idx, *b));
                     i += 2;
                     continue;
                 }
                 (Opcode::PushEntero(n), Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::GuardarOperacionEntero(*idx, *n));
+                    resultado.push(Opcode::GuardarOperacionEntero(*idx, *n));
                     i += 2;
                     continue;
                 }
                 // Nuevas: LoadIdx(a) + LoadIdx(b) → LoadIdx2(a, b)
                 (Opcode::CargarIndice(a), Opcode::CargarIndice(b)) => {
-                    result.push(Opcode::CargarIndice2(*a, *b));
+                    resultado.push(Opcode::CargarIndice2(*a, *b));
                     i += 2;
                     continue;
                 }
                 // LoadIdx(a) + StoreIdx(b) → LoadStoreIdx(a, b)
                 (Opcode::CargarIndice(a), Opcode::GuardarIndice(b)) => {
-                    result.push(Opcode::CargarGuardarIndice(*a, *b));
+                    resultado.push(Opcode::CargarGuardarIndice(*a, *b));
                     i += 2;
                     continue;
                 }
                 // AddInt + StoreIdx(idx) → AddStoreIdx(idx)
                 (Opcode::SumarEntero, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::SumarGuardarIndice(*idx));
+                    resultado.push(Opcode::SumarGuardarIndice(*idx));
                     i += 2;
                     continue;
                 }
                 // SubInt + StoreIdx(idx) → SubStoreIdx(idx)
                 (Opcode::RestarEntero, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::RestarGuardarIndice(*idx));
+                    resultado.push(Opcode::RestarGuardarIndice(*idx));
                     i += 2;
                     continue;
                 }
                 // MulInt + StoreIdx(idx) → MulStoreIdx(idx)
                 (Opcode::MultiplicarEntero, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::MultiplicarGuardarIndice(*idx));
+                    resultado.push(Opcode::MultiplicarGuardarIndice(*idx));
                     i += 2;
                     continue;
                 }
                 // PushEntero(n) + AddInt → PushAddInt(n)
                 (Opcode::PushEntero(n), Opcode::SumarEntero) => {
-                    result.push(Opcode::EmpujarSumarEntero(*n));
+                    resultado.push(Opcode::EmpujarSumarEntero(*n));
                     i += 2;
                     continue;
                 }
                 // Dup + AddInt → DupAddInt
                 (Opcode::Duplicar, Opcode::SumarEntero) => {
-                    result.push(Opcode::DuplicarSumarEntero);
+                    resultado.push(Opcode::DuplicarSumarEntero);
                     i += 2;
                     continue;
                 }
-                // LoadIdx(idx) + JumpSiFalso(target) → LoadJumpSiFalso(idx, target)
-                (Opcode::CargarIndice(idx), Opcode::SaltoSiFalso(target)) => {
-                    result.push(Opcode::CargarSaltoSiFalso(*idx, *target));
+                // LoadIdx(idx) + JumpSiFalso(destino) → LoadJumpSiFalso(idx, destino)
+                (Opcode::CargarIndice(idx), Opcode::SaltoSiFalso(destino)) => {
+                    resultado.push(Opcode::CargarSaltoSiFalso(*idx, *destino));
                     i += 2;
                     continue;
                 }
-                // LoadIdx(idx) + Jump(target) → LoadJump(idx, target)
-                (Opcode::CargarIndice(idx), Opcode::Salto(target)) => {
-                    result.push(Opcode::CargarSalto(*idx, *target));
+                // LoadIdx(idx) + Jump(destino) → LoadJump(idx, destino)
+                (Opcode::CargarIndice(idx), Opcode::Salto(destino)) => {
+                    resultado.push(Opcode::CargarSalto(*idx, *destino));
                     i += 2;
                     continue;
                 }
                 // Nuevas: PushDecimal(d) + DeclareIdx(idx, _) → DeclareFloatOp(idx, d)
                 (Opcode::PushDecimal(d), Opcode::DeclararIndice(idx, _)) => {
-                    result.push(Opcode::DeclararOperacionDecimal(*idx, *d));
+                    resultado.push(Opcode::DeclararOperacionDecimal(*idx, *d));
                     i += 2;
                     continue;
                 }
                 // PushDecimal(d) + StoreIdx(idx) → StoreFloatOp(idx, d)
                 (Opcode::PushDecimal(d), Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::GuardarOperacionDecimal(*idx, *d));
+                    resultado.push(Opcode::GuardarOperacionDecimal(*idx, *d));
                     i += 2;
                     continue;
                 }
                 // AddFloat + StoreIdx(idx) → AddStoreFloat(idx)
                 (Opcode::SumarDecimal, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::SumarGuardarDecimal(*idx));
+                    resultado.push(Opcode::SumarGuardarDecimal(*idx));
                     i += 2;
                     continue;
                 }
                 // SubFloat + StoreIdx(idx) → SubStoreFloat(idx)
                 (Opcode::RestarDecimal, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::RestarGuardarDecimal(*idx));
+                    resultado.push(Opcode::RestarGuardarDecimal(*idx));
                     i += 2;
                     continue;
                 }
                 // MulFloat + StoreIdx(idx) → MulStoreFloat(idx)
                 (Opcode::MultiplicarDecimal, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::MultiplicarGuardarDecimal(*idx));
+                    resultado.push(Opcode::MultiplicarGuardarDecimal(*idx));
                     i += 2;
                     continue;
                 }
                 // === Fusiones Exacto (BigDecimal) ===
                 // PushExacto(coeff, scale) + DeclareIdx(idx) → DeclareExactOp(idx, coeff, scale)
                 (Opcode::PushExacto(coeff, scale), Opcode::DeclararIndice(idx, _)) => {
-                    result.push(Opcode::DeclararOperacionExacto(*idx, *coeff, *scale));
+                    resultado.push(Opcode::DeclararOperacionExacto(*idx, *coeff, *scale));
                     i += 2;
                     continue;
                 }
                 // AddExact + StoreIdx(idx) → AddStoreExact(idx)
                 (Opcode::SumarExacto, Opcode::GuardarIndice(idx)) => {
-                    result.push(Opcode::SumarGuardarExacto(*idx));
+                    resultado.push(Opcode::SumarGuardarExacto(*idx));
                     i += 2;
                     continue;
                 }
                 _ => {}
             }
         }
-        result.push(bc[i].clone());
+        resultado.push(bc[i].clone());
         i += 1;
     }
 
-    result
+    resultado
 }
 
 /// Fase 3a: Detectar patrones para Stack Bypass Direct codigos
@@ -382,7 +382,7 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
 /// - LoadIdxFloat(a) + LoadIdxFloat(b) + SubFloat + StoreIdxFloat(dst) → SubFloatDirect(dst, a, b)
 /// - LoadIdxFloat(a) + LoadIdxFloat(b) + MulFloat + StoreIdxFloat(dst) → MulFloatDirect(dst, a, b)
 pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
-    let mut result = Vec::with_capacity(bc.len());
+    let mut resultado = Vec::with_capacity(bc.len());
     let mut i = 0;
     while i < bc.len() {
         // Patrón de 4 codigos: LoadIdxFloat(a) + LoadIdxFloat(b) + (Div|Add|Sub|Mul)Float + StoreIdxFloat(dst)
@@ -396,22 +396,22 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             {
                 match arith_op {
                     Opcode::DividirDecimal => {
-                        result.push(Opcode::DividirDecimalDirecto(*dst, *a, *b));
+                        resultado.push(Opcode::DividirDecimalDirecto(*dst, *a, *b));
                         i += 4;
                         continue;
                     }
                     Opcode::SumarDecimal => {
-                        result.push(Opcode::SumarDecimalDirecto(*dst, *a, *b));
+                        resultado.push(Opcode::SumarDecimalDirecto(*dst, *a, *b));
                         i += 4;
                         continue;
                     }
                     Opcode::RestarDecimal => {
-                        result.push(Opcode::RestarDecimalDirecto(*dst, *a, *b));
+                        resultado.push(Opcode::RestarDecimalDirecto(*dst, *a, *b));
                         i += 4;
                         continue;
                     }
                     Opcode::MultiplicarDecimal => {
-                        result.push(Opcode::MultiplicarDecimalDirecto(*dst, *a, *b));
+                        resultado.push(Opcode::MultiplicarDecimalDirecto(*dst, *a, *b));
                         i += 4;
                         continue;
                     }
@@ -424,11 +424,11 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
         // → FusedDivAddConst(dst, num, div) o FusedDivSubConst(dst, num, div)
         // StoreIdx (no Float) es común porque quickening no especializa StoreIdx
         if i + 5 < bc.len() {
-            let store_is_float = matches!(
+            let guarda_es_decimal = matches!(
                 &bc[i + 5],
                 Opcode::GuardarIndiceDecimal(_b) | Opcode::GuardarIndice(_b)
             );
-            let store_idx = match &bc[i + 5] {
+            let indice_guarda = match &bc[i + 5] {
                 Opcode::GuardarIndiceDecimal(b) | Opcode::GuardarIndice(b) => *b,
                 _ => usize::MAX,
             };
@@ -450,14 +450,19 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 &bc[i + 4],
                 &bc[i + 5],
             ) {
-                let is_div = matches!(arith1, Opcode::DividirDecimal);
-                let is_add = matches!(arith2, Opcode::SumarDecimal);
-                let is_sub = matches!(arith2, Opcode::RestarDecimal);
-                if *dst_a == store_idx && store_is_float && is_div && (is_add || is_sub) {
-                    if is_add {
-                        result.push(Opcode::DividirSumarFusionadoConst(*dst_a, *num_val, *div_b));
+                let es_division = matches!(arith1, Opcode::DividirDecimal);
+                let es_suma = matches!(arith2, Opcode::SumarDecimal);
+                let es_resta = matches!(arith2, Opcode::RestarDecimal);
+                if *dst_a == indice_guarda
+                    && guarda_es_decimal
+                    && es_division
+                    && (es_suma || es_resta)
+                {
+                    if es_suma {
+                        resultado
+                            .push(Opcode::DividirSumarFusionadoConst(*dst_a, *num_val, *div_b));
                     } else {
-                        result.push(Opcode::DividirRestarFusionadoConst(
+                        resultado.push(Opcode::DividirRestarFusionadoConst(
                             *dst_a, *num_val, *div_b,
                         ));
                     }
@@ -467,10 +472,10 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             }
         }
 
-        result.push(bc[i].clone());
+        resultado.push(bc[i].clone());
         i += 1;
     }
-    result
+    resultado
 }
 
 /// Serializa bytecode dentro de un contenedor con cabecera de metadata.
