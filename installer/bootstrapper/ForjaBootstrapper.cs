@@ -31,6 +31,9 @@ namespace Forja.Setup
 
         private bool silent;
 
+        /// <summary>La ventana ya se trajo al frente: no se vuelve a robar el foco.</summary>
+        private bool traidaAlFrente;
+
         /// <summary>
         /// Permisos del proceso del instalador. Se mira el token, no
         /// `Engine.EvaluateCondition("Privileged")`: esa variable del motor
@@ -127,6 +130,11 @@ namespace Forja.Setup
                 // de entorno y Burn no toma `InstallFolder=` de la línea de comandos.
                 InstallManifest.WriteRequest(folder, features == null ? null : string.Join(",", features));
 
+                // Windows minimiza la ventana que abre el prompt de UAC. Se
+                // esconde antes para no dejar un ícono colgado mientras corre la
+                // instancia elevada (que es otro proceso y muestra su ventana).
+                Ui(() => Window.MinimizeForElevation());
+
                 var info = new System.Diagnostics.ProcessStartInfo(source)
                 {
                     UseShellExecute = true,
@@ -139,13 +147,23 @@ namespace Forja.Setup
             catch (Exception ex)
             {
                 Engine.Log(LogLevel.Error, ex.ToString());
-                Ui(() => Window.ShowError("No se otorgaron los permisos de administrador. Se puede instalar en una carpeta de tu perfil, que no los necesita."));
+                Ui(() =>
+                {
+                    Window.RestoreAfterElevation();
+                    Window.ShowError("No se otorgaron los permisos de administrador. Se puede instalar en una carpeta de tu perfil, que no los necesita.");
+                });
                 return;
             }
 
-            // La ventana nueva hace la instalación; esta se cierra.
+            // La ventana nueva hace la instalación; esta se cierra. Sin el
+            // Shutdown explícito el proceso queda vivo (ShutdownMode es
+            // OnExplicitShutdown y Run() no vuelve al cerrar la ventana).
             ExitCode = 0;
-            Ui(() => Window.Close());
+            Ui(() =>
+            {
+                Window.Close();
+                ShutdownUi();
+            });
         }
 
         /// <summary>Carpeta registrada por la instalación actual, si hay una.</summary>
@@ -461,6 +479,23 @@ namespace Forja.Setup
             }
 
             Ui(() => Window.ShowReady(Action));
+            TraerAlFrenteUnaVez();
+        }
+
+        /// <summary>
+        /// Deja la ventana visible y al frente una sola vez, después de detectar.
+        /// La instancia que nace desde el UAC (relanzada elevada) puede quedar
+        /// minimizada o atrás del escritorio seguro; esto la trae de vuelta.
+        /// </summary>
+        private void TraerAlFrenteUnaVez()
+        {
+            if (traidaAlFrente || silent)
+            {
+                return;
+            }
+
+            traidaAlFrente = true;
+            Ui(() => Window.BringToFront());
         }
 
         protected override void OnPlanComplete(PlanCompleteEventArgs args)
@@ -492,6 +527,45 @@ namespace Forja.Setup
 
                 Engine.Apply(WindowHandle());
             });
+        }
+
+        /// <summary>
+        /// Burn pide UAC acá (el MSI es per-machine). Windows minimiza la ventana
+        /// que lo abre, así que al volver del prompt hay que traerla de vuelta:
+        /// si no, queda minimizada en la barra de tareas hasta que el usuario la
+        /// clickea.
+        /// </summary>
+        protected override void OnElevateBegin(ElevateBeginEventArgs args)
+        {
+            base.OnElevateBegin(args);
+
+            if (!silent)
+            {
+                Ui(() => Window.ShowElevating());
+            }
+        }
+
+        protected override void OnElevateComplete(ElevateCompleteEventArgs args)
+        {
+            base.OnElevateComplete(args);
+
+            if (silent)
+            {
+                return;
+            }
+
+            if (args.Status == 0)
+            {
+                Ui(() => Window.BringToFront());
+            }
+            else
+            {
+                Ui(() =>
+                {
+                    Window.BringToFront();
+                    Window.ShowError("No se otorgaron los permisos de administrador. Se puede instalar en una carpeta de tu perfil, que no los necesita.");
+                });
+            }
         }
 
         protected override void OnProgress(ProgressEventArgs args)

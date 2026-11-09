@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using WixToolset.BootstrapperApplicationApi;
@@ -29,7 +30,14 @@ namespace Forja.Setup
             InitializeComponent();
 
             Theme.Apply(Resources, Theme.IsDark);
-            Theme.Watch(this, dark => Theme.Apply(Resources, dark));
+            Theme.Watch(this, dark =>
+            {
+                Theme.Apply(Resources, dark);
+                Theme.ApplyTitleBar(this, dark);
+            });
+
+            // La barra de título necesita el HWND, que recién existe acá.
+            SourceInitialized += (s, e) => Theme.ApplyTitleBar(this, Theme.IsDark);
 
             try
             {
@@ -58,6 +66,71 @@ namespace Forja.Setup
 
             Loaded += (s, e) => AcceptCheck.Focus();
         }
+
+        /// <summary>
+        /// Antes de pedir UAC: la ventana se esconde. Windows minimiza la ventana
+        /// que lanza el prompt y después queda un ícono colgado en la barra de
+        /// tareas mientras corre la instancia elevada, que es otro proceso.
+        /// </summary>
+        internal void MinimizeForElevation()
+        {
+            WindowState = WindowState.Minimized;
+            ShowInTaskbar = false;
+        }
+
+        /// <summary>Si el usuario dice que no en el UAC, la ventana vuelve como estaba.</summary>
+        internal void RestoreAfterElevation()
+        {
+            ShowInTaskbar = true;
+            BringToFront();
+        }
+
+        /// <summary>
+        /// Trae la ventana al frente sin dejarla minimizada. Hace falta cuando
+        /// este proceso nace desde el UAC (instancia elevada): el escritorio
+        /// seguro puede dejarla atrás o minimizada.
+        /// </summary>
+        internal void BringToFront()
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+
+            Show();
+            Activate();
+
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                // Toggle de Topmost: si el proceso no es el del frente (volvimos
+                // del escritorio seguro del UAC), SetForegroundWindow solo no
+                // alcanza.
+                Topmost = true;
+                Topmost = false;
+                SetForegroundWindow(hwnd);
+            }
+        }
+
+        /// <summary>
+        /// Muestra el progreso mientras Windows resuelve el UAC. La ventana puede
+        /// venir minimizada por el propio prompt, así que se restaura antes.
+        /// </summary>
+        internal void ShowElevating()
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+
+            ShowProgress();
+            SetProgress(0);
+            AppendActivity("Esperando los permisos de administrador…");
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetForegroundWindow(IntPtr hwnd);
 
         internal bool Silent { get; set; }
 
