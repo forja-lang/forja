@@ -3,13 +3,13 @@
 use super::*;
 
 /// Compila LLVM nativo de Forja a un ejecutable con clang.
-pub(crate) fn compilar_llvm_a(source: &str, salida: &std::path::Path) -> Result<(), String> {
-    let ir = forja::compilar_a_llvm(source).map_err(|e| format!("{e:?}"))?;
-    let dir = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let ll = dir.join("main.ll");
+pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<(), String> {
+    let ir = forja::compilar_a_llvm(fuente).map_err(|e| format!("{e:?}"))?;
+    let directorio = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
+    std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
+    let ll = directorio.join("main.ll");
     std::fs::write(&ll, ir).map_err(|e| e.to_string())?;
-    let (compilador, flags) = if std::process::Command::new("clang")
+    let (compilador, banderas) = if std::process::Command::new("clang")
         .arg("--version")
         .output()
         .is_ok()
@@ -31,7 +31,7 @@ pub(crate) fn compilar_llvm_a(source: &str, salida: &std::path::Path) -> Result<
         return Err("no se encontró clang, cc ni gcc en PATH".into());
     };
     let out = std::process::Command::new(compilador)
-        .args(flags)
+        .args(banderas)
         .arg("-o")
         .arg(salida)
         .arg(&ll)
@@ -43,16 +43,16 @@ pub(crate) fn compilar_llvm_a(source: &str, salida: &std::path::Path) -> Result<
     Ok(())
 }
 
-pub(crate) fn compilar_llvm_nativo(source: &str) -> Result<std::path::PathBuf, String> {
-    let dir = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let exe = dir.join(if cfg!(windows) { "main.exe" } else { "main" });
-    compilar_llvm_a(source, &exe)?;
+pub(crate) fn compilar_llvm_nativo(fuente: &str) -> Result<std::path::PathBuf, String> {
+    let directorio = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
+    std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
+    let exe = directorio.join(if cfg!(windows) { "main.exe" } else { "main" });
+    compilar_llvm_a(fuente, &exe)?;
     Ok(exe)
 }
 
-fn ejecutar_llvm_nativo(source: &str, path: &str) -> Result<Vec<String>, String> {
-    let exe = compilar_llvm_nativo(source)?;
+fn ejecutar_llvm_nativo(fuente: &str, path: &str) -> Result<Vec<String>, String> {
+    let exe = compilar_llvm_nativo(fuente)?;
     let padre = std::path::Path::new(path)
         .parent()
         .unwrap_or(std::path::Path::new("."));
@@ -103,7 +103,7 @@ pub(crate) fn cmd_run(args: &[String]) {
     // Construir SandboxRed a partir del entorno
     let sandbox = construir_sandbox(allow_net, allow_port);
 
-    let source = match forja::leer_archivo_con_limite(path, max_archivo) {
+    let fuente = match forja::leer_archivo_con_limite(path, max_archivo) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
@@ -112,8 +112,8 @@ pub(crate) fn cmd_run(args: &[String]) {
     };
 
     if native_mode {
-        let result = ejecutar_nativo(&source, path, hot_reload);
-        match result {
+        let resultado = ejecutar_nativo(&fuente, path, hot_reload);
+        match resultado {
             Ok(()) => {}
             Err(e) => {
                 eprintln!("Error en ejecución nativa: {}", e);
@@ -126,31 +126,31 @@ pub(crate) fn cmd_run(args: &[String]) {
     let auto_asm = !asm_mode
         && !native_mode
         && !cfg.estricto
-        && !source.contains("requiere")
-        && !source.contains("asegura")
-        && !source.contains("importar")
-        && !source.contains("gui")
-        && !source.contains("entrada(");
+        && !fuente.contains("requiere")
+        && !fuente.contains("asegura")
+        && !fuente.contains("importar")
+        && !fuente.contains("gui")
+        && !fuente.contains("entrada(");
     if auto_asm {
-        if let Ok(output) = ejecutar_llvm_nativo(&source, path) {
-            for line in output {
-                println!("{}", line);
+        if let Ok(salida) = ejecutar_llvm_nativo(&fuente, path) {
+            for linea in salida {
+                println!("{}", linea);
             }
             return;
         }
-        if let Ok(output) = ejecutar_asm(&source, path) {
-            for line in output {
-                println!("{}", line);
+        if let Ok(salida) = ejecutar_asm(&fuente, path) {
+            for linea in salida {
+                println!("{}", linea);
             }
             return;
         }
     }
 
     if asm_mode {
-        match ejecutar_asm(&source, path) {
-            Ok(output) => {
-                for line in output {
-                    println!("{}", line);
+        match ejecutar_asm(&fuente, path) {
+            Ok(salida) => {
+                for linea in salida {
+                    println!("{}", linea);
                 }
                 return;
             }
@@ -162,34 +162,34 @@ pub(crate) fn cmd_run(args: &[String]) {
 
     // Determinar directorio raíz del proyecto (busca hacia arriba hasta encontrar stdlib/)
     fn encontrar_raiz_proyecto(path: &std::path::Path) -> std::path::PathBuf {
-        let dir = if path.is_file() {
+        let directorio = if path.is_file() {
             path.parent().unwrap_or(std::path::Path::new("."))
         } else {
             path
         };
-        for ancestor in dir.ancestors() {
+        for ancestor in directorio.ancestors() {
             if ancestor.join("library").exists() || ancestor.join("stdlib").exists() {
                 return ancestor.to_path_buf();
             }
         }
-        dir.to_path_buf()
+        directorio.to_path_buf()
     }
-    let root_dir = encontrar_raiz_proyecto(std::path::Path::new(path));
+    let directorio_raiz = encontrar_raiz_proyecto(std::path::Path::new(path));
 
     // con `backtrace: true` usamos la variante que preserva la pila de
     // llamadas. Solo aplica a la VM rápida (`rapido`/`vm`); los demás modos
     // caen al flujo normal.
     if backtrace_flag && matches!(vm_mode.as_str(), "rapido" | "vm") && pgo_modo.is_none() {
-        let result = forja::ejecutar_con_opciones_desde_backtrace(
-            &source,
-            &root_dir,
+        let resultado = forja::ejecutar_con_opciones_desde_backtrace(
+            &fuente,
+            &directorio_raiz,
             verificar_contratos,
             Some(sandbox),
         );
-        match result {
-            Ok(output) => {
-                for line in output {
-                    println!("{}", line);
+        match resultado {
+            Ok(salida) => {
+                for linea in salida {
+                    println!("{}", linea);
                 }
             }
             Err((mensaje, backtrace)) => {
@@ -203,38 +203,38 @@ pub(crate) fn cmd_run(args: &[String]) {
         return;
     }
 
-    let result = match vm_mode.as_str() {
+    let resultado = match vm_mode.as_str() {
         "rapido" | "vm" => {
             if let Some(modo) = &pgo_modo {
                 if modo == "usar" {
-                    forja::ejecutar_con_pgo_usar(&source, &root_dir)
+                    forja::ejecutar_con_pgo_usar(&fuente, &directorio_raiz)
                 } else {
-                    forja::ejecutar_con_pgo_desde(&source, &root_dir)
+                    forja::ejecutar_con_pgo_desde(&fuente, &directorio_raiz)
                 }
             } else if fast_math_flag {
                 forja::ejecutar_con_opciones_desde_fast_math(
-                    &source,
-                    &root_dir,
+                    &fuente,
+                    &directorio_raiz,
                     verificar_contratos,
                     Some(sandbox),
                 )
             } else {
                 forja::ejecutar_con_opciones_desde(
-                    &source,
-                    &root_dir,
+                    &fuente,
+                    &directorio_raiz,
                     verificar_contratos,
                     Some(sandbox),
                 )
             }
         }
-        "jit" => forja::ejecutar_jit(&source),
-        _ => forja::ejecutar_vm(&source), // Default: ForjaFast
+        "jit" => forja::ejecutar_jit(&fuente),
+        _ => forja::ejecutar_vm(&fuente), // Default: ForjaFast
     };
 
-    match result {
-        Ok(output) => {
-            for line in output {
-                println!("{}", line);
+    match resultado {
+        Ok(salida) => {
+            for linea in salida {
+                println!("{}", linea);
             }
         }
         Err(e) => {
@@ -285,7 +285,7 @@ pub(crate) fn construir_sandbox(
 
 /// Compila un programa Forja a ASM nativo, lo ensambla con gcc -O2 y lo ejecuta.
 /// Devuelve las líneas de output del programa.
-pub(crate) fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
+pub(crate) fn ejecutar_asm(fuente: &str, input_path: &str) -> Result<Vec<String>, String> {
     use std::process::Command;
 
     // 1. Parsear y compilar a ASM
@@ -293,7 +293,7 @@ pub(crate) fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>
     use forja::lexer::Lexer;
     use forja::parser::Parser;
 
-    let mut lexer = Lexer::new(source);
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
@@ -315,13 +315,13 @@ pub(crate) fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>
     std::fs::write(&asm_path, &asm_code).map_err(|e| format!("Error escribiendo ASM: {}", e))?;
 
     // 3. Compilar con gcc -O2
-    let output = Command::new("gcc")
+    let salida = Command::new("gcc")
         .args(["-O2", "-o", &exe_path, &asm_path])
         .output()
         .map_err(|e| format!("Error ejecutando gcc: {}. ¿Está instalado?", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !salida.status.success() {
+        let stderr = String::from_utf8_lossy(&salida.stderr);
         let _ = std::fs::remove_file(&asm_path);
         return Err(format!("gcc falló:\n{}", stderr));
     }
@@ -351,13 +351,13 @@ pub(crate) fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>
 /// y ejecutando el binario resultante.
 /// Equivalente a hacer: forja transpile + cd dir + cargo run
 pub(crate) fn ejecutar_nativo(
-    source: &str,
+    fuente: &str,
     input_path: &str,
     hot_reload: bool,
 ) -> Result<(), String> {
     // 1. Parsear el programa (usando módulos locales para evitar conflictos
     //    entre crate forja (lib) y crate forja (bin))
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = parser::Parser::new(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
@@ -372,14 +372,14 @@ pub(crate) fn ejecutar_nativo(
     }
 
     // 3. Nombre del proyecto
-    let input_stem = Path::new(input_path)
+    let tallo_entrada = Path::new(input_path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("app");
-    let mut nombre_crate = input_stem.replace(['-', ' '], "_");
+    let mut nombre_crate = tallo_entrada.replace(['-', ' '], "_");
     if !nombre_crate.is_empty() {
-        let first = nombre_crate.chars().next().unwrap();
-        if first.is_ascii_digit() {
+        let primero = nombre_crate.chars().next().unwrap();
+        if primero.is_ascii_digit() {
             nombre_crate = format!("forja_{}", nombre_crate);
         }
     }
@@ -443,14 +443,14 @@ opt-level = 3
 
     // 8. Compilar con cargo (release)
     println!("📦 Compilando GUI nativa...");
-    let output = std::process::Command::new("cargo")
+    let salida = std::process::Command::new("cargo")
         .args(["build", "--release"])
         .current_dir(&temp_dir)
         .output()
         .map_err(|e| format!("Error ejecutando cargo: {}. ¿Está instalado Rust?", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !salida.status.success() {
+        let stderr = String::from_utf8_lossy(&salida.stderr);
         std::fs::remove_dir_all(&temp_dir).ok();
         return Err(format!("Error de compilación:\n{}", stderr));
     }
@@ -560,9 +560,9 @@ pub(crate) fn iniciar_watcher_hot_reload(
 
             // Cargar estado guardado (si existe)
             let state_arg = if state_path.exists() {
-                if let Ok(mut file) = std::fs::File::open(&state_path) {
+                if let Ok(mut archivo) = std::fs::File::open(&state_path) {
                     let mut state = String::new();
-                    if file.read_to_string(&mut state).is_ok() && !state.is_empty() {
+                    if archivo.read_to_string(&mut state).is_ok() && !state.is_empty() {
                         format!("--load-state={}", state)
                     } else {
                         String::new()
@@ -578,11 +578,11 @@ pub(crate) fn iniciar_watcher_hot_reload(
             let bin_path = build_dir.join("target/release").join(exe_name);
 
             println!("  🚀 Reiniciando app con hot reload...");
-            let mut cmd = std::process::Command::new(&bin_path);
+            let mut comando = std::process::Command::new(&bin_path);
             if !state_arg.is_empty() {
-                cmd.arg(&state_arg);
+                comando.arg(&state_arg);
             }
-            child = cmd
+            child = comando
                 .spawn()
                 .map_err(|e| format!("Error ejecutando nueva versión: {}", e))?;
 
@@ -605,8 +605,8 @@ pub(crate) fn iniciar_watcher_hot_reload(
 
 /// forja fmt|formatear|format <archivo.fa>
 /// Recorre recursivamente un directorio y devuelve todas las rutas `.fa`.
-pub(crate) fn recolectar_archivos_fa(dir: &Path, out: &mut Vec<String>) {
-    let entries = match fs::read_dir(dir) {
+pub(crate) fn recolectar_archivos_fa(directorio: &Path, out: &mut Vec<String>) {
+    let entries = match fs::read_dir(directorio) {
         Ok(e) => e,
         Err(_) => return,
     };
