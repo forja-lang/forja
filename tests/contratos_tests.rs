@@ -15,7 +15,7 @@ fn salida(fuente: &str) -> Vec<String> {
 
 fn error(fuente: &str) -> String {
     match ejecutar(fuente) {
-        Ok(out) => panic!("debía fallar el contrato y devolvió: {out:?}\n{fuente}"),
+        Ok(salida) => panic!("debía fallar el contrato y devolvió: {salida:?}\n{fuente}"),
         Err(e) => e,
     }
 }
@@ -38,7 +38,7 @@ f(7)
 
 #[test]
 fn postcondicion_valida_no_molesta() {
-    let out = salida(
+    let salida = salida(
         r#"
 funcion f(x: Entero) -> Entero
     requiere x > 0, "x debe ser positivo"
@@ -49,13 +49,13 @@ funcion f(x: Entero) -> Entero
 escribir(f(7))
 "#,
     );
-    assert_eq!(out, vec!["7"]);
+    assert_eq!(salida, vec!["7"]);
 }
 
 #[test]
 fn anterior_distingue_el_valor_previo_del_actual() {
     // Con `anterior(x)` = `x` la comparación era x contra x+1: imposible.
-    let out = salida(
+    let salida = salida(
         r#"
 funcion inc(mut x: Entero) -> Entero
     asegura x == anterior(x) + 1, "x creció uno"
@@ -68,12 +68,12 @@ funcion inc(mut x: Entero) -> Entero
 escribir(inc(7))
 "#,
     );
-    assert_eq!(out, vec!["16"]);
+    assert_eq!(salida, vec!["16"]);
 }
 
 #[test]
 fn contratos_leen_globales_y_campos() {
-    let out = salida(
+    let salida = salida(
         r#"
 variable global: Entero = 10
 clase Contador {
@@ -99,7 +99,7 @@ verificar()
 escribir(c.valor)
 "#,
     );
-    assert_eq!(out, vec!["2"]);
+    assert_eq!(salida, vec!["2"]);
 }
 
 #[test]
@@ -126,7 +126,7 @@ c.chico()
 #[test]
 fn closures_y_hilos_no_heredan_postcondiciones() {
     // El `retornar` del closure no debe disparar el `asegura` de la función.
-    let out = salida(
+    let salida = salida(
         r#"
 funcion con_closure() -> Entero
     asegura resultado == 3, "devuelve 3"
@@ -139,7 +139,7 @@ funcion con_closure() -> Entero
 escribir(con_closure())
 "#,
     );
-    assert_eq!(out, vec!["3"]);
+    assert_eq!(salida, vec!["3"]);
 }
 
 #[test]
@@ -170,7 +170,7 @@ c.restar()
 fn invariante_respetado_y_constructor_no_lo_verifica_al_entrar() {
     // El campo arranca en Nulo: si el invariante se comprobara al *entrar* al
     // constructor, fallaría antes de inicializarlo.
-    let out = salida(
+    let salida = salida(
         r#"
 clase Contador
     siempre v >= 0, "v nunca negativo"
@@ -188,5 +188,5 @@ c.sumar()
 escribir(c.v)
 "#,
     );
-    assert_eq!(out, vec!["8"]);
+    assert_eq!(salida, vec!["8"]);
 }
