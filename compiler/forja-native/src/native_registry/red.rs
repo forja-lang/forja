@@ -17,10 +17,10 @@ pub fn native_net_dns_resolver(
             "_net_dns_resolver requiere 2 argumentos: host, tipo".into(),
         ));
     }
-    let host = obtener_texto(vm, args[0])?;
+    let anfitrion = obtener_texto(vm, args[0])?;
     let mut ips = Vec::new();
 
-    if let Ok(addrs) = format!("{}:80", host).to_socket_addrs() {
+    if let Ok(addrs) = format!("{}:80", anfitrion).to_socket_addrs() {
         for addr in addrs {
             ips.push(ValorFast::texto(
                 vm.alloc_str(Arc::from(addr.ip().to_string().as_str())),
@@ -60,18 +60,18 @@ pub fn native_net_interfaces(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
     Ok(ValorFast::arreglo(arr_idx))
 }
 
-/// Sonda ICMP / TCP ping a un host.
+/// Sonda ICMP / TCP ping a un anfitrion.
 pub fn native_net_ping(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_net_ping requiere al menos 1 argumento: host".into(),
         ));
     }
-    let host = obtener_texto(vm, args[0])?;
-    let start = std::time::Instant::now();
+    let anfitrion = obtener_texto(vm, args[0])?;
+    let inicio = std::time::Instant::now();
 
     let exito = std::net::TcpStream::connect_timeout(
-        &format!("{}:80", host)
+        &format!("{}:80", anfitrion)
             .to_socket_addrs()
             .ok()
             .and_then(|mut a| a.next())
@@ -80,16 +80,16 @@ pub fn native_net_ping(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
     )
     .is_ok();
 
-    let elapsed = start.elapsed().as_millis() as i64;
-    let mut map = std::collections::HashMap::new();
-    map.insert("exito".to_string(), ValorFast::booleano(exito));
-    map.insert(
+    let elapsed = inicio.elapsed().as_millis() as i64;
+    let mut mapa = std::collections::HashMap::new();
+    mapa.insert("exito".to_string(), ValorFast::booleano(exito));
+    mapa.insert(
         "ip".to_string(),
-        ValorFast::texto(vm.alloc_str(Arc::from(host.as_str()))),
+        ValorFast::texto(vm.alloc_str(Arc::from(anfitrion.as_str()))),
     );
-    map.insert("latencia_ms".to_string(), ValorFast::entero(elapsed));
+    mapa.insert("latencia_ms".to_string(), ValorFast::entero(elapsed));
 
-    let midx = vm.alloc_map(map);
+    let midx = vm.alloc_map(mapa);
     Ok(ValorFast::mapa(midx))
 }
 
@@ -100,10 +100,10 @@ pub fn native_net_doh_query(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
             "_net_doh_query requiere 2 argumentos: servidor_doh, host".into(),
         ));
     }
-    let host = obtener_texto(vm, args[1])?;
+    let anfitrion = obtener_texto(vm, args[1])?;
     let mut ips = Vec::new();
 
-    if let Ok(addrs) = format!("{}:80", host).to_socket_addrs() {
+    if let Ok(addrs) = format!("{}:80", anfitrion).to_socket_addrs() {
         for addr in addrs {
             ips.push(ValorFast::texto(
                 vm.alloc_str(Arc::from(addr.ip().to_string().as_str())),
