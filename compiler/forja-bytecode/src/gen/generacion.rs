@@ -360,6 +360,10 @@ impl GeneradorBytecode {
     /// `true`: la llamada debe usar `CallClosure`. Debe invocarse **antes** de
     /// generar los argumentos.
     pub(crate) fn emitir_callee_si_variable(&mut self, nombre: &str) -> bool {
+        // Ojo: `var_indices` incluye los slots de toda la función, así que una
+        // variable homónima tapa a la función en TODO el ámbito, incluso antes
+        // de su declaración. Para el inicializador eso se corrige en
+        // `generar_declaracion` (ver `Declaracion::Variable`).
         if self.var_indices.contains_key(nombre) {
             self.emitir(Opcode::Cargar(Arc::from(nombre)));
             true

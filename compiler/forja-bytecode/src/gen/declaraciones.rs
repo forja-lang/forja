@@ -18,7 +18,15 @@ impl GeneradorBytecode {
                     idx
                 });
                 if let Some(val) = valor {
+                    // En su propio inicializador, el nombre que se está declarando
+                    // no debe tapar a la función/método homónimo:
+                    // `variable claves = claves(m)` devolvía nulo porque el
+                    // callee se resolvía al slot (todavía vacío) de la variable.
+                    let indice_guardado = self.var_indices.remove(nombre);
                     self.generar_expresion(val);
+                    if let Some(indice) = indice_guardado {
+                        self.var_indices.insert(nombre.clone(), indice);
+                    }
                     // Coerción por tipo declarado: si el destino es Exacto y la
                     // expresión no lo es, convertir para que el runtime guarde un
                     // Exacto de verdad. Antes sólo se miraba la *forma* sintáctica
