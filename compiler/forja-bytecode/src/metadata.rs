@@ -10,7 +10,7 @@ pub const MAGIC: [u8; 4] = *b"FBC\0";
 /// Versión del formato de bytecode.
 pub const FORMAT_VERSION: u32 = 2;
 
-/// Hash estable de la plataforma/compilación. Cambia si cambia el target o el
+/// Hash estable de la plataforma/compilación. Cambia si cambia el destino o el
 /// perfil; dos binarios con distinto hash no deben compartir caché.
 pub fn feature_hash() -> u64 {
     let mut h = 0xcbf29ce484222325u64;
