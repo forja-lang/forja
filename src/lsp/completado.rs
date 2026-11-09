@@ -36,8 +36,8 @@ pub fn detectar_contexto(tokens: &[Token], cursor: usize) -> CompletionContext {
             };
         }
         Some(TokenKind::Texto(_)) if prev_token_is_import(tokens, cursor) => {
-            let path = extraer_path_parcial(tokens, cursor);
-            return CompletionContext::ImportPath { parcial: path };
+            let ruta = extraer_path_parcial(tokens, cursor);
+            return CompletionContext::ImportPath { parcial: ruta };
         }
         Some(TokenKind::DosPuntos) => {
             return CompletionContext::TypeAnnotation;
@@ -91,8 +91,8 @@ fn token_prev_raw(tokens: &[Token], cursor: usize) -> Option<TokenKind> {
 }
 
 fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
-    let start = cursor.saturating_sub(2);
-    let mut i = start;
+    let inicio = cursor.saturating_sub(2);
+    let mut i = inicio;
     while i > 0 {
         i = i.saturating_sub(1);
         match &tokens[i].kind {
@@ -110,8 +110,8 @@ fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
 
 fn extraer_prefijo_identificador(tokens: &[Token], cursor: usize) -> String {
     if cursor > 0 && cursor <= tokens.len() {
-        let prev = &tokens[cursor.saturating_sub(1)].kind;
-        if let TokenKind::Identificador(s) = prev {
+        let anterior = &tokens[cursor.saturating_sub(1)].kind;
+        if let TokenKind::Identificador(s) = anterior {
             return s.clone();
         }
     }
@@ -257,10 +257,10 @@ impl CompletionResolver {
 
     fn completar_imports(&self, parcial: &str, items: &mut Vec<CompletionItem>) {
         if parcial.contains("std/") {
-            let prefix = parcial.strip_prefix("std/").unwrap_or("");
+            let prefijo = parcial.strip_prefix("std/").unwrap_or("");
             for module_name in self.stdlib.modules.keys() {
                 let full = format!("std/{}", module_name);
-                let score = fuzzy_score(prefix, module_name);
+                let score = fuzzy_score(prefijo, module_name);
                 if score > 0.0 {
                     items.push(CompletionItem {
                         label: full.clone(),
