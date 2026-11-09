@@ -302,50 +302,50 @@ impl GeneradorBytecode {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let label_else = self.nueva_label();
-                let label_end = self.nueva_label();
+                let etiqueta_sino = self.nueva_label();
+                let etiqueta_final = self.nueva_label();
 
                 self.generar_expresion(condicion);
-                self.emitir(Opcode::SaltoSiFalso(label_else));
+                self.emitir(Opcode::SaltoSiFalso(etiqueta_sino));
 
                 // Bloque verdadero
                 self.generar_declaraciones(bloque_verdadero);
-                self.emitir(Opcode::Salto(label_end));
+                self.emitir(Opcode::Salto(etiqueta_final));
 
                 // Bloque falso
-                self.emitir(Opcode::Etiqueta(label_else));
+                self.emitir(Opcode::Etiqueta(etiqueta_sino));
                 if let Some(bloque_falso) = bloque_falso {
                     self.generar_declaraciones(bloque_falso);
                 }
 
-                self.emitir(Opcode::Etiqueta(label_end));
+                self.emitir(Opcode::Etiqueta(etiqueta_final));
             }
 
             Declaracion::Mientras { condicion, bloque } => {
-                let label_inicio = self.nueva_label();
-                let label_fin = self.nueva_label();
+                let etiqueta_inicio = self.nueva_label();
+                let etiqueta_fin = self.nueva_label();
 
-                self.loop_stack.push((label_inicio, label_fin));
+                self.pila_bucles.push((etiqueta_inicio, etiqueta_fin));
 
-                self.emitir(Opcode::Etiqueta(label_inicio));
+                self.emitir(Opcode::Etiqueta(etiqueta_inicio));
                 self.generar_expresion(condicion);
-                self.emitir(Opcode::SaltoSiFalso(label_fin));
+                self.emitir(Opcode::SaltoSiFalso(etiqueta_fin));
 
                 self.generar_declaraciones(bloque);
-                self.emitir(Opcode::Salto(label_inicio));
+                self.emitir(Opcode::Salto(etiqueta_inicio));
 
-                self.emitir(Opcode::Etiqueta(label_fin));
-                self.loop_stack.pop();
+                self.emitir(Opcode::Etiqueta(etiqueta_fin));
+                self.pila_bucles.pop();
             }
 
             Declaracion::Cuando {
                 condicion, cuerpo, ..
             } => {
-                let label_end = self.nueva_label();
+                let etiqueta_final = self.nueva_label();
                 self.generar_expresion(condicion);
-                self.emitir(Opcode::SaltoSiFalso(label_end));
+                self.emitir(Opcode::SaltoSiFalso(etiqueta_final));
                 self.generar_declaraciones(cuerpo);
-                self.emitir(Opcode::Etiqueta(label_end));
+                self.emitir(Opcode::Etiqueta(etiqueta_final));
             }
 
             Declaracion::Para {
@@ -367,98 +367,98 @@ impl GeneradorBytecode {
                             ..
                         } = izquierda.as_ref()
                         {
-                            let label_inicio = self.nueva_label();
-                            let label_fin = self.nueva_label();
+                            let etiqueta_inicio = self.nueva_label();
+                            let etiqueta_fin = self.nueva_label();
                             // `continuar` debe saltar al incremento, no a la
                             // condición: si no, el contador nunca avanza.
-                            let label_continuar = self.nueva_label();
+                            let etiqueta_continuar = self.nueva_label();
 
-                            self.loop_stack.push((label_continuar, label_fin));
+                            self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
 
                             if let Some(init) = inicializacion {
                                 self.generar_declaracion(init);
                             }
 
-                            self.emitir(Opcode::Etiqueta(label_inicio));
+                            self.emitir(Opcode::Etiqueta(etiqueta_inicio));
                             // Load var, load limit, check <
                             self.emitir(Opcode::Cargar(Arc::from(var_name.as_str())));
                             self.generar_expresion(derecha);
                             self.emitir(Opcode::Menor);
-                            self.emitir(Opcode::SaltoSiFalso(label_fin));
+                            self.emitir(Opcode::SaltoSiFalso(etiqueta_fin));
 
                             self.generar_declaraciones(bloque);
 
-                            self.emitir(Opcode::Etiqueta(label_continuar));
+                            self.emitir(Opcode::Etiqueta(etiqueta_continuar));
                             if let Some(inc) = incremento {
                                 self.generar_declaracion(inc);
                             }
 
-                            self.emitir(Opcode::Salto(label_inicio));
-                            self.emitir(Opcode::Etiqueta(label_fin));
-                            self.loop_stack.pop();
+                            self.emitir(Opcode::Salto(etiqueta_inicio));
+                            self.emitir(Opcode::Etiqueta(etiqueta_fin));
+                            self.pila_bucles.pop();
                             return;
                         }
                     }
                 }
 
                 // Fallback: genérico
-                let label_inicio = self.nueva_label();
-                let label_fin = self.nueva_label();
-                let label_continuar = self.nueva_label();
+                let etiqueta_inicio = self.nueva_label();
+                let etiqueta_fin = self.nueva_label();
+                let etiqueta_continuar = self.nueva_label();
 
-                self.loop_stack.push((label_continuar, label_fin));
+                self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
 
                 if let Some(init) = inicializacion {
                     self.generar_declaracion(init);
                 }
 
-                self.emitir(Opcode::Etiqueta(label_inicio));
+                self.emitir(Opcode::Etiqueta(etiqueta_inicio));
                 if let Some(cond) = condicion {
                     self.generar_expresion(cond);
-                    self.emitir(Opcode::SaltoSiFalso(label_fin));
+                    self.emitir(Opcode::SaltoSiFalso(etiqueta_fin));
                 }
 
                 self.generar_declaraciones(bloque);
 
-                self.emitir(Opcode::Etiqueta(label_continuar));
+                self.emitir(Opcode::Etiqueta(etiqueta_continuar));
                 if let Some(inc) = incremento {
                     self.generar_declaracion(inc);
                 }
 
-                self.emitir(Opcode::Salto(label_inicio));
-                self.emitir(Opcode::Etiqueta(label_fin));
-                self.loop_stack.pop();
+                self.emitir(Opcode::Salto(etiqueta_inicio));
+                self.emitir(Opcode::Etiqueta(etiqueta_fin));
+                self.pila_bucles.pop();
             }
 
             Declaracion::Repetir { cantidad, bloque } => {
                 // repetir(N) { ... } → for _ in 0..N { ... }
                 // Variable temporal para contador
                 let var_contador = Arc::from("__repetir_counter");
-                let label_inicio = self.nueva_label();
-                let label_fin = self.nueva_label();
-                let label_continuar = self.nueva_label();
+                let etiqueta_inicio = self.nueva_label();
+                let etiqueta_fin = self.nueva_label();
+                let etiqueta_continuar = self.nueva_label();
 
-                self.loop_stack.push((label_continuar, label_fin));
+                self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
                 self.emitir(Opcode::PushEntero(0));
                 self.emitir(Opcode::Declarar(Arc::clone(&var_contador), true));
 
-                self.emitir(Opcode::Etiqueta(label_inicio));
+                self.emitir(Opcode::Etiqueta(etiqueta_inicio));
                 self.emitir(Opcode::Cargar(Arc::clone(&var_contador)));
                 self.generar_expresion(cantidad);
                 self.emitir(Opcode::Menor);
-                self.emitir(Opcode::SaltoSiFalso(label_fin));
+                self.emitir(Opcode::SaltoSiFalso(etiqueta_fin));
 
                 self.generar_declaraciones(bloque);
 
-                self.emitir(Opcode::Etiqueta(label_continuar));
+                self.emitir(Opcode::Etiqueta(etiqueta_continuar));
                 self.emitir(Opcode::Cargar(Arc::clone(&var_contador)));
                 self.emitir(Opcode::PushEntero(1));
                 self.emitir(Opcode::Sumar);
                 self.emitir(Opcode::Guardar(Arc::clone(&var_contador)));
 
-                self.emitir(Opcode::Salto(label_inicio));
-                self.emitir(Opcode::Etiqueta(label_fin));
-                self.loop_stack.pop();
+                self.emitir(Opcode::Salto(etiqueta_inicio));
+                self.emitir(Opcode::Etiqueta(etiqueta_fin));
+                self.pila_bucles.pop();
             }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
@@ -487,7 +487,7 @@ impl GeneradorBytecode {
                     // s.enrutador.get(...), primero cargamos s, luego GetField enrutador,
                     // luego los argumentos, y finalmente CallMethod("get", ...).
                     let parts: Vec<&str> = nombre.rsplitn(2, '.').collect();
-                    let method_name = Arc::from(parts[0]);
+                    let nombre_metodo = Arc::from(parts[0]);
                     let obj_expr = parts[1];
                     // Si el objeto contiene puntos, es una cadena de accesos multi-nivel
                     // Ej: "s.enrutador.get" → obj_expr = "s.enrutador"
@@ -506,7 +506,7 @@ impl GeneradorBytecode {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::LlamarMetodo(method_name, argumentos.len()));
+                    self.emitir(Opcode::LlamarMetodo(nombre_metodo, argumentos.len()));
                 } else {
                     let indirecta = self.emitir_callee_si_variable(nombre);
                     // Misma coerción que en `Expresion::LlamadaFuncion`: una
@@ -589,14 +589,14 @@ impl GeneradorBytecode {
             }
 
             Declaracion::Romper => {
-                if let Some((_, label_fin)) = self.loop_stack.last() {
-                    self.emitir(Opcode::Salto(*label_fin));
+                if let Some((_, etiqueta_fin)) = self.pila_bucles.last() {
+                    self.emitir(Opcode::Salto(*etiqueta_fin));
                 }
             }
 
             Declaracion::Continuar => {
-                if let Some((label_inicio, _)) = self.loop_stack.last() {
-                    self.emitir(Opcode::Salto(*label_inicio));
+                if let Some((etiqueta_inicio, _)) = self.pila_bucles.last() {
+                    self.emitir(Opcode::Salto(*etiqueta_inicio));
                 }
             }
 
@@ -637,13 +637,13 @@ impl GeneradorBytecode {
                     //   variable x, y = f()        →  x = f()[0], y = f()[1]
                     // Se evalúa el valor una sola vez en una variable temporal y
                     // se extrae cada posición con ArrayGet.
-                    let tmp: Arc<str> =
-                        Arc::from(format!("__destruct_{}", self.label_counter).as_str());
-                    self.label_counter += 1;
+                    let temporal: Arc<str> =
+                        Arc::from(format!("__destruct_{}", self.contador_etiquetas).as_str());
+                    self.contador_etiquetas += 1;
                     self.generar_expresion(valor);
-                    self.emitir(Opcode::Declarar(tmp.clone(), true));
+                    self.emitir(Opcode::Declarar(temporal.clone(), true));
                     for (i, var) in variables.iter().enumerate() {
-                        self.emitir(Opcode::Cargar(tmp.clone()));
+                        self.emitir(Opcode::Cargar(temporal.clone()));
                         self.emitir(Opcode::PushEntero(i as i64));
                         self.emitir(Opcode::ObtenerElemento);
                         self.emitir(Opcode::Declarar(Arc::from(var.as_str()), *mutable));
