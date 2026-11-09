@@ -7,11 +7,11 @@ pub fn native_mmap_abrir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
         ));
     }
     let ruta = obtener_texto(vm, args[0])?;
-    let offset = obtener_entero(args[1])? as u64;
-    let len = obtener_entero(args[2])? as usize;
+    let desplazamiento = obtener_entero(args[1])? as u64;
+    let longitud = obtener_entero(args[2])? as usize;
     let modo = obtener_texto(vm, args[3])?;
     let writable = modo == "rw";
-    match crate::mmap::mmap_abrir(&ruta, offset, len, writable) {
+    match crate::mmap::mmap_abrir(&ruta, desplazamiento, longitud, writable) {
         Ok(h) => Ok(ValorFast::entero(h)),
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
@@ -23,8 +23,8 @@ pub fn native_mmap_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
             "_mmap_cerrar requiere 1 arg: handle".into(),
         ));
     }
-    let handle = obtener_entero(args[0])?;
-    match crate::mmap::mmap_cerrar(handle) {
+    let manejador = obtener_entero(args[0])?;
+    match crate::mmap::mmap_cerrar(manejador) {
         Ok(()) => Ok(ValorFast::entero(0)),
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
@@ -36,14 +36,14 @@ pub fn native_mmap_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFa
             "_mmap_leer requiere 3 args: handle, offset, longitud".into(),
         ));
     }
-    let handle = obtener_entero(args[0])?;
-    let offset = obtener_entero(args[1])? as usize;
-    let len = obtener_entero(args[2])? as usize;
-    match crate::mmap::mmap_leer(handle, offset, len) {
+    let manejador = obtener_entero(args[0])?;
+    let desplazamiento = obtener_entero(args[1])? as usize;
+    let longitud = obtener_entero(args[2])? as usize;
+    match crate::mmap::mmap_leer(manejador, desplazamiento, longitud) {
         Ok(bytes) => {
             let s = String::from_utf8_lossy(&bytes).to_string();
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
@@ -55,10 +55,10 @@ pub fn native_mmap_escribir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
             "_mmap_escribir requiere 3 args: handle, offset, datos".into(),
         ));
     }
-    let handle = obtener_entero(args[0])?;
-    let offset = obtener_entero(args[1])? as usize;
+    let manejador = obtener_entero(args[0])?;
+    let desplazamiento = obtener_entero(args[1])? as usize;
     let datos = obtener_texto(vm, args[2])?;
-    match crate::mmap::mmap_escribir(handle, offset, datos.as_bytes()) {
+    match crate::mmap::mmap_escribir(manejador, desplazamiento, datos.as_bytes()) {
         Ok(n) => Ok(ValorFast::entero(n as i64)),
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
@@ -73,8 +73,8 @@ pub fn native_mmap_sincronizar(
             "_mmap_sincronizar requiere 1 arg: handle".into(),
         ));
     }
-    let handle = obtener_entero(args[0])?;
-    match crate::mmap::mmap_sincronizar(handle) {
+    let manejador = obtener_entero(args[0])?;
+    match crate::mmap::mmap_sincronizar(manejador) {
         Ok(()) => Ok(ValorFast::entero(0)),
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
@@ -133,8 +133,8 @@ pub fn native_terminal_leer_tecla(
 ) -> Result<ValorFast, ErrFast> {
     match crate::terminal::leer_tecla() {
         Ok(s) => {
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
