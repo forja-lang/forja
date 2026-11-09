@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 fn temp_dir(nombre: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
+    let directorio = std::env::temp_dir().join(format!(
         "forja-registry-{}-{}-{}",
         nombre,
         std::process::id(),
@@ -18,8 +18,8 @@ fn temp_dir(nombre: &str) -> PathBuf {
             .unwrap()
             .as_nanos()
     ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+    std::fs::create_dir_all(&directorio).unwrap();
+    directorio
 }
 
 /// `PUT` de una publicación en crudo (para probar el servidor sin el cliente).
