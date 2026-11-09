@@ -21,7 +21,7 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntrada> {
         .iter()
         .map(|s| SymbolEntrada {
             name: s.nombre.clone(),
-            kind: match s.tipo_simbolo {
+            tipo: match s.tipo_simbolo {
                 SimboloTipo::Variable => ForjaSymbolKind::Variable,
                 SimboloTipo::Funcion => ForjaSymbolKind::Funcion,
                 SimboloTipo::Clase => ForjaSymbolKind::Clase,
@@ -364,7 +364,7 @@ impl LanguageServer for Backend {
         // Token-walking: buscar el token en esa posición
         if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                if let TokenTipo::Identificador(nombre) = &token.kind {
+                if let TokenTipo::Identificador(nombre) = &token.tipo {
                     // Buscar declaración de ese nombre en el análisis
                     for s in &analisis.simbolos {
                         if &s.nombre == nombre {
@@ -403,7 +403,7 @@ impl LanguageServer for Backend {
         let texto = self.obtener_texto(&uri).await;
         let nombre_buscado = if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                if let TokenTipo::Identificador(nombre) = &token.kind {
+                if let TokenTipo::Identificador(nombre) = &token.tipo {
                     Some(nombre.clone())
                 } else {
                     None
@@ -471,7 +471,7 @@ impl LanguageServer for Backend {
         // 1. Intentar hover sobre keyword
         if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                let palabra = token.kind.to_string();
+                let palabra = token.tipo.to_string();
                 if let Some(desc) = keyword_description(&palabra) {
                     return Ok(Some(Hover {
                         contents: HoverContents::Scalar(MarkedString::String(desc)),
@@ -532,7 +532,7 @@ impl LanguageServer for Backend {
         // 1. Code Action: Formatear documento
         actions.push(CodeActionOrCommand::CodeAction(CodeAction {
             title: "Formatear documento".to_string(),
-            kind: Some(CodeActionKind::SOURCE_FIX_ALL),
+            tipo: Some(CodeActionKind::SOURCE_FIX_ALL),
             diagnostics: None,
             edit: None,
             command: Some(Command {
@@ -562,7 +562,7 @@ impl LanguageServer for Backend {
                     let edit = insertar_importacion(&uri, &texto, &modulo);
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                         title: format!("🔧 Importar `{}` desde std/{}", nombre, modulo),
-                        kind: Some(CodeActionKind::QUICKFIX),
+                        tipo: Some(CodeActionKind::QUICKFIX),
                         diagnostics: Some(vec![diag.clone()]),
                         edit: Some(edit),
                         command: None,
@@ -578,7 +578,7 @@ impl LanguageServer for Backend {
                     if let Some(edit) = insertar_mut(&uri, &texto, &nombre) {
                         actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                             title: format!("🔧 Añadir `mut` a `{}`", nombre),
-                            kind: Some(CodeActionKind::QUICKFIX),
+                            tipo: Some(CodeActionKind::QUICKFIX),
                             diagnostics: Some(vec![diag.clone()]),
                             edit: Some(edit),
                             command: None,
@@ -595,7 +595,7 @@ impl LanguageServer for Backend {
                 if let Some(edit) = reemplazar_tipo_en_linea(&uri, &texto, err.linea, &tipo) {
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                         title: format!("🔧 Cambiar tipo a `{}`", tipo),
-                        kind: Some(CodeActionKind::QUICKFIX),
+                        tipo: Some(CodeActionKind::QUICKFIX),
                         diagnostics: Some(vec![diag.clone()]),
                         edit: Some(edit),
                         command: None,
@@ -609,7 +609,7 @@ impl LanguageServer for Backend {
             if !err.sugerencia.is_empty() {
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                     title: format!("💡 {}: {}", err.sugerencia, err.mensaje),
-                    kind: Some(CodeActionKind::QUICKFIX),
+                    tipo: Some(CodeActionKind::QUICKFIX),
                     diagnostics: Some(vec![diag]),
                     edit: None,
                     command: None,
@@ -636,7 +636,7 @@ impl LanguageServer for Backend {
 
         let nombre_buscado = if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                if let TokenTipo::Identificador(n) = &token.kind {
+                if let TokenTipo::Identificador(n) = &token.tipo {
                     Some(n.clone())
                 } else {
                     None
@@ -718,23 +718,23 @@ impl LanguageServer for Backend {
     // ----------------------------------------------------------------
 
     async fn completion_resolve(&self, elemento: CompletionElemento) -> Result<CompletionElemento> {
-        let label = elemento.label.clone();
+        let etiqueta = elemento.etiqueta.clone();
         let stdlib = cached_stdlib();
 
         // Buscar documentación detallada en stdlib
-        if let Some(funcs) = stdlib.functions.get(&label.to_lowercase()) {
+        if let Some(funcs) = stdlib.functions.get(&etiqueta.to_lowercase()) {
             if let Some(f) = funcs.first() {
                 let mut doc = f.doc.clone();
                 if doc.is_empty() {
                     let params_str: Vec<String> = f
                         .params
                         .iter()
-                        .map(|p| format!("- `{}`: {}", p.name, p.type_str))
+                        .map(|p| format!("- `{}`: {}", p.name, p.tipo_texto))
                         .collect();
                     doc = format!(
                         "**{}**\n\nMódulo: `{}.fa`\n\nParámetros:\n{}",
                         f.name,
-                        f.module,
+                        f.modulo,
                         params_str.join("\n")
                     );
                     if !f.tipo_retorno.is_empty() {
@@ -749,7 +749,7 @@ impl LanguageServer for Backend {
         }
 
         // Doc de keyword
-        let keyword_doc = keyword_description(&label);
+        let keyword_doc = keyword_description(&etiqueta);
         if let Some(doc) = keyword_doc {
             return Ok(CompletionElemento {
                 documentation: Some(Documentation::String(doc)),
@@ -775,7 +775,7 @@ impl LanguageServer for Backend {
         let lsp_items: Vec<CompletionElemento> = forja_items
             .iter()
             .map(|fi| {
-                let tipo = match fi.kind {
+                let tipo = match fi.tipo {
                     1 => Some(CompletionItemKind::TEXT),
                     3 => Some(CompletionItemKind::FUNCTION),
                     6 => Some(CompletionItemKind::VARIABLE),
@@ -788,23 +788,23 @@ impl LanguageServer for Backend {
                     23 => Some(CompletionItemKind::ENUM),
                     _ => Some(CompletionItemKind::TEXT),
                 };
-                let fmt = match fi.insert_text_format {
+                let fmt = match fi.insertar_texto_formato {
                     2 => Some(InsertTextFormat::SNIPPET),
                     _ => Some(InsertTextFormat::PLAIN_TEXT),
                 };
                 CompletionElemento {
-                    label: fi.label.clone(),
-                    kind: tipo,
+                    etiqueta: fi.etiqueta.clone(),
+                    tipo: tipo,
                     detail: Some(fi.detail.clone()),
                     documentation: if fi.documentation.is_empty() {
                         None
                     } else {
                         Some(Documentation::String(fi.documentation.clone()))
                     },
-                    insert_text: Some(fi.insert_text.clone()),
-                    insert_text_format: fmt,
-                    sort_text: Some(fi.sort_text.clone()),
-                    filter_text: Some(fi.filter_text.clone()),
+                    insertar_texto: Some(fi.insertar_texto.clone()),
+                    insertar_texto_formato: fmt,
+                    sort_texto: Some(fi.sort_texto.clone()),
+                    filter_texto: Some(fi.filter_texto.clone()),
                     preselect: if fi.preselect { Some(true) } else { None },
                     ..Default::default()
                 }
@@ -838,7 +838,7 @@ impl LanguageServer for Backend {
             symbols.push(DocumentSymbol {
                 name: s.nombre.clone(),
                 detail: Some(format!("{:?}", s.tipo_simbolo)),
-                kind: tipo,
+                tipo: tipo,
                 range: Range {
                     start: Position {
                         line: s.linea,
@@ -901,8 +901,8 @@ impl LanguageServer for Backend {
                     line: s.linea,
                     character: s.col_fin,
                 },
-                label: InlayHintLabel::String(format!(": {}", tipo)),
-                kind: Some(InlayHintKind::TYPE),
+                etiqueta: InlayHintLabel::String(format!(": {}", tipo)),
+                tipo: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(InlayHintTooltip::String(format!(
                     "Tipo inferido para `{}`",
@@ -946,7 +946,7 @@ impl LanguageServer for Backend {
                 #[allow(deprecated)]
                 resultados.push(SymbolInformation {
                     name: s.nombre.clone(),
-                    kind: tipo,
+                    tipo: tipo,
                     tags: None,
                     deprecated: None,
                     location: Location {
@@ -992,7 +992,7 @@ impl LanguageServer for Backend {
                 .params
                 .iter()
                 .map(|p| ParameterInformation {
-                    label: ParameterLabel::Simple(p.label.clone()),
+                    etiqueta: ParameterLabel::Simple(p.etiqueta.clone()),
                     documentation: if p.documentation.is_empty() {
                         None
                     } else {
@@ -1002,7 +1002,7 @@ impl LanguageServer for Backend {
                 .collect();
             Ok(Some(SignatureHelp {
                 signatures: vec![SignatureInformation {
-                    label: informacion.label,
+                    etiqueta: informacion.etiqueta,
                     documentation: if informacion.documentation.is_empty() {
                         None
                     } else {
@@ -1193,10 +1193,10 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
     while i < tokens.len() {
         let token = &tokens[i];
 
-        match token.kind {
+        match token.tipo {
             TokenTipo::Funcion => {
                 if i + 1 < tokens.len() {
-                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].tipo {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1211,7 +1211,7 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
             }
             TokenTipo::Clase => {
                 if i + 1 < tokens.len() {
-                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].tipo {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1225,16 +1225,16 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 }
             }
             TokenTipo::Variable | TokenTipo::Constante => {
-                let es_const = matches!(token.kind, TokenTipo::Constante);
+                let es_const = matches!(token.tipo, TokenTipo::Constante);
                 let mut skip = 1;
                 // Saltar mut si existe
                 if i + 1 < tokens.len() {
-                    if let TokenTipo::Mut = tokens[i + 1].kind {
+                    if let TokenTipo::Mut = tokens[i + 1].tipo {
                         skip = 2;
                     }
                 }
                 if i + skip < tokens.len() {
-                    if let TokenTipo::Identificador(ref nombre) = tokens[i + skip].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + skip].tipo {
                         let doc = buscar_doc_previo(tokens, i);
                         let _es_const = es_const;
                         analisis.simbolos.push(SimboloInformacion {
@@ -1250,7 +1250,7 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
             }
             TokenTipo::Tipo => {
                 if i + 1 < tokens.len() {
-                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].tipo {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1265,7 +1265,7 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
             }
             TokenTipo::Rasgo => {
                 if i + 1 < tokens.len() {
-                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].tipo {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1283,7 +1283,7 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 // Verificar si es parte de una declaración (evitar duplicados)
                 let es_decl = if i > 0 {
                     matches!(
-                        tokens[i - 1].kind,
+                        tokens[i - 1].tipo,
                         TokenTipo::Funcion
                             | TokenTipo::Clase
                             | TokenTipo::Variable
@@ -1296,10 +1296,10 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 };
 
                 if !es_decl {
-                    if let TokenTipo::Identificador(ref nombre) = token.kind {
+                    if let TokenTipo::Identificador(ref nombre) = token.tipo {
                         // Detectar si es llamada a función (siguiente token es '(')
                         let es_llamada = i + 1 < tokens.len()
-                            && matches!(tokens[i + 1].kind, TokenTipo::ParenAbrir);
+                            && matches!(tokens[i + 1].tipo, TokenTipo::ParenAbrir);
 
                         analisis.referencias.push((
                             token.linea as u32,
@@ -1324,7 +1324,7 @@ fn buscar_doc_previo(tokens: &[Token], pos: usize) -> Option<String> {
     let mut i = pos;
     while i > 0 {
         i -= 1;
-        match &tokens[i].kind {
+        match &tokens[i].tipo {
             TokenTipo::DocComment(doc_line) => {
                 docs.push(doc_line.trim().to_string());
             }
@@ -1347,7 +1347,7 @@ fn buscar_nombre_en_posicion(
 ) -> Option<SimboloInformacion> {
     let tokens = tokenizar(texto).ok()?;
     let token = token_en_posicion(&tokens, pos)?;
-    let nombre = match &token.kind {
+    let nombre = match &token.tipo {
         TokenTipo::Identificador(n) => n.clone(),
         _ => return None,
     };
@@ -1380,7 +1380,7 @@ fn token_en_posicion(tokens: &[Token], pos: Position) -> Option<&Token> {
     let linea = pos.line as usize;
     let col = pos.character as usize;
     tokens.iter().find(|t| {
-        t.linea == linea && col >= t.columna && col < t.columna + t.kind.to_string().len()
+        t.linea == linea && col >= t.columna && col < t.columna + t.tipo.to_string().len()
     })
 }
 
@@ -1399,14 +1399,14 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
     let mut anterior_col: u32 = 0;
 
     for token in &tokens {
-        if token.kind == TokenTipo::EOF {
+        if token.tipo == TokenTipo::EOF {
             continue;
         }
         let (tipo_idx, modifier_bitset) = clasificar_token(token);
 
         let linea = token.linea as u32;
         let col = token.columna as u32;
-        let longitud = token.kind.to_string().len() as u32;
+        let longitud = token.tipo.to_string().len() as u32;
 
         let delta_line = linea.saturating_sub(anterior_linea);
         let delta_inicio = if delta_line == 0 {
@@ -1431,7 +1431,7 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
 }
 
 fn clasificar_token(token: &Token) -> (u32, u32) {
-    match token.kind {
+    match token.tipo {
         // Keywords
         TokenTipo::Variable
         | TokenTipo::Constante
@@ -1478,7 +1478,7 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
         | TokenTipo::ResultadoKw
         | TokenTipo::Anterior => {
             let mut bits = 0u32;
-            if matches!(token.kind, TokenTipo::Constante) {
+            if matches!(token.tipo, TokenTipo::Constante) {
                 bits |= 2; // readonly modifier
             }
             (0, bits) // keyword
@@ -1543,7 +1543,7 @@ fn generar_folding_ranges(fuente: &str) -> Vec<FoldingRange> {
                         start_character: Some(0),
                         end_line: i as u32,
                         end_character: Some(0),
-                        kind: Some(FoldingRangeKind::Region),
+                        tipo: Some(FoldingRangeKind::Region),
                         collapsed_text: None,
                     });
                 }

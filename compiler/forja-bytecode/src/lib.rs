@@ -8,7 +8,7 @@ pub mod metadata;
 pub mod opcode;
 pub mod postproceso;
 pub mod serialize;
-pub mod symbol_table;
+pub mod tabla_simbolos;
 pub mod uops;
 
 pub use contratos::{ContratoBytecode, TipoContrato};
@@ -19,7 +19,7 @@ pub use postproceso::{
     postprocesar_globales, serializar_con_metadata,
 };
 pub use serialize::{deserializar_bytecode, sanitizar_para_serializacion, serializar_bytecode};
-pub use symbol_table::IdSimbolo;
+pub use tabla_simbolos::IdSimbolo;
 
 /// Límites del `Entero` de la VM (48 bits de payload).
 pub const ENTERO_MIN: i64 = -(1 << 47);

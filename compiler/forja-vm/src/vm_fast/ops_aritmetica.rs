@@ -31,7 +31,7 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::SumarDecimal => {
-                prof_count!(add_float);
+                prof_count!(sumar_flotante);
                 let b = self.desapilar_valor()?;
                 let a = self.desapilar_valor()?;
                 // Fast-Math total (solo manual): sin checks de tipo.

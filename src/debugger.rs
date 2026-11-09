@@ -52,17 +52,17 @@ pub struct Debugger {
     /// expresión evalúa a verdadero.
     pub breakpoints: HashMap<usize, Option<String>>,
     /// Cache de mapeo línea → IP (construido al cargar bytecode)
-    pub line_to_ip: HashMap<usize, Vec<usize>>,
+    pub linea_a_ip: HashMap<usize, Vec<usize>>,
     /// Cache inverso IP → línea (para lookup rápido)
-    pub ip_to_line: HashMap<usize, usize>,
+    pub ip_a_linea: HashMap<usize, usize>,
     /// Línea actual de ejecución
-    pub current_line: usize,
+    pub linea_actual: usize,
     /// Línea donde estábamos cuando se inició StepOut
-    pub step_out_target_frame: usize,
+    pub marco_destino_salir: usize,
     /// Cantidad de frames al iniciar StepOver
-    pub step_over_frame_count: usize,
+    pub cantidad_marcos_paso_a_paso: usize,
     /// Últimas líneas encontradas (para detección de cambio de línea)
-    pub last_report_line: usize,
+    pub linea_ultimo_reporte: usize,
     /// ID de próxima petición (para callbacks)
     pub next_id: u32,
     /// Nombres reales de variables locales por frame (índice → nombre).
@@ -86,12 +86,12 @@ impl Debugger {
             vm: ForjaFast::nuevo(),
             state: DepuracionState::Running,
             breakpoints: HashMap::new(),
-            line_to_ip: HashMap::new(),
-            ip_to_line: HashMap::new(),
-            current_line: 0,
-            step_out_target_frame: 0,
-            step_over_frame_count: 0,
-            last_report_line: 0,
+            linea_a_ip: HashMap::new(),
+            ip_a_linea: HashMap::new(),
+            linea_actual: 0,
+            marco_destino_salir: 0,
+            cantidad_marcos_paso_a_paso: 0,
+            linea_ultimo_reporte: 0,
             next_id: 0,
             nombres_locales: Vec::new(),
             nombres_globales: Vec::new(),
@@ -102,16 +102,16 @@ impl Debugger {
     /// Cargar bytecode en la VM y construir el mapeo línea → IP
     pub fn cargar_bytecode(&mut self, bc: Vec<Opcode>) {
         // Construir mapeos línea ↔ IP
-        self.line_to_ip.clear();
-        self.ip_to_line.clear();
+        self.linea_a_ip.clear();
+        self.ip_a_linea.clear();
         for (ip, op) in bc.iter().enumerate() {
             if let Opcode::FijarLinea(linea) = op {
-                self.line_to_ip.entry(*linea).or_default().push(ip);
-                self.ip_to_line.insert(ip, *linea);
+                self.linea_a_ip.entry(*linea).or_default().push(ip);
+                self.ip_a_linea.insert(ip, *linea);
             }
         }
-        self.current_line = 0;
-        self.last_report_line = 0;
+        self.linea_actual = 0;
+        self.linea_ultimo_reporte = 0;
         self.state = DepuracionState::Running;
         self.vm.cargar_bytecode(bc);
     }
@@ -145,7 +145,7 @@ impl Debugger {
     /// Verificar si estamos en un breakpoint (incondicional o con condición
     /// que evalúa a verdadero en el estado actual de la VM).
     pub fn en_breakpoint(&mut self) -> bool {
-        let cond = self.breakpoints.get(&self.current_line).cloned();
+        let cond = self.breakpoints.get(&self.linea_actual).cloned();
         match cond {
             None => false,
             Some(None) => true,
@@ -171,7 +171,7 @@ impl Debugger {
     /// Step Over: ejecutar hasta la próxima línea en el mismo frame depth
     pub fn step_over(&mut self) -> Result<DepuracionEvento, ErrFast> {
         self.state = DepuracionState::StepOver;
-        self.step_over_frame_count = self.vm.frame_count;
+        self.cantidad_marcos_paso_a_paso = self.vm.cantidad_marcos;
         self.ejecutar_hasta_evento()
     }
 
@@ -184,7 +184,7 @@ impl Debugger {
     /// Step Out: ejecutar hasta que la función actual retorne
     pub fn step_out(&mut self) -> Result<DepuracionEvento, ErrFast> {
         self.state = DepuracionState::StepOut;
-        self.step_out_target_frame = self.vm.frame_count;
+        self.marco_destino_salir = self.vm.cantidad_marcos;
         self.ejecutar_hasta_evento()
     }
 
@@ -205,7 +205,7 @@ impl Debugger {
 
             // Procesar SetLine: actualizar línea actual
             if let Opcode::FijarLinea(linea) = &op {
-                self.current_line = *linea;
+                self.linea_actual = *linea;
                 self.vm.ip += 1;
 
                 // Verificar si debemos pausar
@@ -217,27 +217,27 @@ impl Debugger {
                         }
                     }
                     DepuracionState::StepInto => {
-                        if *linea != self.last_report_line {
+                        if *linea != self.linea_ultimo_reporte {
                             self.state = DepuracionState::Paused;
-                            self.last_report_line = *linea;
+                            self.linea_ultimo_reporte = *linea;
                             return Ok(DepuracionEvento::StepCompletado { linea: *linea });
                         }
                     }
                     DepuracionState::StepOver => {
-                        if *linea != self.last_report_line
-                            && self.vm.frame_count <= self.step_over_frame_count
+                        if *linea != self.linea_ultimo_reporte
+                            && self.vm.cantidad_marcos <= self.cantidad_marcos_paso_a_paso
                         {
                             self.state = DepuracionState::Paused;
-                            self.last_report_line = *linea;
+                            self.linea_ultimo_reporte = *linea;
                             return Ok(DepuracionEvento::StepCompletado { linea: *linea });
                         }
                     }
                     DepuracionState::StepOut => {
-                        if *linea != self.last_report_line
-                            && self.vm.frame_count < self.step_out_target_frame
+                        if *linea != self.linea_ultimo_reporte
+                            && self.vm.cantidad_marcos < self.marco_destino_salir
                         {
                             self.state = DepuracionState::Paused;
-                            self.last_report_line = *linea;
+                            self.linea_ultimo_reporte = *linea;
                             return Ok(DepuracionEvento::StepCompletado { linea: *linea });
                         }
                     }
@@ -253,21 +253,21 @@ impl Debugger {
 
             // Detectar salida de funciones para StepOut
             if self.state == DepuracionState::StepOut
-                && self.vm.frame_count < self.step_out_target_frame
+                && self.vm.cantidad_marcos < self.marco_destino_salir
             {
                 self.state = DepuracionState::Paused;
                 return Ok(DepuracionEvento::StepCompletado {
-                    linea: self.current_line,
+                    linea: self.linea_actual,
                 });
             }
 
             // Si el state es Running, check breakpoints después de SetLine
-            if self.state == DepuracionState::Running && self.current_line > 0 {
-                if let Some(&linea) = self.ip_to_line.get(&self.vm.ip) {
-                    if linea != self.last_report_line && self.breakpoint_activo_en(linea) {
-                        self.current_line = linea;
+            if self.state == DepuracionState::Running && self.linea_actual > 0 {
+                if let Some(&linea) = self.ip_a_linea.get(&self.vm.ip) {
+                    if linea != self.linea_ultimo_reporte && self.breakpoint_activo_en(linea) {
+                        self.linea_actual = linea;
                         self.state = DepuracionState::Paused;
-                        self.last_report_line = linea;
+                        self.linea_ultimo_reporte = linea;
                         return Ok(DepuracionEvento::Breakpoint { linea });
                     }
                 }
@@ -411,7 +411,7 @@ impl Debugger {
     /// Obtener el call stack actual
     pub fn obtener_pila_traza(&self) -> Vec<FrameDepuracion> {
         let mut frames = Vec::new();
-        let frame_cantidad = self.vm.frame_count;
+        let frame_cantidad = self.vm.cantidad_marcos;
 
         if frame_cantidad > 0 {
             // Frame actual (0 = tope del buffer, último push)
@@ -421,7 +421,7 @@ impl Debugger {
             frames.push(FrameDepuracion {
                 id: frame_cantidad - 1,
                 name,
-                linea: self.current_line,
+                linea: self.linea_actual,
                 ip: self.vm.ip,
                 vars,
             });
@@ -430,7 +430,7 @@ impl Debugger {
             for depth in (0..frame_cantidad - 1).rev() {
                 let pf = &self.vm.frame_buffer[depth];
                 let name = format!("fn_{}", depth);
-                let ret_linea = self.ip_to_line.get(&pf.ip_ret).copied().unwrap_or(0);
+                let ret_linea = self.ip_a_linea.get(&pf.ip_ret).copied().unwrap_or(0);
                 let f_vars = self.obtener_variables_locales(depth);
                 frames.push(FrameDepuracion {
                     id: depth,
@@ -446,7 +446,7 @@ impl Debugger {
             frames.push(FrameDepuracion {
                 id: 0,
                 name: "global".to_string(),
-                linea: self.current_line,
+                linea: self.linea_actual,
                 ip: self.vm.ip,
                 vars,
             });
@@ -1366,24 +1366,24 @@ fn ejecutar_llamada_depuracion(
     nargs: usize,
 ) -> Result<(), ErrFast> {
     let sym = dbg.vm.runtime.tabla_simbolos.internar(nombre);
-    if let Some(entry) = dbg.vm.lookup_funcion_entrada(sym) {
+    if let Some(entrada) = dbg.vm.lookup_funcion_entrada(sym) {
         // Sincronizar cache stack → stack real
         dbg.vm.flush_pila();
 
         let max_frames = dbg.vm.frame_buffer.len();
-        if dbg.vm.frame_count >= max_frames {
+        if dbg.vm.cantidad_marcos >= max_frames {
             return Err(ErrFast::StackUnder(
                 "Stack overflow: demasiadas llamadas anidadas".into(),
             ));
         }
 
         // Guardar frame actual
-        dbg.vm.frame_buffer[dbg.vm.frame_count] = FrmFast {
+        dbg.vm.frame_buffer[dbg.vm.cantidad_marcos] = FrmFast {
             ip_ret: dbg.vm.ip, // ip ya incrementado por Call handler
-            funcion_version: entry.version,
+            funcion_version: entrada.version,
             funcion_simbolo: sym,
         };
-        dbg.vm.frame_count += 1;
+        dbg.vm.cantidad_marcos += 1;
 
         // Pop args del stack de valores y revesarlos (orden normal)
         let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
@@ -1393,7 +1393,7 @@ fn ejecutar_llamada_depuracion(
         args.reverse();
 
         // Crear nuevo frame con variables locales
-        let vars_tamano = entry.tamano_variables.max(nargs);
+        let vars_tamano = entrada.tamano_variables.max(nargs);
         let mut locals = vec![ValorFast::nulo(); vars_tamano];
         for (i, arg) in args.into_iter().enumerate() {
             locals[i] = arg;
@@ -1401,7 +1401,7 @@ fn ejecutar_llamada_depuracion(
         dbg.vm.frame_locals.push(locals);
 
         // Saltar al código de la función
-        dbg.vm.ip = entry.ip;
+        dbg.vm.ip = entrada.ip;
 
         Ok(())
     } else {
@@ -1416,16 +1416,16 @@ fn ejecutar_llamada_depuracion(
 ///
 /// Sigue exactamente el mismo mecanismo que ForjaFast::ejecutar:
 /// - NO toca el stack de valores (el valor de retorno ya está ahí)
-/// - frame_count -= 1
+/// - cantidad_marcos -= 1
 /// - flush_pila (sincroniza cache)
 /// - pop frame_locals (libera vars de la función que termina)
 /// - restaura ip desde el frame
 fn ejecutar_return_depuracion(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    if dbg.vm.frame_count == 0 {
+    if dbg.vm.cantidad_marcos == 0 {
         return Err(ErrFast::StackUnder("Return sin frame activo".into()));
     }
-    dbg.vm.frame_count -= 1;
-    let frame = dbg.vm.frame_buffer[dbg.vm.frame_count];
+    dbg.vm.cantidad_marcos -= 1;
+    let frame = dbg.vm.frame_buffer[dbg.vm.cantidad_marcos];
     // Sincronizar cache
     dbg.vm.flush_pila();
     // Liberar vars de la función que termina

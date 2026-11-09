@@ -13,14 +13,14 @@ use super::super::*;
 pub struct FuncionInliner {
     pub inlines_realizados: usize,
     /// Tamaño máximo del cuerpo para considerar inline
-    pub max_inline_size: usize,
+    pub tamano_maximo_en_linea: usize,
 }
 
 impl FuncionInliner {
     pub fn nuevo() -> Self {
         FuncionInliner {
             inlines_realizados: 0,
-            max_inline_size: 10,
+            tamano_maximo_en_linea: 10,
         }
     }
 
@@ -52,7 +52,7 @@ impl FuncionInliner {
             HashMap::new();
         for (nombre, (params, body)) in &funcs {
             let cantidad = call_counts.get(nombre).copied().unwrap_or(0);
-            if cantidad == 1 && body.len() <= self.max_inline_size {
+            if cantidad == 1 && body.len() <= self.tamano_maximo_en_linea {
                 // Verificar que no es main
                 if nombre != "main" {
                     en_linea_candidates.insert(nombre.clone(), (params.clone(), body.clone()));

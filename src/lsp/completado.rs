@@ -72,7 +72,7 @@ fn anterior_token_es_importar(tokens: &[Token], cursor: usize) -> bool {
     };
     while i > 0 {
         i -= 1;
-        match &tokens[i].kind {
+        match &tokens[i].tipo {
             TokenTipo::Importar => return true,
             TokenTipo::Texto(_) => continue,
             TokenTipo::EOF => return false,
@@ -84,7 +84,7 @@ fn anterior_token_es_importar(tokens: &[Token], cursor: usize) -> bool {
 
 fn token_anterior_raw(tokens: &[Token], cursor: usize) -> Option<TokenTipo> {
     if cursor > 0 && cursor <= tokens.len() {
-        Some(tokens[cursor.saturating_sub(1)].kind.clone())
+        Some(tokens[cursor.saturating_sub(1)].tipo.clone())
     } else {
         None
     }
@@ -95,7 +95,7 @@ fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
     let mut i = inicio;
     while i > 0 {
         i = i.saturating_sub(1);
-        match &tokens[i].kind {
+        match &tokens[i].tipo {
             TokenTipo::Identificador(s) => return s.clone(),
             TokenTipo::Este => return "este".to_string(),
             _ => {
@@ -110,7 +110,7 @@ fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
 
 fn extraer_prefijo_identificador(tokens: &[Token], cursor: usize) -> String {
     if cursor > 0 && cursor <= tokens.len() {
-        let anterior = &tokens[cursor.saturating_sub(1)].kind;
+        let anterior = &tokens[cursor.saturating_sub(1)].tipo;
         if let TokenTipo::Identificador(s) = anterior {
             return s.clone();
         }
@@ -123,10 +123,10 @@ fn extraer_ruta_parcial(tokens: &[Token], cursor: usize) -> String {
         if i >= tokens.len() {
             continue;
         }
-        if let TokenTipo::Texto(s) = &tokens[i].kind {
+        if let TokenTipo::Texto(s) = &tokens[i].tipo {
             return s.clone();
         }
-        if matches!(tokens[i].kind, TokenTipo::Importar | TokenTipo::EOF) {
+        if matches!(tokens[i].tipo, TokenTipo::Importar | TokenTipo::EOF) {
             break;
         }
     }
@@ -174,14 +174,14 @@ pub fn fuzzy_score(query: &str, destino: &str) -> f64 {
 
 #[derive(Debug, Clone)]
 pub struct CompletionElemento {
-    pub label: String,
-    pub kind: u32,
+    pub etiqueta: String,
+    pub tipo: u32,
     pub detail: String,
     pub documentation: String,
-    pub insert_text: String,
-    pub insert_text_format: u32,
-    pub sort_text: String,
-    pub filter_text: String,
+    pub insertar_texto: String,
+    pub insertar_texto_formato: u32,
+    pub sort_texto: String,
+    pub filter_texto: String,
     pub preselect: bool,
 }
 
@@ -192,7 +192,7 @@ pub struct CompletionElemento {
 #[derive(Debug, Clone)]
 pub struct SymbolEntrada {
     pub name: String,
-    pub kind: SymbolTipo,
+    pub tipo: SymbolTipo,
     pub params: Vec<String>,
     pub doc: String,
 }
@@ -251,7 +251,7 @@ impl CompletionResolver {
             }
         }
 
-        items.sort_by(|a, b| b.sort_text.cmp(&a.sort_text));
+        items.sort_by(|a, b| b.sort_texto.cmp(&a.sort_texto));
         items
     }
 
@@ -263,8 +263,8 @@ impl CompletionResolver {
                 let score = fuzzy_score(prefijo, module_name);
                 if score > 0.0 {
                     items.push(CompletionElemento {
-                        label: full.clone(),
-                        kind: 9,
+                        etiqueta: full.clone(),
+                        tipo: 9,
                         detail: self
                             .stdlib
                             .modules
@@ -272,10 +272,10 @@ impl CompletionResolver {
                             .map(|m| m.doc.lines().next().unwrap_or("").to_string())
                             .unwrap_or_default(),
                         documentation: String::new(),
-                        insert_text: full,
-                        insert_text_format: 1,
-                        sort_text: format!("{:05}", (score * 100.0) as i32),
-                        filter_text: module_name.clone(),
+                        insertar_texto: full,
+                        insertar_texto_formato: 1,
+                        sort_texto: format!("{:05}", (score * 100.0) as i32),
+                        filter_texto: module_name.clone(),
                         preselect: score > 0.9,
                     });
                 }
@@ -287,8 +287,8 @@ impl CompletionResolver {
                 if score > 0.0 || parcial.is_empty() {
                     let score = if parcial.is_empty() { 0.5 } else { score };
                     items.push(CompletionElemento {
-                        label: full.clone(),
-                        kind: 9,
+                        etiqueta: full.clone(),
+                        tipo: 9,
                         detail: self
                             .stdlib
                             .modules
@@ -296,10 +296,10 @@ impl CompletionResolver {
                             .map(|m| m.doc.lines().next().unwrap_or("").to_string())
                             .unwrap_or_default(),
                         documentation: String::new(),
-                        insert_text: full,
-                        insert_text_format: 1,
-                        sort_text: format!("{:05}", (score * 100.0) as i32),
-                        filter_text: module_name.clone(),
+                        insertar_texto: full,
+                        insertar_texto_formato: 1,
+                        sort_texto: format!("{:05}", (score * 100.0) as i32),
+                        filter_texto: module_name.clone(),
                         preselect: score > 0.9,
                     });
                 }
@@ -396,7 +396,7 @@ impl CompletionResolver {
                             params: method
                                 .params
                                 .iter()
-                                .map(|p| format!("{}: {}", p.name, p.type_str))
+                                .map(|p| format!("{}: {}", p.name, p.tipo_texto))
                                 .collect(),
                             ret: method.tipo_retorno.clone(),
                             doc: method.doc.clone(),
@@ -410,8 +410,8 @@ impl CompletionResolver {
 
         for m in &methods {
             items.push(CompletionElemento {
-                label: m.name.clone(),
-                kind: 15,
+                etiqueta: m.name.clone(),
+                tipo: 15,
                 detail: format!(
                     "({}){}",
                     m.params.join(", "),
@@ -422,10 +422,10 @@ impl CompletionResolver {
                     }
                 ),
                 documentation: m.doc.clone(),
-                insert_text: format!("{}()", m.name),
-                insert_text_format: 1,
-                sort_text: "00090".to_string(),
-                filter_text: m.name.clone(),
+                insertar_texto: format!("{}()", m.name),
+                insertar_texto_formato: 1,
+                sort_texto: "00090".to_string(),
+                filter_texto: m.name.clone(),
                 preselect: false,
             });
         }
@@ -434,27 +434,27 @@ impl CompletionResolver {
     fn completar_tipos(&self, items: &mut Vec<CompletionElemento>) {
         for (name, desc) in &self.stdlib.builtin_types {
             items.push(CompletionElemento {
-                label: name.to_string(),
-                kind: 22,
+                etiqueta: name.to_string(),
+                tipo: 22,
                 detail: desc.to_string(),
                 documentation: String::new(),
-                insert_text: name.to_string(),
-                insert_text_format: 1,
-                sort_text: "00090".to_string(),
-                filter_text: name.to_string(),
+                insertar_texto: name.to_string(),
+                insertar_texto_formato: 1,
+                sort_texto: "00090".to_string(),
+                filter_texto: name.to_string(),
                 preselect: false,
             });
         }
         for (name, cls) in &self.stdlib.classes {
             items.push(CompletionElemento {
-                label: name.clone(),
-                kind: 12,
+                etiqueta: name.clone(),
+                tipo: 12,
                 detail: "clase definida por el usuario".to_string(),
                 documentation: cls.doc.clone(),
-                insert_text: name.clone(),
-                insert_text_format: 1,
-                sort_text: format!("000{}", 80),
-                filter_text: name.clone(),
+                insertar_texto: name.clone(),
+                insertar_texto_formato: 1,
+                sort_texto: format!("000{}", 80),
+                filter_texto: name.clone(),
                 preselect: false,
             });
         }
@@ -468,14 +468,14 @@ impl CompletionResolver {
         ];
         for (name, desc) in &attrs {
             items.push(CompletionElemento {
-                label: name.to_string(),
-                kind: 1,
+                etiqueta: name.to_string(),
+                tipo: 1,
                 detail: desc.to_string(),
                 documentation: String::new(),
-                insert_text: name.to_string(),
-                insert_text_format: 1,
-                sort_text: "00090".to_string(),
-                filter_text: name.to_string(),
+                insertar_texto: name.to_string(),
+                insertar_texto_formato: 1,
+                sort_texto: "00090".to_string(),
+                filter_texto: name.to_string(),
                 preselect: false,
             });
         }
@@ -532,18 +532,18 @@ impl CompletionResolver {
             ("anterior", "Valor anterior en postcondición", 7),
         ];
 
-        for (kw, desc, kind) in keywords {
+        for (kw, desc, tipo) in keywords {
             let score = fuzzy_score(parcial, kw);
             if score > 0.0 {
                 items.push(CompletionElemento {
-                    label: kw.to_string(),
-                    kind: *kind,
+                    etiqueta: kw.to_string(),
+                    tipo: *tipo,
                     detail: desc.to_string(),
                     documentation: String::new(),
-                    insert_text: kw.to_string(),
-                    insert_text_format: 1,
-                    sort_text: format!("{:05}", (30.0 + score * 20.0) as i32),
-                    filter_text: kw.to_string(),
+                    insertar_texto: kw.to_string(),
+                    insertar_texto_formato: 1,
+                    sort_texto: format!("{:05}", (30.0 + score * 20.0) as i32),
+                    filter_texto: kw.to_string(),
                     preselect: score > 0.95,
                 });
             }
@@ -553,14 +553,14 @@ impl CompletionResolver {
             let score = fuzzy_score(parcial, snip.keyword);
             if score > 0.0 {
                 items.push(CompletionElemento {
-                    label: snip.label.to_string(),
-                    kind: 14,
+                    etiqueta: snip.etiqueta.to_string(),
+                    tipo: 14,
                     detail: snip.description.to_string(),
                     documentation: String::new(),
-                    insert_text: snip.insert_text.to_string(),
-                    insert_text_format: 2,
-                    sort_text: format!("{:05}", (25.0 + score * 20.0) as i32),
-                    filter_text: snip.keyword.to_string(),
+                    insertar_texto: snip.insertar_texto.to_string(),
+                    insertar_texto_formato: 2,
+                    sort_texto: format!("{:05}", (25.0 + score * 20.0) as i32),
+                    filter_texto: snip.keyword.to_string(),
                     preselect: false,
                 });
             }
@@ -576,7 +576,7 @@ impl CompletionResolver {
         for sym in symbols {
             let score = fuzzy_score(parcial, &sym.name);
             if score > 0.0 {
-                let kind = match sym.kind {
+                let tipo = match sym.tipo {
                     SymbolTipo::Variable => 6u32,
                     SymbolTipo::Funcion => 3u32,
                     SymbolTipo::Clase => 12u32,
@@ -584,19 +584,19 @@ impl CompletionResolver {
                     SymbolTipo::Rasgo => 12u32,
                     SymbolTipo::Parametro => 6u32,
                 };
-                let detail = match sym.kind {
+                let detail = match sym.tipo {
                     SymbolTipo::Funcion => format!("fn({})", sym.params.join(", ")),
-                    _ => format!("{:?}", sym.kind),
+                    _ => format!("{:?}", sym.tipo),
                 };
                 items.push(CompletionElemento {
-                    label: sym.name.clone(),
-                    kind,
+                    etiqueta: sym.name.clone(),
+                    tipo,
                     detail,
                     documentation: sym.doc.clone(),
-                    insert_text: sym.name.clone(),
-                    insert_text_format: 1,
-                    sort_text: format!("{:05}", (90.0 + score * 10.0) as i32),
-                    filter_text: sym.name.clone(),
+                    insertar_texto: sym.name.clone(),
+                    insertar_texto_formato: 1,
+                    sort_texto: format!("{:05}", (90.0 + score * 10.0) as i32),
+                    filter_texto: sym.name.clone(),
                     preselect: score > 0.95,
                 });
             }
@@ -611,23 +611,23 @@ impl CompletionResolver {
                     let params_str: Vec<String> = f
                         .params
                         .iter()
-                        .map(|p| format!("{}: {}", p.name, p.type_str))
+                        .map(|p| format!("{}: {}", p.name, p.tipo_texto))
                         .collect();
                     let detail = format!(
                         "{} → {} [{}.fa]",
                         params_str.join(", "),
                         f.tipo_retorno,
-                        f.module
+                        f.modulo
                     );
                     items.push(CompletionElemento {
-                        label: f.name.clone(),
-                        kind: if f.is_method { 15 } else { 3 },
+                        etiqueta: f.name.clone(),
+                        tipo: if f.es_metodo { 15 } else { 3 },
                         detail,
                         documentation: f.doc.clone(),
-                        insert_text: f.name.clone(),
-                        insert_text_format: 1,
-                        sort_text: format!("{:05}", (50.0 + score * 20.0) as i32),
-                        filter_text: f.name.clone(),
+                        insertar_texto: f.name.clone(),
+                        insertar_texto_formato: 1,
+                        sort_texto: format!("{:05}", (50.0 + score * 20.0) as i32),
+                        filter_texto: f.name.clone(),
                         preselect: false,
                     });
                 }

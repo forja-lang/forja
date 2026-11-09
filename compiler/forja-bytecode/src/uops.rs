@@ -333,7 +333,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Call especializados (Fase 2b) — solo existen en vm_fast.rs post-quickening,
         // nunca en bytecode original. Se mapean a su equivalente Call/CallMethod genérico.
         Opcode::LlamarDirecto(idx, nargs) => Uop::Call(format!("%direct_{}", idx), *nargs),
-        Opcode::LlamarIncorporada(kind, nargs) => Uop::Call(format!("%builtin_{:?}", kind), *nargs),
+        Opcode::LlamarIncorporada(tipo, nargs) => Uop::Call(format!("%builtin_{:?}", tipo), *nargs),
         Opcode::LlamarMetodoCacheado(method_sym_id, nargs) => {
             Uop::CallMethod(format!("%cached_{}", method_sym_id), *nargs)
         }

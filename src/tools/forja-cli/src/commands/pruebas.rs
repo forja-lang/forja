@@ -92,7 +92,7 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
 
         // FASE 6: Transpilador a Rust (sin fn main automático para tests)
         let mut transpiler = transpiler::Transpiler::nuevo();
-        transpiler.saltar_main = true;
+        transpiler.saltar_principal = true;
         let rust_code = match transpiler.transpilar(&programa) {
             Ok(codigo) => codigo,
             Err(errores) => {

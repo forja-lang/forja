@@ -10,10 +10,10 @@ pub enum SocketTipo {
     UdpSocket,
 }
 
-/// Estado completo de un socket en el socket_heap de la VM
+/// Estado completo de un socket en el socket_monticulo de la VM
 #[derive(Debug, Clone)]
 pub struct SocketState {
-    pub kind: SocketTipo,
+    pub tipo: SocketTipo,
     pub timeout_ms: Option<u64>,
     pub nonblocking: bool,
     pub connected: bool,
@@ -29,7 +29,7 @@ impl SocketState {
         let local = stream.local_addr().ok().map(|a| a.to_string());
         let peer = stream.peer_addr().ok().map(|a| a.to_string());
         SocketState {
-            kind: SocketTipo::TcpStream,
+            tipo: SocketTipo::TcpStream,
             timeout_ms: Some(30_000),
             nonblocking: false,
             connected: true,
@@ -44,7 +44,7 @@ impl SocketState {
     pub fn nuevo_tcp_listener(listener: std::net::TcpListener) -> Self {
         let local = listener.local_addr().ok().map(|a| a.to_string());
         SocketState {
-            kind: SocketTipo::TcpListener,
+            tipo: SocketTipo::TcpListener,
             timeout_ms: Some(30_000),
             nonblocking: false,
             connected: true,
@@ -59,7 +59,7 @@ impl SocketState {
     pub fn nuevo_udp_socket(socket: std::net::UdpSocket) -> Self {
         let local = socket.local_addr().ok().map(|a| a.to_string());
         SocketState {
-            kind: SocketTipo::UdpSocket,
+            tipo: SocketTipo::UdpSocket,
             timeout_ms: Some(30_000),
             nonblocking: false,
             connected: true,

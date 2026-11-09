@@ -559,7 +559,7 @@ fn manejar_siguiente(state: &mut DAPState, seq: i64) {
         body: Some(serde_json::json!({
             "reason": "step",
             "threadId": 1,
-            "description": format!("Step completado en línea {}", state.debugger.current_line),
+            "description": format!("Step completado en línea {}", state.debugger.linea_actual),
         })),
     };
     send_json(&evt);
@@ -596,7 +596,7 @@ fn manejar_step_in(state: &mut DAPState, seq: i64) {
         body: Some(serde_json::json!({
             "reason": "step",
             "threadId": 1,
-            "description": format!("Step into completado en línea {}", state.debugger.current_line),
+            "description": format!("Step into completado en línea {}", state.debugger.linea_actual),
         })),
     };
     send_json(&evt);
@@ -633,7 +633,7 @@ fn manejar_step_out(state: &mut DAPState, seq: i64) {
         body: Some(serde_json::json!({
             "reason": "step",
             "threadId": 1,
-            "description": format!("Step out completado en línea {}", state.debugger.current_line),
+            "description": format!("Step out completado en línea {}", state.debugger.linea_actual),
         })),
     };
     send_json(&evt);

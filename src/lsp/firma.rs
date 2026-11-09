@@ -3,7 +3,7 @@ use crate::token::{Token, TokenTipo};
 
 #[derive(Debug, Clone)]
 pub struct SignatureInformacion {
-    pub label: String,
+    pub etiqueta: String,
     pub documentation: String,
     pub params: Vec<ParamSignature>,
     pub active_param: usize,
@@ -11,7 +11,7 @@ pub struct SignatureInformacion {
 
 #[derive(Debug, Clone)]
 pub struct ParamSignature {
-    pub label: String,
+    pub etiqueta: String,
     pub documentation: String,
 }
 
@@ -36,13 +36,13 @@ impl SignatureResolver {
         for sym in symbols {
             if sym.name == func_name {
                 return Some(SignatureInformacion {
-                    label: format!("{}({})", func_name, sym.params.join(", ")),
+                    etiqueta: format!("{}({})", func_name, sym.params.join(", ")),
                     documentation: sym.doc.clone(),
                     params: sym
                         .params
                         .iter()
                         .map(|p| ParamSignature {
-                            label: p.clone(),
+                            etiqueta: p.clone(),
                             documentation: String::new(),
                         })
                         .collect(),
@@ -57,10 +57,10 @@ impl SignatureResolver {
                 let params_str: Vec<String> = f
                     .params
                     .iter()
-                    .map(|p| format!("{}: {}", p.name, p.type_str))
+                    .map(|p| format!("{}: {}", p.name, p.tipo_texto))
                     .collect();
                 return Some(SignatureInformacion {
-                    label: format!(
+                    etiqueta: format!(
                         "{}({}){}",
                         func_name,
                         params_str.join(", "),
@@ -75,7 +75,7 @@ impl SignatureResolver {
                         .params
                         .iter()
                         .map(|p| ParamSignature {
-                            label: format!("{}: {}", p.name, p.type_str),
+                            etiqueta: format!("{}: {}", p.name, p.tipo_texto),
                             documentation: String::new(),
                         })
                         .collect(),
@@ -101,7 +101,7 @@ impl SignatureResolver {
             if i >= tokens.len() {
                 continue;
             }
-            match &tokens[i].kind {
+            match &tokens[i].tipo {
                 TokenTipo::ParenCerrar => paren_depth += 1,
                 TokenTipo::ParenAbrir => {
                     if paren_depth == 0 {
@@ -109,7 +109,7 @@ impl SignatureResolver {
                         // Buscar el identificador o método antes de este (
                         if i > 0 {
                             for j in (0..i).rev() {
-                                match &tokens[j].kind {
+                                match &tokens[j].tipo {
                                     TokenTipo::Identificador(name) => {
                                         return Some((name.clone(), arg_index));
                                     }
@@ -133,7 +133,7 @@ impl SignatureResolver {
         if found_abrir {
             if let Some(prev) = cursor.checked_sub(2) {
                 if prev < tokens.len() {
-                    if let TokenTipo::Identificador(name) = &tokens[prev].kind {
+                    if let TokenTipo::Identificador(name) = &tokens[prev].tipo {
                         return Some((name.clone(), arg_index));
                     }
                 }

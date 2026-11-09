@@ -317,8 +317,8 @@ impl ForjaFast {
                 // cuando sea posible, eliminando el hash lookup.
                 Opcode::Llamar(nombre, nargs) => {
                     let sym = self.runtime.tabla_simbolos.internar(nombre.as_ref());
-                    // Buscar por índice usando sym_to_func_idx (mapeo ok a function_table)
-                    if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
+                    // Buscar por índice usando indice_simbolo_funcion (mapeo ok a tabla_funciones)
+                    if let Some(&func_idx) = self.indice_simbolo_funcion.get(&sym) {
                         self.bytecode[i] = Opcode::LlamarDirecto(func_idx, nargs);
                     } else if sym == self.sym_escribir {
                         self.bytecode[i] =
@@ -352,7 +352,7 @@ impl ForjaFast {
                 }
                 Opcode::LlamadaFinal(nombre, nargs) => {
                     let sym = self.runtime.tabla_simbolos.internar(nombre.as_ref());
-                    if self.sym_to_func_idx.contains_key(&sym) {
+                    if self.indice_simbolo_funcion.contains_key(&sym) {
                         self.bytecode[i] = Opcode::LlamadaFinal(Arc::from(nombre.as_ref()), nargs);
                     }
                 }
@@ -400,8 +400,8 @@ impl ForjaFast {
         }
 
         // ── PGO: mapeo de nombre de función por índice (para profiling) ─────
-        let mut funcion_names = vec![String::new(); self.function_table.entries.len()];
-        for (sym, idx) in &self.sym_to_func_idx {
+        let mut funcion_names = vec![String::new(); self.tabla_funciones.entries.len()];
+        for (sym, idx) in &self.indice_simbolo_funcion {
             if *idx < funcion_names.len() {
                 funcion_names[*idx] = self.runtime.tabla_simbolos.texto(*sym).to_string();
             }

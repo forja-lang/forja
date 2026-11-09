@@ -3,12 +3,12 @@
 //! Es el primer paso para que `native_registry` viva en `forja-native` sin
 //! depender de `forja-vm`.
 
-use crate::class_descriptor::DescriptorClase;
+use crate::descriptor_clase::DescriptorClase;
 use crate::sandbox::{SandboxFilesystem, SandboxProceso, SandboxRed};
 use crate::shape::{IdForma, RegistroFormas};
 use crate::socket::SocketState;
 use crate::tipos::{CanalValor, ErrFast, ObjVal, ValorFast};
-use forja_bytecode::symbol_table::{IdSimbolo, TablaSimbolos};
+use forja_bytecode::tabla_simbolos::{IdSimbolo, TablaSimbolos};
 use std::any::Any;
 use std::collections::HashMap;
 use std::collections::HashSet;

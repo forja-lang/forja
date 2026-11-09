@@ -7,7 +7,7 @@ use forja::bytecode::GeneradorBytecode;
 use forja::error::{self, color};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
-use forja::symbol_table::IdSimbolo;
+use forja::tabla_simbolos::IdSimbolo;
 use rustyline::{history::FileHistory, Editor};
 
 /// REPL interactivo de Forja con historial y autocompletado
@@ -308,7 +308,7 @@ impl REPL {
                                                 "{} {} funciones recargadas",
                                                 color::verde("♻️"),
                                                 color::negrita(
-                                                    &vm.function_table.entries.len().to_string()
+                                                    &vm.tabla_funciones.entries.len().to_string()
                                                 )
                                             );
                                         }
@@ -330,7 +330,7 @@ impl REPL {
                                                 acc.wrapping_mul(31).wrapping_add(b as u32)
                                             }),
                                         );
-                                        if !vm.module_registry.contains_key(&modulo_sym) {
+                                        if !vm.registro_modulos.contains_key(&modulo_sym) {
                                             eprintln!(
                                                 "{}",
                                                 error::error(&format!(
@@ -340,20 +340,20 @@ impl REPL {
                                             );
                                             continue;
                                         }
-                                        let programa = match vm.module_resolver.recargar(modulo_sym)
-                                        {
-                                            Ok(p) => p,
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "{}",
-                                                    error::error(&format!(
-                                                        "Error recargando módulo: {}",
-                                                        e[0]
-                                                    ))
-                                                );
-                                                continue;
-                                            }
-                                        };
+                                        let programa =
+                                            match vm.resolvedor_modulos.recargar(modulo_sym) {
+                                                Ok(p) => p,
+                                                Err(e) => {
+                                                    eprintln!(
+                                                        "{}",
+                                                        error::error(&format!(
+                                                            "Error recargando módulo: {}",
+                                                            e[0]
+                                                        ))
+                                                    );
+                                                    continue;
+                                                }
+                                            };
                                         let mut gen = GeneradorBytecode::nuevo();
                                         let modulo_bytecode =
                                             match gen.generar_para_modulo(&programa, modulo_sym) {
@@ -370,7 +370,7 @@ impl REPL {
                                             };
                                         // Obtener versión desde el registro
                                         let version = vm
-                                            .module_registry
+                                            .registro_modulos
                                             .get(&modulo_sym)
                                             .map(|informacion| informacion.version)
                                             .unwrap_or(0);

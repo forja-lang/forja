@@ -300,9 +300,9 @@ fn curl(url: &str, tiempo_max: &str) -> Option<Vec<u8>> {
 pub struct Release {
     pub version: String,
     pub zip: Option<String>,
-    pub setup: Option<String>,
+    pub configurar: Option<String>,
     pub zip_digest: Option<String>,
-    pub setup_digest: Option<String>,
+    pub configurar_digest: Option<String>,
 }
 
 fn release_json(canal: Canal) -> Option<Value> {
@@ -349,14 +349,14 @@ fn nuevo_release(canal: Canal) -> Option<Release> {
     };
 
     let zip = buscar("-windows-x64.zip");
-    let setup = buscar(SETUP_ASSET);
+    let configurar = buscar(SETUP_ASSET);
 
     Some(Release {
         version,
         zip: zip.as_ref().map(|z| z.0.clone()),
         zip_digest: zip.and_then(|z| z.1),
-        setup: setup.as_ref().map(|s| s.0.clone()),
-        setup_digest: setup.and_then(|s| s.1),
+        configurar: configurar.as_ref().map(|s| s.0.clone()),
+        configurar_digest: configurar.and_then(|s| s.1),
     })
 }
 
@@ -539,11 +539,11 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
         return 1;
     };
 
-    let Some(temp) = temporal_directorio() else {
+    let Some(temporal) = temporal_directorio() else {
         return 1;
     };
 
-    let zip = temp.join(format!("forja-{}.zip", release.version));
+    let zip = temporal.join(format!("forja-{}.zip", release.version));
     println!("Bajando paquete de actualización…");
 
     if !descargar(&url, &zip) {
@@ -559,7 +559,7 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
 
     println!("Verificado (SHA-256). Aplicando cambios…");
 
-    let extraido = temp.join(format!("forja-extraido-{}", release.version));
+    let extraido = temporal.join(format!("forja-extraido-{}", release.version));
     let _ = fs::remove_dir_all(&extraido);
     let _ = fs::create_dir_all(&extraido);
 
@@ -761,31 +761,33 @@ fn aplicar_actualizacion() -> i32 {
     // 2) Si el delta no se puede, cae al instalador completo en silencio.
     println!("El modo delta no funcionó; uso el instalador completo…");
 
-    let Some(setup_url) = release.setup.clone() else {
+    let Some(setup_url) = release.configurar.clone() else {
         eprintln!(
             "El release no publica {SETUP_ASSET}. Actualizá a mano desde https://github.com/{REPO}/releases"
         );
         return 1;
     };
 
-    let Some(temp) = temporal_directorio() else {
+    let Some(temporal) = temporal_directorio() else {
         return 1;
     };
 
-    let setup = temp.join(format!("forja-setup-{}.exe", release.version));
-    if !descargar(&setup_url, &setup) {
+    let configurar = temporal.join(format!("forja-setup-{}.exe", release.version));
+    if !descargar(&setup_url, &configurar) {
         eprintln!("No pude descargar {}", setup_url);
         return 1;
     }
 
-    if let Err(e) = verificar_digest(&setup, &release.setup_digest) {
+    if let Err(e) = verificar_digest(&configurar, &release.configurar_digest) {
         eprintln!("{e}");
-        let _ = fs::remove_file(&setup);
+        let _ = fs::remove_file(&configurar);
         return 1;
     }
 
-    let estado = Command::new(&setup).args(["/install", "/quiet"]).status();
-    let _ = fs::remove_file(&setup);
+    let estado = Command::new(&configurar)
+        .args(["/install", "/quiet"])
+        .status();
+    let _ = fs::remove_file(&configurar);
 
     match estado {
         Ok(s) if s.success() => {
@@ -859,12 +861,12 @@ pub fn actualizar(args: &[String]) -> i32 {
 
         // Copia local: la desinstalación borra el ejecutable cacheado del bundle
         // que estamos usando, así que no se puede relanzar desde ahí.
-        let Some(temp) = temporal_directorio() else {
+        let Some(temporal) = temporal_directorio() else {
             return 1;
         };
-        let setup = temp.join("forja-setup-cambio.exe");
+        let configurar = temporal.join("forja-setup-cambio.exe");
 
-        if let Err(e) = fs::copy(&setup_original, &setup) {
+        if let Err(e) = fs::copy(&setup_original, &configurar) {
             eprintln!("No pude preparar el instalador: {e}");
             return 1;
         }
@@ -872,7 +874,10 @@ pub fn actualizar(args: &[String]) -> i32 {
         escribir_pedido(&manifiesto.path, &features.join(","));
 
         println!("Desinstalando la versión actual…");
-        match Command::new(&setup).args(["/uninstall", "/quiet"]).status() {
+        match Command::new(&configurar)
+            .args(["/uninstall", "/quiet"])
+            .status()
+        {
             Ok(s) if s.success() => {}
             Ok(s) => {
                 eprintln!("La desinstalación terminó con código {s}. No se cambió nada.");
@@ -887,8 +892,10 @@ pub fn actualizar(args: &[String]) -> i32 {
         }
 
         println!("Instalando con los componentes elegidos…");
-        let resultado = Command::new(&setup).args(["/install", "/quiet"]).status();
-        let _ = fs::remove_file(&setup);
+        let resultado = Command::new(&configurar)
+            .args(["/install", "/quiet"])
+            .status();
+        let _ = fs::remove_file(&configurar);
 
         return match resultado {
             Ok(s) if s.success() => {

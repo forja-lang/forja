@@ -6,7 +6,7 @@
 // en `mod.rs`; este módulo expone los tipos que consume.
 
 use crate::shape::IdForma;
-use forja_bytecode::symbol_table::IdSimbolo;
+use forja_bytecode::tabla_simbolos::IdSimbolo;
 use forja_bytecode::Opcode;
 use std::sync::Arc;
 
@@ -216,13 +216,13 @@ impl ValorFast {
 
     #[inline(always)]
     pub fn es_entero(&self) -> bool {
-        crate::prof_count!(es_entero_calls);
+        crate::prof_count!(llamadas_es_entero);
         self.es_tagged() && (self.0 & Self::TAG_MASK) == Self::TAG_INT
     }
 
     #[inline(always)]
     pub fn es_flotante(&self) -> bool {
-        crate::prof_count!(es_flotante_calls);
+        crate::prof_count!(llamadas_es_flotante);
         (self.0 & Self::QNAN) != Self::QNAN
     }
 
@@ -313,7 +313,7 @@ impl ValorFast {
         } else if self.es_flotante() {
             self.a_flotante() != 0.0
         } else {
-            // ⚠️ Sin str_heap no se puede verificar si el string está vacío
+            // ⚠️ Sin texto_monticulo no se puede verificar si el string está vacío
             // (usar `es_verdadero_con_monticulo`). Exacto, objetos, arrays y mapas
             // siempre son verdadero.
             true
@@ -468,7 +468,7 @@ pub struct VersionedBytecode {
 }
 
 /// Representación portable de un valor con referencias a heap, para cruzar
-/// canales entre VMs. Los índices de `obj_heap`/`array_heap`/`map_heap`
+/// canales entre VMs. Los índices de `objeto_monticulo`/`arreglo_monticulo`/`mapa_monticulo`
 /// son locales a cada VM; este árbol se reconstruye en el receptor.
 #[derive(Clone, Debug)]
 pub enum ValorPortable {
@@ -495,13 +495,13 @@ pub enum ValorPortable {
 
 /// Tipo de mensaje transportado a través de canales entre VMs.
 /// Los strings se envían como `Arc<str>` (contenido real) en lugar de un índice
-/// VM-local a `str_heap`, ya que cada VM tiene su propio `str_heap` y los
+/// VM-local a `texto_monticulo`, ya que cada VM tiene su propio `texto_monticulo` y los
 /// índices no son portables entre instancias de VM.
 #[derive(Clone, Debug)]
 pub enum CanalValor {
     /// Valores auto-contenidos: int, bool, nil.
     Valor(ValorFast),
-    /// Strings: el contenido real del string, para re-indexar en el str_heap
+    /// Strings: el contenido real del string, para re-indexar en el texto_monticulo
     /// del receptor.
     Texto(Arc<str>),
     /// valor compuesto serializado (arreglo/mapa/objeto) para

@@ -6,7 +6,7 @@
 
 #![allow(rustdoc::broken_intra_doc_links)]
 
-pub mod class_descriptor;
+pub mod descriptor_clase;
 pub mod fprofiler;
 pub mod gc;
 pub mod host;
@@ -15,7 +15,7 @@ pub mod sandbox;
 pub mod shape;
 pub mod socket;
 pub mod tipos;
-pub use class_descriptor::*;
+pub use descriptor_clase::*;
 pub use fprofiler::*;
 pub use gc::{GcTelemetry, Generation};
 pub use host::Anfitrion;

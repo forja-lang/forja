@@ -306,7 +306,7 @@ impl ConversorABytecode {
 
     /// Reserva una variable temporal (el `Declare`/`Store` lo emite el `guardar!`
     /// cuando el valor ya está en la cima de la pila).
-    fn temp(&mut self) -> usize {
+    fn temporal(&mut self) -> usize {
         let var = self.next_var;
         self.next_var += 1;
         var
@@ -329,7 +329,7 @@ impl ConversorABytecode {
                 if let Some(v) = resultado {
                     let var = match self.slots_valor.get(&v).copied() {
                         Some(var) => var,
-                        None => self.temp(),
+                        None => self.temporal(),
                     };
                     // `StoreIdxGlobal` siempre escribe (a diferencia de
                     // `DeclareIdxGlobal`, que solo inicializa la primera vez y
@@ -413,7 +413,7 @@ impl ConversorABytecode {
                 if let Some(v) = resultado {
                     let var = match self.slots_valor.get(&v).copied() {
                         Some(var) => var,
-                        None => self.temp(),
+                        None => self.temporal(),
                     };
                     self.valor_to_variable.insert(v, var);
                 }
@@ -502,7 +502,7 @@ impl ConversorABytecode {
                 // Un objeto (y no un Texto) es lo que permite que `CallClosure`
                 // pase el entorno a la función anónima.
                 bytecode.push(Opcode::NuevoObjeto(Arc::from("Closure")));
-                let obj_var = self.temp();
+                let obj_var = self.temporal();
                 bytecode.push(self.almacen_variable(obj_var));
                 // fn = "<nombre>"
                 bytecode.push(Opcode::PushTexto(Arc::from(nombre.as_str())));
@@ -542,7 +542,7 @@ impl ConversorABytecode {
                 // (no en una variable con nombre): `optimizar_indices` renumera
                 // los nombres sin conocer los slots que ya usa el IR y podía
                 // pisar un temporal (rompía `self.campo = Variante` en métodos).
-                let obj_var = self.temp();
+                let obj_var = self.temporal();
                 bytecode.push(self.almacen_variable(obj_var));
                 // `valor` primero y `tipo` después: `Opcode::Intentar` busca los
                 // campos en el descriptor por nombre, pero el orden de creación
@@ -603,7 +603,7 @@ impl ConversorABytecode {
                 bytecode.push(Opcode::NuevoObjeto(Arc::from(clase_name.as_str())));
                 // temporal anónimo del IR en vez de `Declare(nombre)` (ver
                 // `EnumObject`).
-                let obj_var = self.temp();
+                let obj_var = self.temporal();
                 bytecode.push(self.almacen_variable(obj_var));
                 for (campo, valor) in campos {
                     // `SetField` ya consume [valor, objeto]: un `Pop` extra
@@ -741,7 +741,7 @@ impl ConversorABytecode {
             // el slot del valor está preasignado (ver `convert_function`).
             let var = match self.slots_valor.get(&v).copied() {
                 Some(var) => var,
-                None => self.temp(),
+                None => self.temporal(),
             };
             bytecode.push(self.almacen_variable(var));
             self.valor_to_variable.insert(v, var);

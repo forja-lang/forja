@@ -8,7 +8,7 @@
 //! transiciones de `crate::shape::Forma`; esta es la que consulta el registro de
 //! clases, aquella la que administra el registro de formas.
 
-use forja_bytecode::symbol_table::IdSimbolo;
+use forja_bytecode::tabla_simbolos::IdSimbolo;
 use std::collections::HashMap;
 
 /// Distribución de campos compartida por todas las instancias de una clase.
@@ -79,7 +79,7 @@ impl FormaCampos {
     ///
     /// # Devuelve
     /// `true` si no se agregó ningún campo todavía.
-    pub fn is_empty(&self) -> bool {
+    pub fn es_vacio(&self) -> bool {
         self.longitud() == 0
     }
 }

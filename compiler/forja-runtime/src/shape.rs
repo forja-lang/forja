@@ -10,7 +10,7 @@
 //! classes*: la primera instancia paga el costo de crear la forma y las
 //! siguientes la reutilizan.
 
-use forja_bytecode::symbol_table::IdSimbolo;
+use forja_bytecode::tabla_simbolos::IdSimbolo;
 use std::collections::HashMap;
 
 /// Identificador numérico único de una [`Forma`].
@@ -97,7 +97,7 @@ impl Forma {
     ///
     /// # Devuelve
     /// `true` si no se agregó ningún campo todavía.
-    pub fn is_empty(&self) -> bool {
+    pub fn es_vacio(&self) -> bool {
         self.longitud() == 0
     }
 }

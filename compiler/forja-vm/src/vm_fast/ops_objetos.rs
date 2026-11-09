@@ -16,11 +16,11 @@ impl ForjaFast {
             return None;
         }
         let idx = valor.indice_objeto() as usize;
-        let clase = self.runtime.obj_heap.get(idx)?.clase;
-        let desc = self.runtime.class_descriptors.get(&clase)?;
+        let clase = self.runtime.objeto_monticulo.get(idx)?.clase;
+        let desc = self.runtime.descriptores_clase.get(&clase)?;
         let i_fn = desc.forma.obtener_indice(self.sym_closure_fn)?;
         let i_env = desc.forma.obtener_indice(self.sym_closure_env)?;
-        let campos = &self.runtime.obj_heap.get(idx)?.campos_vec;
+        let campos = &self.runtime.objeto_monticulo.get(idx)?.campos_vec;
         let fn_val = *campos.get(i_fn)?;
         let env_val = *campos.get(i_env)?;
         if !fn_val.es_texto() {
@@ -28,7 +28,7 @@ impl ForjaFast {
         }
         let nombre = self
             .runtime
-            .str_heap
+            .texto_monticulo
             .get(fn_val.indice_texto() as usize)?
             .clone();
         Some((nombre, env_val))
@@ -44,7 +44,7 @@ impl ForjaFast {
             Opcode::NuevoObjeto(c) => {
                 let clase_sym = self.simbolo_para_ip(self.ip, c);
                 self.runtime
-                    .class_descriptors
+                    .descriptores_clase
                     .entry(clase_sym)
                     .or_insert_with(|| {
                         let forma = FormaCampos::nuevo();
@@ -72,7 +72,7 @@ impl ForjaFast {
                     let campo_sym = self.simbolo_para_ip(ip, c);
                     let cache = self.ic_setfield[ip];
                     if !matches!(cache, Pic::Mega) {
-                        let clase_actual = self.runtime.obj_heap[obj_idx as usize].clase;
+                        let clase_actual = self.runtime.objeto_monticulo[obj_idx as usize].clase;
                         if let Some(idx_cache) = cache.hit(clase_actual) {
                             if idx_cache < self.obtener_objeto(obj_idx).campos_vec.len() {
                                 let _ = self.desapilar_valor()?;
@@ -86,7 +86,7 @@ impl ForjaFast {
                     // Fallback
                     let _ = self.desapilar_valor()?; // objeto
                     let v = self.desapilar_valor()?; // valor
-                    let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
+                    let clase_sym = self.runtime.objeto_monticulo[obj_idx as usize].clase;
                     if self.show_bytecode {
                         let clase_str = self.runtime.tabla_simbolos.texto(clase_sym);
                         eprintln!(
@@ -95,7 +95,7 @@ impl ForjaFast {
                             self.mostrar_valor(&v)
                         );
                     }
-                    if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+                    if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym) {
                         let forma_indice = desc.forma.obtener_indice(campo_sym);
                         if let Some(sidx) = forma_indice {
                             // Campo conocido en el forma — asignar directamente
@@ -103,13 +103,22 @@ impl ForjaFast {
                                 eprintln!(
                                     "[SetField] known field sidx={}, campos_vec.len={}",
                                     sidx,
-                                    self.runtime.obj_heap[obj_idx as usize].campos_vec.len()
+                                    self.runtime.objeto_monticulo[obj_idx as usize]
+                                        .campos_vec
+                                        .len()
                                 );
                             }
-                            if sidx < self.runtime.obj_heap[obj_idx as usize].campos_vec.len() {
-                                self.runtime.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
+                            if sidx
+                                < self.runtime.objeto_monticulo[obj_idx as usize]
+                                    .campos_vec
+                                    .len()
+                            {
+                                self.runtime.objeto_monticulo[obj_idx as usize].campos_vec[sidx] =
+                                    v;
                             } else {
-                                self.runtime.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                self.runtime.objeto_monticulo[obj_idx as usize]
+                                    .campos_vec
+                                    .push(v);
                             }
                             self.ic_setfield[self.ip] =
                                 self.ic_setfield[self.ip].record_miss(clase_sym, sidx);
@@ -118,7 +127,7 @@ impl ForjaFast {
                                 eprintln!("[SetField] new field, expanding forma");
                             }
                             let desc_mut =
-                                self.runtime.class_descriptors.get_mut(&clase_sym).unwrap();
+                                self.runtime.descriptores_clase.get_mut(&clase_sym).unwrap();
                             let sidx = desc_mut.forma.agregar_campo(campo_sym);
                             // Transición de forma del objeto (RegistroFormas) para
                             // inline caches basados en IdForma.
@@ -128,11 +137,18 @@ impl ForjaFast {
                                 .registro_formas
                                 .agregar_campo_dinamico(forma_id, campo_sym);
                             self.runtime.formas_objeto[obj_idx as usize] = nuevo_shape;
-                            self.runtime.obj_heap[obj_idx as usize].forma_id = nuevo_shape;
-                            if sidx < self.runtime.obj_heap[obj_idx as usize].campos_vec.len() {
-                                self.runtime.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
+                            self.runtime.objeto_monticulo[obj_idx as usize].forma_id = nuevo_shape;
+                            if sidx
+                                < self.runtime.objeto_monticulo[obj_idx as usize]
+                                    .campos_vec
+                                    .len()
+                            {
+                                self.runtime.objeto_monticulo[obj_idx as usize].campos_vec[sidx] =
+                                    v;
                             } else {
-                                self.runtime.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                self.runtime.objeto_monticulo[obj_idx as usize]
+                                    .campos_vec
+                                    .push(v);
                             }
                             self.ic_setfield[self.ip] =
                                 self.ic_setfield[self.ip].record_miss(clase_sym, sidx);
@@ -143,12 +159,16 @@ impl ForjaFast {
                             eprintln!("[SetField] no class descriptor, using raw field_sym");
                         }
                         if (campo_sym.0 as usize)
-                            < self.runtime.obj_heap[obj_idx as usize].campos_vec.len()
+                            < self.runtime.objeto_monticulo[obj_idx as usize]
+                                .campos_vec
+                                .len()
                         {
-                            self.runtime.obj_heap[obj_idx as usize].campos_vec
+                            self.runtime.objeto_monticulo[obj_idx as usize].campos_vec
                                 [campo_sym.0 as usize] = v;
                         } else {
-                            self.runtime.obj_heap[obj_idx as usize].campos_vec.push(v);
+                            self.runtime.objeto_monticulo[obj_idx as usize]
+                                .campos_vec
+                                .push(v);
                         }
                     }
                 } else {
@@ -193,7 +213,7 @@ impl ForjaFast {
                         c,
                         obj_val.es_objeto(),
                         self.top_longitud,
-                        self.stack.len()
+                        self.pila.len()
                     );
                 }
                 if obj_val.es_objeto() {
@@ -204,7 +224,7 @@ impl ForjaFast {
                         // Megamórfico: ir directo al fallback
                     } else {
                         let obj_idx = obj_val.indice_objeto();
-                        let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
+                        let clase_sym = self.runtime.objeto_monticulo[obj_idx as usize].clase;
                         if let Some(idx_cache) = cache.hit(clase_sym) {
                             if idx_cache < self.obtener_objeto(obj_idx).campos_vec.len() {
                                 let valor = self.obtener_objeto(obj_idx).campos_vec[idx_cache];
@@ -218,7 +238,7 @@ impl ForjaFast {
                     // Fallback: búsqueda con Shape
                     let obj = self.desapilar_valor()?;
                     let idx = obj.indice_objeto();
-                    let clase_sym = self.runtime.obj_heap[idx as usize].clase;
+                    let clase_sym = self.runtime.objeto_monticulo[idx as usize].clase;
                     if self.show_bytecode {
                         let clase_str = self.runtime.tabla_simbolos.texto(clase_sym);
                         eprintln!(
@@ -226,10 +246,11 @@ impl ForjaFast {
                             idx, clase_str, campo_sym
                         );
                     }
-                    let valor = if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+                    let valor = if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym)
+                    {
                         if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
-                            if sidx < self.runtime.obj_heap[idx as usize].campos_vec.len() {
-                                self.runtime.obj_heap[idx as usize].campos_vec[sidx]
+                            if sidx < self.runtime.objeto_monticulo[idx as usize].campos_vec.len() {
+                                self.runtime.objeto_monticulo[idx as usize].campos_vec[sidx]
                             } else {
                                 ValorFast::nulo()
                             }
@@ -242,7 +263,7 @@ impl ForjaFast {
                     self.empujar_valor(valor);
                     // Actualizar PIC
                     let ip = self.ip;
-                    if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+                    if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym) {
                         if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
                             self.ic_getfield[ip] =
                                 self.ic_getfield[ip].record_miss(clase_sym, sidx);
@@ -252,7 +273,7 @@ impl ForjaFast {
                     let mapa_obj = self.desapilar_valor()?;
                     let midx = mapa_obj.indice_mapa();
                     let clave_texto = c.as_ref();
-                    let valor = self.runtime.map_heap[midx as usize]
+                    let valor = self.runtime.mapa_monticulo[midx as usize]
                         .get(clave_texto)
                         .cloned()
                         .unwrap_or_else(ValorFast::nulo);

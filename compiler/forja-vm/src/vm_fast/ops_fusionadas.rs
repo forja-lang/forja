@@ -159,7 +159,7 @@ impl ForjaFast {
             // LoadJumpSiFalso(idx, target): carga condicional y salta
             Opcode::CargarSaltoSiFalso(idx, target) => {
                 let val = self.cargar_local(*idx);
-                if !val.es_verdadero_con_monticulo(&self.runtime.str_heap) {
+                if !val.es_verdadero_con_monticulo(&self.runtime.texto_monticulo) {
                     self.ip = *target;
                 } else {
                     self.ip += 1;
@@ -247,10 +247,10 @@ impl ForjaFast {
                 let val = self.desapilar_valor()?;
                 let es_match = if val.es_objeto() {
                     let obj_idx = val.indice_objeto() as usize;
-                    if obj_idx < self.runtime.obj_heap.len() {
+                    if obj_idx < self.runtime.objeto_monticulo.len() {
                         // Buscar campo "tag" en campos_vec por índice 0 (convención)
                         // Cuando se crean enum variants, el tag se guarda en posición 0
-                        let campos = &self.runtime.obj_heap[obj_idx].campos_vec;
+                        let campos = &self.runtime.objeto_monticulo[obj_idx].campos_vec;
                         if !campos.is_empty() {
                             // El primer campo es el tag del enum
                             let tag_val = campos[0];
@@ -272,8 +272,8 @@ impl ForjaFast {
                 let val = self.desapilar_valor()?;
                 if val.es_objeto() {
                     let obj_idx = val.indice_objeto() as usize;
-                    if obj_idx < self.runtime.obj_heap.len() {
-                        let campos = &self.runtime.obj_heap[obj_idx].campos_vec;
+                    if obj_idx < self.runtime.objeto_monticulo.len() {
+                        let campos = &self.runtime.objeto_monticulo[obj_idx].campos_vec;
                         if *field_idx < campos.len() {
                             self.empujar_valor(campos[*field_idx]);
                         } else {

@@ -20,7 +20,7 @@ pub mod backend_llvm;
 pub mod compiler_asm;
 pub mod config;
 pub use forja_bytecode as bytecode;
-pub use forja_bytecode::{symbol_table, uops};
+pub use forja_bytecode::{tabla_simbolos, uops};
 pub use forja_hir::{dedup, desugar};
 pub use forja_ir::{
     arena, codegen_reg, ir, ir_constructor, ir_emision, ir_ssa, ir_to_bytecode, optimizer,
@@ -35,8 +35,8 @@ pub use forja_vm::native_proceso_win;
 #[cfg(all(not(target_arch = "wasm32"), feature = "sqlite"))]
 pub use forja_vm::native_sqlite;
 pub use forja_vm::{
-    class_descriptor, ffi, gc_intrinsics, jit_tiered, module, native_h2_core, native_registry,
-    package_resolver, pgo, registro, registry_remote, registry_server, stdlib_embedded, vm_fast,
+    descriptor_clase, ffi, gc_intrinsics, jit_tiered, modulo, native_h2_core, native_registry,
+    paquete_resolver, pgo, registro, registry_remote, registry_server, stdlib_embedded, vm_fast,
 };
 pub use forja_vm::{ModuleId, ModuloCache, ModuloInformacion};
 #[cfg(not(target_arch = "wasm32"))]
@@ -539,8 +539,8 @@ pub fn resolver_imports(
     directorio_raiz: &std::path::Path,
 ) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
-    use crate::module::ModuloResolver;
-    use crate::package_resolver::PaqueteResolver;
+    use crate::modulo::ModuloResolver;
+    use crate::paquete_resolver::PaqueteResolver;
     use std::collections::{HashMap, HashSet};
 
     // 1. Lexer + Parser del código fuente principal
@@ -558,7 +558,7 @@ pub fn resolver_imports(
         directorio_raiz
     };
     let mut modulo_resolver = ModuloResolver::nuevo(project_directorio.to_str().unwrap_or("."));
-    modulo_resolver.package_resolver = Some(PaqueteResolver::nuevo(project_directorio));
+    modulo_resolver.paquete_resolver = Some(PaqueteResolver::nuevo(project_directorio));
 
     // los imports se inlinean, así que `colecciones.mapa(...)` quedaría
     // como acceso a una variable inexistente. El HIR dice qué nombres exporta
@@ -1636,16 +1636,16 @@ fn ejecutar_con_pgo_impl(
     if !solo_usar {
         if let Some(recolectado) = vm.finalizar_pgo() {
             let mut perfil = perfil_previo.clone().unwrap_or_default();
-            for (f, c) in recolectado.function_hotness {
-                *perfil.function_hotness.entry(f).or_insert(0) += c;
+            for (f, c) in recolectado.frecuencia_funcion {
+                *perfil.frecuencia_funcion.entry(f).or_insert(0) += c;
             }
             for (b, c) in recolectado.branch_counts {
                 let e = perfil.branch_counts.entry(b).or_insert((0, 0));
                 e.0 += c.0;
                 e.1 += c.1;
             }
-            for (l, c) in recolectado.loop_iterations {
-                *perfil.loop_iterations.entry(l).or_insert(0) += c;
+            for (l, c) in recolectado.iteraciones_bucle {
+                *perfil.iteraciones_bucle.entry(l).or_insert(0) += c;
             }
             for (ip, c) in recolectado.hot_ips {
                 *perfil.hot_ips.entry(ip).or_insert(0) += c;

@@ -330,7 +330,7 @@ variable r = fib(20)
     let perfil = vm.finalizar_pgo().expect("debe recolectar un perfil");
     // fib(20) se llama 1 vez + el while itera 18 veces → hay branches y loops
     assert!(
-        !perfil.function_hotness.is_empty(),
+        !perfil.frecuencia_funcion.is_empty(),
         "debe registrar llamadas a funciones"
     );
     assert!(
@@ -338,7 +338,7 @@ variable r = fib(20)
         "debe registrar branches (si/mientras)"
     );
     assert!(
-        !perfil.loop_iterations.is_empty(),
+        !perfil.iteraciones_bucle.is_empty(),
         "debe registrar iteraciones de loop (back-edge del mientras)"
     );
     assert!(

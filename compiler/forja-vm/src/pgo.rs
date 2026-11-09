@@ -27,13 +27,13 @@ pub type IdBloque = String;
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProfileData {
     /// Conteo de llamadas por función
-    pub function_hotness: HashMap<FuncId, u64>,
+    pub frecuencia_funcion: HashMap<FuncId, u64>,
     /// Conteo de branches: (función, block_id) → (taken, not_taken)
     pub branch_counts: HashMap<IdBloque, (u64, u64)>,
     /// Iteraciones de loop: (función, loop_pc) → iteraciones totales
-    pub loop_iterations: HashMap<IdBloque, u64>,
+    pub iteraciones_bucle: HashMap<IdBloque, u64>,
     /// Distribución de tipos en ICs: (función, ip) → tipo → conteo
-    pub type_distribution: HashMap<IdBloque, HashMap<String, u64>>,
+    pub distribucion_tipos: HashMap<IdBloque, HashMap<String, u64>>,
     /// Hotness por instruction pointer del bytecode (para pre-especialización
     /// adaptativa: los IPs calientes se especializan en el primer run)
     pub hot_ips: HashMap<usize, u64>,
@@ -47,7 +47,7 @@ impl ProfileData {
     /// Registra una llamada a función
     pub fn record_call(&mut self, funcion: &str) {
         *self
-            .function_hotness
+            .frecuencia_funcion
             .entry(funcion.to_string())
             .or_insert(0) += 1;
     }
@@ -64,12 +64,12 @@ impl ProfileData {
 
     /// Registra iteraciones de loop
     pub fn record_bucle(&mut self, block: &IdBloque, iterations: u64) {
-        *self.loop_iterations.entry(block.clone()).or_insert(0) += iterations;
+        *self.iteraciones_bucle.entry(block.clone()).or_insert(0) += iterations;
     }
 
     /// Registra un tipo visto en un IC
     pub fn record_tipo_at_ic(&mut self, block: &IdBloque, tipo: &str) {
-        let dist = self.type_distribution.entry(block.clone()).or_default();
+        let dist = self.distribucion_tipos.entry(block.clone()).or_default();
         *dist.entry(tipo.to_string()).or_insert(0) += 1;
     }
 
@@ -106,12 +106,14 @@ impl ProfileData {
 
     /// Retorna la función más caliente
     pub fn hottest_funcion(&self) -> Option<(&FuncId, &u64)> {
-        self.function_hotness.iter().max_by_key(|(_, &count)| count)
+        self.frecuencia_funcion
+            .iter()
+            .max_by_key(|(_, &count)| count)
     }
 
     /// Retorna funciones con hotness mayor al umbral
     pub fn hot_functions(&self, threshold: u64) -> Vec<(&FuncId, &u64)> {
-        self.function_hotness
+        self.frecuencia_funcion
             .iter()
             .filter(|(_, &count)| count >= threshold)
             .collect()
@@ -150,7 +152,7 @@ pub enum BranchHotness {
 #[derive(Debug, Clone)]
 pub struct ProfileGuidedDecisions {
     /// Funciones que deben ser inlined (hot + pequeña)
-    pub inline_candidates: Vec<FuncId>,
+    pub candidatos_en_linea: Vec<FuncId>,
     /// Branches que deben tener layout lineal (HotTaken → fall-through)
     pub hot_branches: Vec<(IdBloque, BranchHotness)>,
     /// Loops que deben tener unrolling más agresivo
@@ -163,19 +165,19 @@ impl ProfileGuidedDecisions {
     /// Genera decisiones de optimización a partir del perfil
     pub fn from_profile(profile: &ProfileData) -> Self {
         let mut decisions = ProfileGuidedDecisions {
-            inline_candidates: Vec::new(),
+            candidatos_en_linea: Vec::new(),
             hot_branches: Vec::new(),
             hot_loops: Vec::new(),
             tier2_candidates: Vec::new(),
         };
 
         // 1. Funciones calientes → candidatas a inline
-        for (funcion, count) in &profile.function_hotness {
+        for (funcion, count) in &profile.frecuencia_funcion {
             if *count >= 1000 {
                 decisions.tier2_candidates.push(funcion.clone());
             }
             if *count >= 100 {
-                decisions.inline_candidates.push(funcion.clone());
+                decisions.candidatos_en_linea.push(funcion.clone());
             }
         }
 
@@ -192,7 +194,7 @@ impl ProfileGuidedDecisions {
         }
 
         // 3. Loops calientes → unrolling agresivo
-        for (block, iterations) in &profile.loop_iterations {
+        for (block, iterations) in &profile.iteraciones_bucle {
             if *iterations > 10000 {
                 decisions.hot_loops.push((block.clone(), *iterations));
             }
@@ -236,7 +238,7 @@ pub struct Instrumenter {
     /// Profundidad de sampling (cada N instrucciones)
     pub sample_rate: u64,
     /// Contador actual
-    pub current_count: u64,
+    pub cantidad_actual: u64,
 }
 
 impl Instrumenter {
@@ -244,7 +246,7 @@ impl Instrumenter {
         Instrumenter {
             counters: vec![0; bytecode_len],
             sample_rate: 1,
-            current_count: 0,
+            cantidad_actual: 0,
         }
     }
 
@@ -252,15 +254,15 @@ impl Instrumenter {
         Instrumenter {
             counters: vec![0; bytecode_len],
             sample_rate: rate,
-            current_count: 0,
+            cantidad_actual: 0,
         }
     }
 
     /// Registra una ejecución en el IP dado
     #[inline(always)]
     pub fn record(&mut self, ip: usize) {
-        self.current_count += 1;
-        if self.current_count.is_multiple_of(self.sample_rate) && ip < self.counters.len() {
+        self.cantidad_actual += 1;
+        if self.cantidad_actual.is_multiple_of(self.sample_rate) && ip < self.counters.len() {
             self.counters[ip] += 1;
         }
     }
@@ -291,26 +293,26 @@ impl Instrumenter {
     /// Resetea todos los contadores
     pub fn reset(&mut self) {
         self.counters.iter_mut().for_each(|c| *c = 0);
-        self.current_count = 0;
+        self.cantidad_actual = 0;
     }
 }
 
 /// Gestor de archivos de perfil (.forjaprof)
 pub struct ProfileManager {
     /// Directorio del proyecto
-    pub project_dir: std::path::PathBuf,
+    pub directorio_proyecto: std::path::PathBuf,
 }
 
 impl ProfileManager {
-    pub fn nuevo(project_dir: &std::path::Path) -> Self {
+    pub fn nuevo(directorio_proyecto: &std::path::Path) -> Self {
         ProfileManager {
-            project_dir: project_dir.to_path_buf(),
+            directorio_proyecto: directorio_proyecto.to_path_buf(),
         }
     }
 
     /// Retorna la ruta del archivo de perfil
     pub fn profile_ruta(&self) -> std::path::PathBuf {
-        self.project_dir.join(".forjaprof")
+        self.directorio_proyecto.join(".forjaprof")
     }
 
     /// Guarda un perfil a disco
@@ -336,8 +338,8 @@ mod tests {
         profile.record_call("main");
         profile.record_call("main");
         profile.record_call("foo");
-        assert_eq!(profile.function_hotness["main"], 2);
-        assert_eq!(profile.function_hotness["foo"], 1);
+        assert_eq!(profile.frecuencia_funcion["main"], 2);
+        assert_eq!(profile.frecuencia_funcion["foo"], 1);
     }
 
     #[test]
@@ -385,7 +387,7 @@ mod tests {
 
         let bytes = profile.serialize();
         let loaded = ProfileData::deserialize(&bytes).unwrap();
-        assert_eq!(loaded.function_hotness["main"], 1);
+        assert_eq!(loaded.frecuencia_funcion["main"], 1);
         assert_eq!(loaded.branch_counts["b0"].0, 1);
     }
 

@@ -1,5 +1,5 @@
 use crate::vm_fast::ForjaFast;
-use forja_bytecode::{symbol_table::IdSimbolo, GeneradorBytecode};
+use forja_bytecode::{tabla_simbolos::IdSimbolo, GeneradorBytecode};
 use forja_native::native_registry::*;
 use forja_runtime::{Anfitrion, ErrFast, ValorFast};
 use std::sync::Arc;
@@ -32,7 +32,7 @@ pub fn nativo_recargar_modulo(
     let modulo_id = IdSimbolo(vm.tabla_simbolos().internar(&nombre_modulo).0);
 
     // Verificar que el módulo está registrado
-    if !vm.module_registry.contains_key(&modulo_id) {
+    if !vm.registro_modulos.contains_key(&modulo_id) {
         return Ok(ValorFast::texto(vm.reservar_texto(Arc::from(format!(
             "error: módulo '{}' no está cargado",
             nombre_modulo
@@ -40,14 +40,14 @@ pub fn nativo_recargar_modulo(
     }
 
     // Verificar si el módulo cambió en disco
-    if !vm.module_resolver.modulo_cambio(&nombre_modulo) {
+    if !vm.resolvedor_modulos.modulo_cambio(&nombre_modulo) {
         return Ok(ValorFast::texto(
             vm.reservar_texto(Arc::from("ok: sin cambios")),
         ));
     }
 
     // Recargar: obtener nuevo AST del módulo
-    let programa = match vm.module_resolver.recargar(modulo_id) {
+    let programa = match vm.resolvedor_modulos.recargar(modulo_id) {
         Ok(p) => p,
         Err(e) => {
             let mensaje = e
@@ -81,7 +81,7 @@ pub fn nativo_recargar_modulo(
     match vm.hot_swap_modulo(modulo_id, &modulo_bytecode) {
         Ok(()) => Ok(ValorFast::texto(vm.reservar_texto(Arc::from(format!(
                 "ok: recargado (v{})",
-                vm.module_registry
+                vm.registro_modulos
                     .get(&modulo_id)
                     .map(|i| i.version)
                     .unwrap_or(0)
@@ -109,7 +109,7 @@ pub fn nativo_version_modulo(
     let modulo_id = IdSimbolo(vm.tabla_simbolos().internar(&nombre_modulo).0);
 
     let version = vm
-        .module_registry
+        .registro_modulos
         .get(&modulo_id)
         .map(|informacion| informacion.version as i64)
         .unwrap_or(-1i64);
@@ -127,7 +127,7 @@ pub fn nativo_recargar_todo(
     let vm = vm_concreta(vm)?;
     let _ = args; // sin argumentos
 
-    let cambiados = vm.module_resolver.modulos_cambiados();
+    let cambiados = vm.resolvedor_modulos.modulos_cambiados();
     if cambiados.is_empty() {
         return Ok(ValorFast::texto(
             vm.reservar_texto(Arc::from("ok: sin cambios")),
@@ -137,7 +137,7 @@ pub fn nativo_recargar_todo(
     let mut recargados: Vec<String> = Vec::new();
     for (modulo_id, ruta) in &cambiados {
         // Recargar AST del módulo
-        let programa = match vm.module_resolver.recargar(*modulo_id) {
+        let programa = match vm.resolvedor_modulos.recargar(*modulo_id) {
             Ok(p) => p,
             Err(e) => {
                 let mensaje = e
@@ -169,7 +169,7 @@ pub fn nativo_recargar_todo(
         match vm.hot_swap_modulo(*modulo_id, &modulo_bytecode) {
             Ok(()) => {
                 let version = vm
-                    .module_registry
+                    .registro_modulos
                     .get(modulo_id)
                     .map(|i| i.version)
                     .unwrap_or(0);

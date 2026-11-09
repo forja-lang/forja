@@ -87,7 +87,7 @@ pub fn nativo_entero_a_hex(
 
     // Convert to big-endian hex with zero padding
     let hex_chars = num_bytes * 2;
-    let hex_string = if numero >= 0 {
+    let texto_hex = if numero >= 0 {
         format!("{:0>width$x}", numero as u64, width = hex_chars)
     } else {
         // Handle negative numbers as two's complement
@@ -96,10 +96,10 @@ pub fn nativo_entero_a_hex(
     };
 
     // Truncate to requested tamano if the number is larger
-    let resultado = if hex_string.len() > hex_chars {
-        hex_string[hex_string.len() - hex_chars..].to_string()
+    let resultado = if texto_hex.len() > hex_chars {
+        texto_hex[texto_hex.len() - hex_chars..].to_string()
     } else {
-        hex_string
+        texto_hex
     };
 
     let indice = vm.reservar_texto(Arc::from(resultado.as_str()));

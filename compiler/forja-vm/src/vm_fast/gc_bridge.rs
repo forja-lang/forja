@@ -17,13 +17,13 @@ impl ForjaFast {
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
         let forma_id = obj.forma_id;
-        if let Some(idx) = self.runtime.obj_free.pop() {
-            self.runtime.obj_heap[idx as usize] = obj;
+        if let Some(idx) = self.runtime.objeto_libre.pop() {
+            self.runtime.objeto_monticulo[idx as usize] = obj;
             self.runtime.formas_objeto[idx as usize] = forma_id;
             idx
         } else {
-            let idx = self.runtime.obj_heap.len() as u32;
-            self.runtime.obj_heap.push(obj);
+            let idx = self.runtime.objeto_monticulo.len() as u32;
+            self.runtime.objeto_monticulo.push(obj);
             self.runtime.obj_marked.push(false);
             self.runtime.formas_objeto.push(forma_id);
             idx
@@ -36,13 +36,13 @@ impl ForjaFast {
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        if let Some(idx) = self.runtime.str_free.pop() {
-            self.runtime.str_heap[idx as usize] = s;
+        if let Some(idx) = self.runtime.texto_libre.pop() {
+            self.runtime.texto_monticulo[idx as usize] = s;
             idx
         } else {
-            self.runtime.str_heap.push(s);
+            self.runtime.texto_monticulo.push(s);
             self.runtime.str_marked.push(false);
-            (self.runtime.str_heap.len() - 1) as u32
+            (self.runtime.texto_monticulo.len() - 1) as u32
         }
     }
 
@@ -52,13 +52,13 @@ impl ForjaFast {
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        if let Some(idx) = self.runtime.array_free.pop() {
-            self.runtime.array_heap[idx as usize] = arr;
+        if let Some(idx) = self.runtime.arreglo_libre.pop() {
+            self.runtime.arreglo_monticulo[idx as usize] = arr;
             idx
         } else {
-            self.runtime.array_heap.push(arr);
+            self.runtime.arreglo_monticulo.push(arr);
             self.runtime.array_marked.push(false);
-            (self.runtime.array_heap.len() - 1) as u32
+            (self.runtime.arreglo_monticulo.len() - 1) as u32
         }
     }
 
@@ -68,13 +68,13 @@ impl ForjaFast {
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        if let Some(idx) = self.runtime.map_free.pop() {
-            self.runtime.map_heap[idx as usize] = m;
+        if let Some(idx) = self.runtime.mapa_libre.pop() {
+            self.runtime.mapa_monticulo[idx as usize] = m;
             idx
         } else {
-            self.runtime.map_heap.push(m);
-            self.runtime.map_marked.push(false);
-            (self.runtime.map_heap.len() - 1) as u32
+            self.runtime.mapa_monticulo.push(m);
+            self.runtime.mapa_marcado.push(false);
+            (self.runtime.mapa_monticulo.len() - 1) as u32
         }
     }
 
@@ -84,12 +84,12 @@ impl ForjaFast {
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        if let Some(idx) = self.runtime.exacto_free.pop() {
-            self.runtime.exacto_heap[idx as usize] = e;
+        if let Some(idx) = self.runtime.exacto_libre.pop() {
+            self.runtime.exacto_monticulo[idx as usize] = e;
             idx
         } else {
-            let idx = self.runtime.exacto_heap.len() as u32;
-            self.runtime.exacto_heap.push(e);
+            let idx = self.runtime.exacto_monticulo.len() as u32;
+            self.runtime.exacto_monticulo.push(e);
             self.runtime.exacto_marked.push(false);
             idx
         }
@@ -109,14 +109,14 @@ impl ForjaFast {
     #[inline(always)]
     pub fn reservar_chan_tx(&mut self, tx: std::sync::mpsc::SyncSender<CanalValor>) -> u32 {
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        if let Some(idx) = self.runtime.chan_tx_free.pop() {
-            self.runtime.chan_tx_heap[idx as usize] = Some(tx);
+        if let Some(idx) = self.runtime.canal_envio_libre.pop() {
+            self.runtime.canal_envio_monticulo[idx as usize] = Some(tx);
             self.runtime.chan_tx_marked[idx as usize] = false;
             self.runtime.chan_payloads[idx as usize].clear();
             idx
         } else {
-            let idx = self.runtime.chan_tx_heap.len() as u32;
-            self.runtime.chan_tx_heap.push(Some(tx));
+            let idx = self.runtime.canal_envio_monticulo.len() as u32;
+            self.runtime.canal_envio_monticulo.push(Some(tx));
             self.runtime.chan_tx_marked.push(false);
             self.runtime.chan_tx_refs.push(0);
             self.runtime.chan_payloads.push(Vec::new());
@@ -132,13 +132,13 @@ impl ForjaFast {
         tx_idx: u32,
     ) -> u32 {
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        let idx = if let Some(idx) = self.runtime.chan_rx_free.pop() {
-            self.runtime.chan_rx_heap[idx as usize] = Some(rx);
+        let idx = if let Some(idx) = self.runtime.canal_recepcion_libre.pop() {
+            self.runtime.canal_recepcion_monticulo[idx as usize] = Some(rx);
             self.runtime.chan_rx_marked[idx as usize] = false;
             idx
         } else {
-            let idx = self.runtime.chan_rx_heap.len() as u32;
-            self.runtime.chan_rx_heap.push(Some(rx));
+            let idx = self.runtime.canal_recepcion_monticulo.len() as u32;
+            self.runtime.canal_recepcion_monticulo.push(Some(rx));
             self.runtime.chan_rx_marked.push(false);
             idx
         };
@@ -159,16 +159,16 @@ impl ForjaFast {
         rx: Option<std::sync::mpsc::Receiver<CanalValor>>,
     ) -> u32 {
         self.runtime.gc_pressure = self.runtime.gc_pressure.saturating_add(1);
-        if let Some(idx) = self.runtime.thread_free.pop() {
-            self.runtime.thread_heap[idx as usize] = resultado;
-            self.runtime.thread_rx[idx as usize] = rx;
-            self.runtime.thread_marked[idx as usize] = false;
+        if let Some(idx) = self.runtime.hilo_libre.pop() {
+            self.runtime.hilo_monticulo[idx as usize] = resultado;
+            self.runtime.hilo_receptor[idx as usize] = rx;
+            self.runtime.hilo_marcado[idx as usize] = false;
             idx
         } else {
-            let idx = self.runtime.thread_heap.len() as u32;
-            self.runtime.thread_heap.push(resultado);
-            self.runtime.thread_rx.push(rx);
-            self.runtime.thread_marked.push(false);
+            let idx = self.runtime.hilo_monticulo.len() as u32;
+            self.runtime.hilo_monticulo.push(resultado);
+            self.runtime.hilo_receptor.push(rx);
+            self.runtime.hilo_marcado.push(false);
             idx
         }
     }
@@ -253,7 +253,7 @@ impl ForjaFast {
             // (el que usan `GetField`/`SetField`); el forma del `RegistroFormas`
             // sólo se actualiza en las transiciones de campo, así que un objeto
             // creado después conserva el forma base vacío.
-            let desc = self.runtime.class_descriptors.get(&obj.clase);
+            let desc = self.runtime.descriptores_clase.get(&obj.clase);
             let campos: Vec<(Arc<str>, ValorPortable)> = obj
                 .campos_vec
                 .iter()
@@ -343,13 +343,13 @@ impl ForjaFast {
                 // `GetField`/`SetField` caen al fallback `campos_vec[sym]` y las
                 // lecturas dan Nulo. Se registra el descriptor con los campos en
                 // el orden del emisor.
-                if !self.runtime.class_descriptors.contains_key(&clase_sym) {
+                if !self.runtime.descriptores_clase.contains_key(&clase_sym) {
                     let mut forma = FormaCampos::nuevo();
                     for (nombre, _) in &campos {
                         let campo = self.runtime.tabla_simbolos.internar(nombre);
                         forma.agregar_campo(campo);
                     }
-                    self.runtime.class_descriptors.insert(
+                    self.runtime.descriptores_clase.insert(
                         clase_sym,
                         DescriptorClase {
                             nombre: clase_sym,
@@ -369,14 +369,14 @@ impl ForjaFast {
                     // Índice según el descriptor (lo que usan GetField/SetField).
                     let idx = match self
                         .runtime
-                        .class_descriptors
+                        .descriptores_clase
                         .get(&clase_sym)
                         .and_then(|d| d.forma.obtener_indice(campo))
                     {
                         Some(i) => i,
                         None => self
                             .runtime
-                            .class_descriptors
+                            .descriptores_clase
                             .get_mut(&clase_sym)
                             .map(|d| d.forma.agregar_campo(campo))
                             .unwrap_or(0),
@@ -439,7 +439,7 @@ impl ForjaFast {
         };
         let correcto = self
             .runtime
-            .chan_tx_heap
+            .canal_envio_monticulo
             .get(chan_idx)
             .and_then(|s| s.as_ref())
             .map(|s| s.send(mensaje).is_ok())
@@ -458,7 +458,7 @@ impl ForjaFast {
     pub fn canal_recibir(&mut self, chan_idx: usize) -> Option<CanalValor> {
         let res = self
             .runtime
-            .chan_rx_heap
+            .canal_recepcion_monticulo
             .get(chan_idx)
             .and_then(|r| r.as_ref())
             .and_then(|r| r.lock().ok())
@@ -482,7 +482,7 @@ impl ForjaFast {
     pub fn canal_try_recibir(&mut self, chan_idx: usize) -> Option<CanalValor> {
         let res = self
             .runtime
-            .chan_rx_heap
+            .canal_recepcion_monticulo
             .get(chan_idx)
             .and_then(|r| r.as_ref())
             .and_then(|r| r.lock().ok())
@@ -502,7 +502,7 @@ impl ForjaFast {
     /// Obtiene referencia al valor Exacto desde un ValorFast.
     #[inline(always)]
     pub fn obtener_exacto(&self, idx: u32) -> &ExactoVal {
-        &self.runtime.exacto_heap[idx as usize]
+        &self.runtime.exacto_monticulo[idx as usize]
     }
 
     // ─── Garbage Collector Mark-and-Sweep ────────────────────────────────────
@@ -513,28 +513,28 @@ impl ForjaFast {
     /// 2. Sweep: Los no marcados se añaden a las free lists para reuso.
     pub fn gc_recolectar(&mut self) {
         let inicio = std::time::Instant::now();
-        let libres_antes = self.runtime.obj_free.len()
-            + self.runtime.str_free.len()
-            + self.runtime.array_free.len()
-            + self.runtime.map_free.len()
-            + self.runtime.exacto_free.len();
+        let libres_antes = self.runtime.objeto_libre.len()
+            + self.runtime.texto_libre.len()
+            + self.runtime.arreglo_libre.len()
+            + self.runtime.mapa_libre.len()
+            + self.runtime.exacto_libre.len();
         // --- FASE MARK: limpiar marcas viejas ---
         self.runtime.obj_marked.fill(false);
         self.runtime.str_marked.fill(false);
         self.runtime.array_marked.fill(false);
-        self.runtime.map_marked.fill(false);
+        self.runtime.mapa_marcado.fill(false);
         self.runtime.exacto_marked.fill(false);
         // canales e hilos.
         self.runtime.chan_tx_marked.fill(false);
         self.runtime.chan_rx_marked.fill(false);
         self.runtime.canal_marked.fill(false);
-        self.runtime.thread_marked.fill(false);
+        self.runtime.hilo_marcado.fill(false);
 
         // Recolectar raíces en Vec temporal para evitar borrow conflicts
         let mut roots: Vec<ValorFast> = Vec::new();
 
         // Raíces: stack de valores
-        roots.extend_from_slice(&self.stack);
+        roots.extend_from_slice(&self.pila);
 
         // Raíces: pila_top (cache de 4 registros)
         for i in 0..self.top_longitud {
@@ -563,55 +563,56 @@ impl ForjaFast {
         // los slots no marcados, los que ya estaban libres se re-añadirían en
         // cada colección (duplicados) y `alloc_*` reutilizaría el mismo índice
         // dos veces, corrompiendo el heap.
-        self.runtime.obj_free.clear();
-        self.runtime.str_free.clear();
-        self.runtime.array_free.clear();
-        self.runtime.map_free.clear();
-        self.runtime.exacto_free.clear();
+        self.runtime.objeto_libre.clear();
+        self.runtime.texto_libre.clear();
+        self.runtime.arreglo_libre.clear();
+        self.runtime.mapa_libre.clear();
+        self.runtime.exacto_libre.clear();
         // reconstruir también las free lists de canales e hilos.
-        self.runtime.chan_tx_free.clear();
-        self.runtime.chan_rx_free.clear();
-        self.runtime.thread_free.clear();
+        self.runtime.canal_envio_libre.clear();
+        self.runtime.canal_recepcion_libre.clear();
+        self.runtime.hilo_libre.clear();
 
         // Objetos no marcados → free list
         let predeterminado_forma = self.runtime.registro_formas.obtener_o_crear(IdSimbolo(0));
-        for i in 0..self.runtime.obj_heap.len() {
+        for i in 0..self.runtime.objeto_monticulo.len() {
             if !self.runtime.obj_marked[i] {
-                self.runtime.obj_heap[i] = ObjVal::nuevo(IdSimbolo(0), predeterminado_forma);
+                self.runtime.objeto_monticulo[i] =
+                    ObjVal::nuevo(IdSimbolo(0), predeterminado_forma);
                 self.runtime.formas_objeto[i] = predeterminado_forma;
-                self.runtime.obj_free.push(i as u32);
+                self.runtime.objeto_libre.push(i as u32);
             }
         }
 
         // Strings no marcados → free list
-        for i in 0..self.runtime.str_heap.len() {
+        for i in 0..self.runtime.texto_monticulo.len() {
             if !self.runtime.str_marked[i] {
-                self.runtime.str_heap[i] = Arc::from("");
-                self.runtime.str_free.push(i as u32);
+                self.runtime.texto_monticulo[i] = Arc::from("");
+                self.runtime.texto_libre.push(i as u32);
             }
         }
 
         // Arrays no marcados → free list
-        for i in 0..self.runtime.array_heap.len() {
+        for i in 0..self.runtime.arreglo_monticulo.len() {
             if !self.runtime.array_marked[i] {
-                self.runtime.array_heap[i] = Vec::new();
-                self.runtime.array_free.push(i as u32);
+                self.runtime.arreglo_monticulo[i] = Vec::new();
+                self.runtime.arreglo_libre.push(i as u32);
             }
         }
 
         // Mapas no marcados → free list
-        for i in 0..self.runtime.map_heap.len() {
-            if !self.runtime.map_marked[i] {
-                self.runtime.map_heap[i] = HashMap::new();
-                self.runtime.map_free.push(i as u32);
+        for i in 0..self.runtime.mapa_monticulo.len() {
+            if !self.runtime.mapa_marcado[i] {
+                self.runtime.mapa_monticulo[i] = HashMap::new();
+                self.runtime.mapa_libre.push(i as u32);
             }
         }
 
         // Exacto no marcados → free list
-        for i in 0..self.runtime.exacto_heap.len() {
+        for i in 0..self.runtime.exacto_monticulo.len() {
             if !self.runtime.exacto_marked[i] {
-                self.runtime.exacto_heap[i] = ExactoVal::nuevo(0, 0);
-                self.runtime.exacto_free.push(i as u32);
+                self.runtime.exacto_monticulo[i] = ExactoVal::nuevo(0, 0);
+                self.runtime.exacto_libre.push(i as u32);
             }
         }
 
@@ -619,10 +620,10 @@ impl ForjaFast {
         // descuentan las referencias a su tx; así un tx puede liberarse solo
         // cuando ningún rx vivo lo referencia.
         let mut rx_liberados: Vec<usize> = Vec::new();
-        for i in 0..self.runtime.chan_rx_heap.len() {
+        for i in 0..self.runtime.canal_recepcion_monticulo.len() {
             if !self.runtime.chan_rx_marked[i] {
-                let estaba_activo = self.runtime.chan_rx_heap[i].take().is_some();
-                self.runtime.chan_rx_free.push(i as u32);
+                let estaba_activo = self.runtime.canal_recepcion_monticulo[i].take().is_some();
+                self.runtime.canal_recepcion_libre.push(i as u32);
                 if estaba_activo {
                     rx_liberados.push(i);
                 }
@@ -640,37 +641,37 @@ impl ForjaFast {
 
         // barrido de emisores. Un tx muerto se libera si ningún rx vivo
         // lo referencia; en ese momento también se liberan sus mensajes en cola.
-        for i in 0..self.runtime.chan_tx_heap.len() {
+        for i in 0..self.runtime.canal_envio_monticulo.len() {
             let sin_refs = self.runtime.chan_tx_refs.get(i).copied().unwrap_or(0) == 0;
             if !self.runtime.chan_tx_marked[i] && sin_refs {
-                self.runtime.chan_tx_heap[i] = None;
+                self.runtime.canal_envio_monticulo[i] = None;
                 self.runtime.chan_payloads[i].clear();
-                self.runtime.chan_tx_free.push(i as u32);
+                self.runtime.canal_envio_libre.push(i as u32);
             }
             self.runtime.chan_tx_marked[i] = false;
         }
-        for i in 0..self.runtime.chan_rx_heap.len() {
+        for i in 0..self.runtime.canal_recepcion_monticulo.len() {
             self.runtime.chan_rx_marked[i] = false;
         }
         self.runtime.canal_marked.fill(false);
 
         // barrido de hilos. Si el handle Hilo es inalcanzable, se libera
         // el slot y su resultado; el receptor pendiente se descarta.
-        for i in 0..self.runtime.thread_heap.len() {
-            if !self.runtime.thread_marked[i] {
-                self.runtime.thread_heap[i] = None;
-                self.runtime.thread_rx[i] = None;
-                self.runtime.thread_free.push(i as u32);
+        for i in 0..self.runtime.hilo_monticulo.len() {
+            if !self.runtime.hilo_marcado[i] {
+                self.runtime.hilo_monticulo[i] = None;
+                self.runtime.hilo_receptor[i] = None;
+                self.runtime.hilo_libre.push(i as u32);
             }
-            self.runtime.thread_marked[i] = false;
+            self.runtime.hilo_marcado[i] = false;
         }
 
         // telemetría de la pausa y de los slots reciclados.
-        let libres_despues = self.runtime.obj_free.len()
-            + self.runtime.str_free.len()
-            + self.runtime.array_free.len()
-            + self.runtime.map_free.len()
-            + self.runtime.exacto_free.len();
+        let libres_despues = self.runtime.objeto_libre.len()
+            + self.runtime.texto_libre.len()
+            + self.runtime.arreglo_libre.len()
+            + self.runtime.mapa_libre.len()
+            + self.runtime.exacto_libre.len();
         let recolectados = libres_despues.saturating_sub(libres_antes) as u64;
         let pausa_ns = inicio.elapsed().as_nanos();
         self.runtime.gc_telemetry.colecciones += 1;
@@ -713,22 +714,23 @@ impl ForjaFast {
 
     /// slots activos en los heaps de canales (tx + rx).
     pub fn chan_monticulo_slots(&self) -> usize {
-        (self.runtime.chan_tx_heap.len() - self.runtime.chan_tx_free.len())
-            + (self.runtime.chan_rx_heap.len() - self.runtime.chan_rx_free.len())
+        (self.runtime.canal_envio_monticulo.len() - self.runtime.canal_envio_libre.len())
+            + (self.runtime.canal_recepcion_monticulo.len()
+                - self.runtime.canal_recepcion_libre.len())
     }
 
     /// slots activos en el heap de hilos.
     pub fn hilo_monticulo_slots(&self) -> usize {
-        self.runtime.thread_heap.len() - self.runtime.thread_free.len()
+        self.runtime.hilo_monticulo.len() - self.runtime.hilo_libre.len()
     }
 
     /// total de slots ocupados en todos los heaps de la VM.
     pub fn monticulo_slots(&self) -> usize {
-        (self.runtime.obj_heap.len() - self.runtime.obj_free.len())
-            + (self.runtime.str_heap.len() - self.runtime.str_free.len())
-            + (self.runtime.array_heap.len() - self.runtime.array_free.len())
-            + (self.runtime.map_heap.len() - self.runtime.map_free.len())
-            + (self.runtime.exacto_heap.len() - self.runtime.exacto_free.len())
+        (self.runtime.objeto_monticulo.len() - self.runtime.objeto_libre.len())
+            + (self.runtime.texto_monticulo.len() - self.runtime.texto_libre.len())
+            + (self.runtime.arreglo_monticulo.len() - self.runtime.arreglo_libre.len())
+            + (self.runtime.mapa_monticulo.len() - self.runtime.mapa_libre.len())
+            + (self.runtime.exacto_monticulo.len() - self.runtime.exacto_libre.len())
     }
 
     /// Marca los valores en cola de un canal.
@@ -750,14 +752,14 @@ impl ForjaFast {
     pub fn marcar_valor(&mut self, val: ValorFast) {
         if val.es_objeto() {
             let idx = val.indice_objeto() as usize;
-            if idx < self.runtime.obj_heap.len() && !self.runtime.obj_marked[idx] {
+            if idx < self.runtime.objeto_monticulo.len() && !self.runtime.obj_marked[idx] {
                 self.runtime.obj_marked[idx] = true;
-                let clase = self.runtime.obj_heap[idx].clase;
+                let clase = self.runtime.objeto_monticulo[idx].clase;
                 // los handles de canal/hilo son referencias a sus heaps;
                 // marcarlos mantiene vivos los mensajes en cola y el resultado
                 // del hilo.
                 if clase == self.sym_canal_emisor || clase == self.sym_canal_receptor {
-                    let sub_opt = self.runtime.obj_heap[idx]
+                    let sub_opt = self.runtime.objeto_monticulo[idx]
                         .campos_vec
                         .first()
                         .map(|campo| campo.a_entero() as usize);
@@ -777,15 +779,15 @@ impl ForjaFast {
                         }
                     }
                 } else if clase == self.sym_hilo {
-                    let sub_opt = self.runtime.obj_heap[idx]
+                    let sub_opt = self.runtime.objeto_monticulo[idx]
                         .campos_vec
                         .first()
                         .map(|campo| campo.a_entero() as usize);
                     if let Some(sub) = sub_opt {
-                        if sub < self.runtime.thread_marked.len() {
-                            self.runtime.thread_marked[sub] = true;
+                        if sub < self.runtime.hilo_marcado.len() {
+                            self.runtime.hilo_marcado[sub] = true;
                             if let Some(resultado) =
-                                self.runtime.thread_heap.get(sub).copied().flatten()
+                                self.runtime.hilo_monticulo.get(sub).copied().flatten()
                             {
                                 self.marcar_valor(resultado);
                             }
@@ -794,8 +796,8 @@ impl ForjaFast {
                 }
                 // Marcar campos del objeto via unsafe pointer
                 // (evita clone del Vec completo; ValorFast es Copy)
-                let campos_ptr = self.runtime.obj_heap[idx].campos_vec.as_ptr();
-                let campos_longitud = self.runtime.obj_heap[idx].campos_vec.len();
+                let campos_ptr = self.runtime.objeto_monticulo[idx].campos_vec.as_ptr();
+                let campos_longitud = self.runtime.objeto_monticulo[idx].campos_vec.len();
                 for i in 0..campos_longitud {
                     let campo_val = unsafe { *campos_ptr.add(i) };
                     self.marcar_valor(campo_val);
@@ -803,16 +805,16 @@ impl ForjaFast {
             }
         } else if val.es_texto() {
             let idx = val.indice_texto() as usize;
-            if idx < self.runtime.str_heap.len() {
+            if idx < self.runtime.texto_monticulo.len() {
                 self.runtime.str_marked[idx] = true;
             }
         } else if val.es_arreglo() {
             let idx = val.indice_arreglo() as usize;
-            if idx < self.runtime.array_heap.len() && !self.runtime.array_marked[idx] {
+            if idx < self.runtime.arreglo_monticulo.len() && !self.runtime.array_marked[idx] {
                 self.runtime.array_marked[idx] = true;
                 // Marcar elementos del array via unsafe pointer
-                let elem_ptr = self.runtime.array_heap[idx].as_ptr();
-                let elem_longitud = self.runtime.array_heap[idx].len();
+                let elem_ptr = self.runtime.arreglo_monticulo[idx].as_ptr();
+                let elem_longitud = self.runtime.arreglo_monticulo[idx].len();
                 for i in 0..elem_longitud {
                     let elem = unsafe { *elem_ptr.add(i) };
                     self.marcar_valor(elem);
@@ -820,14 +822,18 @@ impl ForjaFast {
             }
         } else if val.es_mapa() {
             let idx = val.indice_mapa() as usize;
-            if idx < self.runtime.map_heap.len() && !self.runtime.map_marked[idx] {
-                self.runtime.map_marked[idx] = true;
+            if idx < self.runtime.mapa_monticulo.len() && !self.runtime.mapa_marcado[idx] {
+                self.runtime.mapa_marcado[idx] = true;
                 // Marcar valores del mapa usando stack buffer para evitar alloc
                 const MAP_BUF_SIZE: usize = 32;
-                let mapa_longitud = self.runtime.map_heap[idx].len();
+                let mapa_longitud = self.runtime.mapa_monticulo[idx].len();
                 let mut buf = [ValorFast::nulo(); MAP_BUF_SIZE];
                 let actual_longitud = mapa_longitud.min(MAP_BUF_SIZE);
-                for (i, v) in self.runtime.map_heap[idx].values().copied().enumerate() {
+                for (i, v) in self.runtime.mapa_monticulo[idx]
+                    .values()
+                    .copied()
+                    .enumerate()
+                {
                     if i >= MAP_BUF_SIZE {
                         break;
                     }
@@ -839,7 +845,7 @@ impl ForjaFast {
             }
         } else if val.es_exacto() {
             let idx = val.indice_exacto() as usize;
-            if idx < self.runtime.exacto_heap.len() {
+            if idx < self.runtime.exacto_monticulo.len() {
                 self.runtime.exacto_marked[idx] = true;
             }
         }

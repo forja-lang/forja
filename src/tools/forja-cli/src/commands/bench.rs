@@ -185,8 +185,8 @@ pub(crate) fn cmd_bench(args: &[String]) {
     let todas = motor == "todas";
     if todas || matches!(motor.as_str(), "rapido" | "vm") {
         // Activar profiling de f64
-        forja::fprofiler::PROFILER_ENABLED.store(1, std::sync::atomic::Ordering::Relaxed);
-        forja::fprofiler::PROFILER_DATA.reset();
+        forja::fprofiler::PERFILADOR_ACTIVO.store(1, std::sync::atomic::Ordering::Relaxed);
+        forja::fprofiler::PERFILADOR_DATOS.reset();
         let nombre_fast = if fast_math_flag {
             "ForjaFast (fm)"
         } else {
@@ -200,7 +200,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
             v
         });
         forja::fprofiler::imprimir_perfilador_report();
-        forja::fprofiler::PROFILER_ENABLED.store(0, std::sync::atomic::Ordering::Relaxed);
+        forja::fprofiler::PERFILADOR_ACTIVO.store(0, std::sync::atomic::Ordering::Relaxed);
     }
     #[cfg(not(target_arch = "wasm32"))]
     if todas || motor == "jit" {

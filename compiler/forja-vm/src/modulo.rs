@@ -4,9 +4,9 @@ use crate::ast::*;
 use crate::bytecode::Opcode;
 use crate::error::ErrorForja;
 use crate::lexer::Lexer;
-use crate::package_resolver::PaqueteResolver;
+use crate::paquete_resolver::PaqueteResolver;
 use crate::parser::Parser;
-use crate::symbol_table::IdSimbolo;
+use crate::tabla_simbolos::IdSimbolo;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -18,8 +18,8 @@ pub type ModuleId = IdSimbolo;
 /// Metadatos de un módulo cargado
 #[derive(Debug, Clone)]
 pub struct ModuloInformacion {
-    pub source_path: String,
-    pub source_hash: u64,
+    pub ruta_fuente: String,
+    pub fuente_hash: u64,
     pub funciones: Vec<IdSimbolo>,
     pub variables_globales: Vec<(String, bool)>, // (nombre, mutable)
     pub imports: Vec<ModuleId>,
@@ -57,9 +57,9 @@ impl ModuloCache {
 pub struct ModuloResolver {
     raiz_directorio: PathBuf,
     cache: HashMap<String, Programa>,
-    pub package_resolver: Option<PaqueteResolver>,
+    pub paquete_resolver: Option<PaqueteResolver>,
     /// Caché de módulos enriquecido con metadatos (Fase 2)
-    pub module_cache: ModuloCache,
+    pub cache_modulos: ModuloCache,
 }
 
 impl ModuloResolver {
@@ -67,8 +67,8 @@ impl ModuloResolver {
         ModuloResolver {
             raiz_directorio: PathBuf::from(raiz_directorio),
             cache: HashMap::new(),
-            package_resolver: None,
-            module_cache: ModuloCache::nuevo(),
+            paquete_resolver: None,
+            cache_modulos: ModuloCache::nuevo(),
         }
     }
 
@@ -114,7 +114,7 @@ impl ModuloResolver {
         // Intentar obtener del cache primero
         if let Some(prog) = self.cache.get(&ruta_key) {
             let modulo_id = self
-                .module_cache
+                .cache_modulos
                 .por_ruta
                 .get(&ruta_key)
                 .copied()
@@ -203,8 +203,8 @@ impl ModuloResolver {
                 programa.declaraciones = dedup_declaraciones(final_decls);
                 self.cache.insert(ruta_key.clone(), programa.clone());
 
-                // Registrar en module_cache
-                self.module_cache.por_ruta.insert(ruta_key, modulo_id);
+                // Registrar en cache_modulos
+                self.cache_modulos.por_ruta.insert(ruta_key, modulo_id);
 
                 return Ok((programa, modulo_id));
             }
@@ -220,7 +220,7 @@ impl ModuloResolver {
         }
 
         // Si no se encuentra localmente, preguntar al package_resolver
-        if let Some(ref resolver) = self.package_resolver {
+        if let Some(ref resolver) = self.paquete_resolver {
             if let Some(ruta_resuelta) = resolver.resolver_modulo(ruta) {
                 let ruta_str = ruta_resuelta.to_string_lossy().to_string();
 
@@ -299,7 +299,7 @@ impl ModuloResolver {
                 }
                 programa.declaraciones = dedup_declaraciones(final_decls);
                 self.cache.insert(ruta_key.clone(), programa.clone());
-                self.module_cache.por_ruta.insert(ruta_key, modulo_id);
+                self.cache_modulos.por_ruta.insert(ruta_key, modulo_id);
 
                 return Ok((programa, modulo_id));
             }
@@ -324,17 +324,17 @@ impl ModuloResolver {
     pub fn recargar(&mut self, modulo_id: ModuleId) -> Result<Programa, Vec<ErrorForja>> {
         // Buscar la ruta del módulo por su ModuleId
         let ruta = self
-            .module_cache
+            .cache_modulos
             .por_id
             .get(&modulo_id)
-            .map(|informacion| informacion.source_path.clone());
+            .map(|informacion| informacion.ruta_fuente.clone());
 
         let ruta = match ruta {
             Some(r) => r,
             None => {
                 // Buscar inversamente en por_ruta
                 let ruta_opt = self
-                    .module_cache
+                    .cache_modulos
                     .por_ruta
                     .iter()
                     .find(|(_, &id)| id == modulo_id)
@@ -365,12 +365,12 @@ impl ModuloResolver {
     /// Verifica si un módulo cambió en disco comparando hashes
     pub fn modulo_cambio(&mut self, ruta: &str) -> bool {
         // Obtener ModuleId
-        let modulo_id = match self.module_cache.por_ruta.get(ruta) {
+        let modulo_id = match self.cache_modulos.por_ruta.get(ruta) {
             Some(&id) => id,
             None => return false, // No registrado → no hay cambio detectable
         };
 
-        let informacion = match self.module_cache.por_id.get(&modulo_id) {
+        let informacion = match self.cache_modulos.por_id.get(&modulo_id) {
             Some(i) => i,
             None => return false,
         };
@@ -378,20 +378,20 @@ impl ModuloResolver {
         let path = self.raiz_directorio.join(format!("{}.fa", ruta));
         let ruta_archivo = path.to_str().unwrap_or(ruta);
         let nuevo_hash = Self::hash_fuente(ruta_archivo);
-        nuevo_hash != informacion.source_hash && nuevo_hash != 0
+        nuevo_hash != informacion.fuente_hash && nuevo_hash != 0
     }
 
     /// Lista los módulos cuyo hash cambió en disco
     pub fn modulos_cambiados(&self) -> Vec<(ModuleId, String)> {
         let mut cambiados = Vec::new();
-        for (modulo_id, informacion) in &self.module_cache.por_id {
+        for (modulo_id, informacion) in &self.cache_modulos.por_id {
             let ruta_archivo = self
                 .raiz_directorio
-                .join(format!("{}.fa", informacion.source_path));
-            let ruta_str = ruta_archivo.to_str().unwrap_or(&informacion.source_path);
+                .join(format!("{}.fa", informacion.ruta_fuente));
+            let ruta_str = ruta_archivo.to_str().unwrap_or(&informacion.ruta_fuente);
             let nuevo_hash = Self::hash_fuente(ruta_str);
-            if nuevo_hash != informacion.source_hash && nuevo_hash != 0 {
-                cambiados.push((*modulo_id, informacion.source_path.clone()));
+            if nuevo_hash != informacion.fuente_hash && nuevo_hash != 0 {
+                cambiados.push((*modulo_id, informacion.ruta_fuente.clone()));
             }
         }
         cambiados
@@ -399,19 +399,19 @@ impl ModuloResolver {
 
     /// Agrega un módulo al cache con su información completa
     pub fn registrar_modulo(&mut self, modulo_id: ModuleId, informacion: ModuloInformacion) {
-        self.module_cache
+        self.cache_modulos
             .por_ruta
-            .insert(informacion.source_path.clone(), modulo_id);
-        self.module_cache
+            .insert(informacion.ruta_fuente.clone(), modulo_id);
+        self.cache_modulos
             .por_id
             .insert(modulo_id, informacion.clone());
         for import in &informacion.imports {
-            self.module_cache
+            self.cache_modulos
                 .grafo_importaciones
                 .entry(modulo_id)
                 .or_default()
                 .push(*import);
-            self.module_cache
+            self.cache_modulos
                 .grafo_dependientes
                 .entry(*import)
                 .or_default()
@@ -421,7 +421,7 @@ impl ModuloResolver {
 
     /// Retorna los dependientes directos de un módulo
     pub fn dependientes_de(&self, modulo_id: ModuleId) -> Option<&[ModuleId]> {
-        self.module_cache
+        self.cache_modulos
             .grafo_dependientes
             .get(&modulo_id)
             .map(|v| v.as_slice())
@@ -429,7 +429,7 @@ impl ModuloResolver {
 
     /// Retorna las importaciones directas de un módulo
     pub fn importaciones_de(&self, modulo_id: ModuleId) -> Option<&[ModuleId]> {
-        self.module_cache
+        self.cache_modulos
             .grafo_importaciones
             .get(&modulo_id)
             .map(|v| v.as_slice())
@@ -448,7 +448,7 @@ impl ModuloResolver {
         // Intentar obtener del cache primero
         if let Some(prog) = self.cache.get(nombre_modulo) {
             let modulo_id = self
-                .module_cache
+                .cache_modulos
                 .por_ruta
                 .get(nombre_modulo)
                 .copied()
@@ -498,7 +498,7 @@ impl ModuloResolver {
         // Cachear
         self.cache
             .insert(nombre_modulo.to_string(), programa.clone());
-        self.module_cache
+        self.cache_modulos
             .por_ruta
             .insert(nombre_modulo.to_string(), modulo_id);
 

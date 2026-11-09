@@ -92,7 +92,7 @@ fn tipos(fuente: &str) -> Vec<TokenTipo> {
         .tokenize()
         .unwrap_or_else(|e| panic!("no tokenizó: {e:?}\n{fuente}"))
         .into_iter()
-        .map(|t| t.kind)
+        .map(|t| t.tipo)
         .collect()
 }
 

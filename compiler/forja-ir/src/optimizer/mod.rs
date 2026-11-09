@@ -1405,7 +1405,7 @@ mod tests {
         let programa = parser.parse().unwrap();
         let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
-        // La función tiene 11 declaraciones (> max_inline_size=10), no se inlinea
+        // La función tiene 11 declaraciones (> tamano_maximo_en_linea=10), no se inlinea
         assert_eq!(inliner.inlines_realizados, 0);
         let funcs: Vec<_> = prog
             .declaraciones

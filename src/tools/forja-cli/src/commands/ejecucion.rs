@@ -625,8 +625,8 @@ pub(crate) fn recolectar_archivos_fa(directorio: &Path, out: &mut Vec<String>) {
         Ok(e) => e,
         Err(_) => return,
     };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let ruta_hijo = entry.path();
+    for entrada in entries.filter_map(|e| e.ok()) {
+        let ruta_hijo = entrada.path();
         if ruta_hijo.is_dir() {
             recolectar_archivos_fa(&ruta_hijo, out);
         } else if ruta_hijo

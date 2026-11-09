@@ -7,7 +7,7 @@ fn kinds(fuente: &str) -> Vec<TokenTipo> {
         .tokenize()
         .unwrap()
         .into_iter()
-        .map(|t| t.kind)
+        .map(|t| t.tipo)
         .collect()
 }
 
@@ -729,7 +729,7 @@ fn tokens_traen_span_de_bytes() {
     assert_eq!(&fuente[span.inicio as usize..span.fin as usize], "variable");
     let numero = tokens
         .iter()
-        .find(|t| matches!(t.kind, TokenTipo::Numero(_)))
+        .find(|t| matches!(t.tipo, TokenTipo::Numero(_)))
         .unwrap();
     let span = numero.span.expect("el número debe tener span");
     assert_eq!(&fuente[span.inicio as usize..span.fin as usize], "42");

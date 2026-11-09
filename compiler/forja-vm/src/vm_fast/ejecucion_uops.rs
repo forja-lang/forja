@@ -18,7 +18,7 @@ impl ForjaFast {
         uops = optimizar_uops(&uops);
 
         // 4. Re-mapear IPs de funciones: de posiciones bytecode a posiciones uops
-        //    También actualizar la function_table con las nuevas IPs
+        //    También actualizar la tabla_funciones con las nuevas IPs
         let mut nuevas_funciones = HashMap::new();
         for (&sym_id, funcion) in self.funciones.iter() {
             let nombre_str = self.runtime.tabla_simbolos.texto(sym_id);
@@ -51,7 +51,7 @@ impl ForjaFast {
             }
         }
         self.funciones = nuevas_funciones;
-        // Reconstruir function_table con las IPs re-mapeadas (recolectar primero para evitar E0502)
+        // Reconstruir tabla_funciones con las IPs re-mapeadas (recolectar primero para evitar E0502)
         let funcs_remapeo: Vec<(IdSimbolo, usize, usize)> = self
             .funciones
             .iter()
@@ -513,8 +513,8 @@ impl ForjaFast {
                     let b = self.desapilar_valor()?;
                     let a = self.desapilar_valor()?;
                     self.empujar_valor(ValorFast::booleano(
-                        a.es_verdadero_con_monticulo(&self.runtime.str_heap)
-                            && b.es_verdadero_con_monticulo(&self.runtime.str_heap),
+                        a.es_verdadero_con_monticulo(&self.runtime.texto_monticulo)
+                            && b.es_verdadero_con_monticulo(&self.runtime.texto_monticulo),
                     ));
                     self.ip += 1;
                 }
@@ -522,15 +522,15 @@ impl ForjaFast {
                     let b = self.desapilar_valor()?;
                     let a = self.desapilar_valor()?;
                     self.empujar_valor(ValorFast::booleano(
-                        a.es_verdadero_con_monticulo(&self.runtime.str_heap)
-                            || b.es_verdadero_con_monticulo(&self.runtime.str_heap),
+                        a.es_verdadero_con_monticulo(&self.runtime.texto_monticulo)
+                            || b.es_verdadero_con_monticulo(&self.runtime.texto_monticulo),
                     ));
                     self.ip += 1;
                 }
                 Uop::No => {
                     let a = self.desapilar_valor()?;
                     self.empujar_valor(ValorFast::booleano(
-                        !a.es_verdadero_con_monticulo(&self.runtime.str_heap),
+                        !a.es_verdadero_con_monticulo(&self.runtime.texto_monticulo),
                     ));
                     self.ip += 1;
                 }
@@ -542,7 +542,7 @@ impl ForjaFast {
                 Uop::JumpSiFalso(target) => {
                     if !self
                         .desapilar_valor()?
-                        .es_verdadero_con_monticulo(&self.runtime.str_heap)
+                        .es_verdadero_con_monticulo(&self.runtime.texto_monticulo)
                     {
                         self.ip = target;
                     } else {
@@ -566,7 +566,8 @@ impl ForjaFast {
                     args.reverse();
                     let callee = self.desapilar_valor()?;
                     if callee.es_texto() {
-                        let nombre = self.runtime.str_heap[callee.indice_texto() as usize].clone();
+                        let nombre =
+                            self.runtime.texto_monticulo[callee.indice_texto() as usize].clone();
                         for a in args {
                             self.empujar_valor(a);
                         }
@@ -590,18 +591,18 @@ impl ForjaFast {
                 }
                 Uop::Call(nombre, nargs) => {
                     // Opcode::LlamarDirecto se expande a Uop::Call("%direct_{idx}"):
-                    // resolver el índice directamente contra function_table.
+                    // resolver el índice directamente contra tabla_funciones.
                     let entrada_opt: Option<FuncionVersion> =
                         if let Some(idx_str) = nombre.strip_prefix("%direct_") {
                             match idx_str.parse::<usize>() {
-                                Ok(idx) => self.function_table.entries.get(idx).copied(),
+                                Ok(idx) => self.tabla_funciones.entries.get(idx).copied(),
                                 Err(_) => None,
                             }
                         } else {
                             let sym_id = self.runtime.tabla_simbolos.internar(&nombre);
                             self.lookup_funcion_entrada(sym_id)
                         };
-                    if let Some(entry) = entrada_opt {
+                    if let Some(entrada) = entrada_opt {
                         let next_ip = self.ip + 1;
                         let es_tail =
                             next_ip < longitud && matches!(uops.get(next_ip), Some(Uop::Return));
@@ -621,33 +622,33 @@ impl ForjaFast {
                                     l[i] = arg;
                                 }
                             }
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         } else {
                             self.flush_pila();
                             let max_frames = self.frame_buffer.len();
-                            if self.frame_count >= max_frames {
+                            if self.cantidad_marcos >= max_frames {
                                 return Err(ErrFast::StackUnder(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
-                            self.frame_buffer[self.frame_count] = FrmFast {
+                            self.frame_buffer[self.cantidad_marcos] = FrmFast {
                                 ip_ret: next_ip,
-                                funcion_version: entry.version,
+                                funcion_version: entrada.version,
                                 funcion_simbolo: self.runtime.tabla_simbolos.internar(&nombre),
                             };
-                            self.frame_count += 1;
+                            self.cantidad_marcos += 1;
                             let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                             for _ in 0..nargs {
                                 args.push(self.desapilar_valor()?);
                             }
                             args.reverse();
-                            let tamano_variables = entry.tamano_variables.max(nargs);
+                            let tamano_variables = entrada.tamano_variables.max(nargs);
                             let mut locals = vec![ValorFast::nulo(); tamano_variables];
                             for (i, arg) in args.into_iter().enumerate() {
                                 locals[i] = arg;
                             }
                             self.frame_locals.push(locals);
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         }
                     } else {
                         // Intentar builtin (ej: dividir() como standalone)
@@ -684,7 +685,7 @@ impl ForjaFast {
                 }
                 Uop::TailCall(nombre, nargs) => {
                     let sym_id = self.runtime.tabla_simbolos.internar(&nombre);
-                    if let Some(entry) = self.lookup_funcion_entrada(sym_id) {
+                    if let Some(entrada) = self.lookup_funcion_entrada(sym_id) {
                         self.flush_pila();
                         let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                         for _ in 0..nargs {
@@ -699,7 +700,7 @@ impl ForjaFast {
                                 l[i] = arg;
                             }
                         }
-                        self.ip = entry.ip;
+                        self.ip = entrada.ip;
                     } else {
                         let nombre_str = nombre.to_string();
                         if let Some(b) = resolver_builtin_fast(&nombre_str) {
@@ -731,11 +732,11 @@ impl ForjaFast {
                     }
                 }
                 Uop::Return => {
-                    if self.frame_count == 0 {
+                    if self.cantidad_marcos == 0 {
                         break;
                     }
-                    self.frame_count -= 1;
-                    let frame = self.frame_buffer[self.frame_count];
+                    self.cantidad_marcos -= 1;
+                    let frame = self.frame_buffer[self.cantidad_marcos];
                     self.flush_pila();
                     self.flush_texto_builders();
                     self.liberar_locals();
@@ -824,7 +825,7 @@ impl ForjaFast {
                 Uop::NewObject(c) => {
                     let clase_sym = self.runtime.tabla_simbolos.internar(&c);
                     self.runtime
-                        .class_descriptors
+                        .descriptores_clase
                         .entry(clase_sym)
                         .or_insert_with(|| {
                             let forma = FormaCampos::nuevo();
@@ -850,7 +851,8 @@ impl ForjaFast {
                         let ip = self.ip;
                         if !matches!(self.ic_setfield[ip], Pic::Mega) {
                             let obj_idx = obj_val.indice_objeto();
-                            let clase_actual = self.runtime.obj_heap[obj_idx as usize].clase;
+                            let clase_actual =
+                                self.runtime.objeto_monticulo[obj_idx as usize].clase;
                             if let Some(idx_cache) = self.ic_setfield[ip].hit(clase_actual) {
                                 if idx_cache < self.obtener_objeto(obj_idx).campos_vec.len() {
                                     let v = self.desapilar_valor()?;
@@ -864,20 +866,25 @@ impl ForjaFast {
                         let v = self.desapilar_valor()?;
                         let obj = self.desapilar_valor()?;
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.runtime.obj_heap[idx as usize].clase;
+                        let clase_sym = self.runtime.objeto_monticulo[idx as usize].clase;
                         let ip = self.ip;
-                        if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+                        if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym) {
                             if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
-                                if sidx < self.runtime.obj_heap[idx as usize].campos_vec.len() {
-                                    self.runtime.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                if sidx
+                                    < self.runtime.objeto_monticulo[idx as usize].campos_vec.len()
+                                {
+                                    self.runtime.objeto_monticulo[idx as usize].campos_vec[sidx] =
+                                        v;
                                 } else {
-                                    self.runtime.obj_heap[idx as usize].campos_vec.push(v);
+                                    self.runtime.objeto_monticulo[idx as usize]
+                                        .campos_vec
+                                        .push(v);
                                 }
                                 self.ic_setfield[ip] =
                                     self.ic_setfield[ip].record_miss(clase_sym, sidx);
                             } else {
                                 let desc_mut =
-                                    self.runtime.class_descriptors.get_mut(&clase_sym).unwrap();
+                                    self.runtime.descriptores_clase.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.forma.agregar_campo(campo_sym);
                                 // Transición de forma del objeto (RegistroFormas)
                                 let forma_id = self.runtime.formas_objeto[idx as usize];
@@ -886,23 +893,30 @@ impl ForjaFast {
                                     .registro_formas
                                     .agregar_campo_dinamico(forma_id, campo_sym);
                                 self.runtime.formas_objeto[idx as usize] = nuevo_shape;
-                                self.runtime.obj_heap[idx as usize].forma_id = nuevo_shape;
-                                if sidx < self.runtime.obj_heap[idx as usize].campos_vec.len() {
-                                    self.runtime.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                self.runtime.objeto_monticulo[idx as usize].forma_id = nuevo_shape;
+                                if sidx
+                                    < self.runtime.objeto_monticulo[idx as usize].campos_vec.len()
+                                {
+                                    self.runtime.objeto_monticulo[idx as usize].campos_vec[sidx] =
+                                        v;
                                 } else {
-                                    self.runtime.obj_heap[idx as usize].campos_vec.push(v);
+                                    self.runtime.objeto_monticulo[idx as usize]
+                                        .campos_vec
+                                        .push(v);
                                 }
                                 self.ic_setfield[ip] =
                                     self.ic_setfield[ip].record_miss(clase_sym, sidx);
                             }
                         } else {
                             if (campo_sym.0 as usize)
-                                < self.runtime.obj_heap[idx as usize].campos_vec.len()
+                                < self.runtime.objeto_monticulo[idx as usize].campos_vec.len()
                             {
-                                self.runtime.obj_heap[idx as usize].campos_vec
+                                self.runtime.objeto_monticulo[idx as usize].campos_vec
                                     [campo_sym.0 as usize] = v;
                             } else {
-                                self.runtime.obj_heap[idx as usize].campos_vec.push(v);
+                                self.runtime.objeto_monticulo[idx as usize]
+                                    .campos_vec
+                                    .push(v);
                             }
                         }
                     }
@@ -939,7 +953,7 @@ impl ForjaFast {
                         let cache = self.ic_getfield[ip];
                         if !matches!(cache, Pic::Mega) {
                             let obj_idx = obj_val.indice_objeto();
-                            let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
+                            let clase_sym = self.runtime.objeto_monticulo[obj_idx as usize].clase;
                             if let Some(idx_cache) = cache.hit(clase_sym) {
                                 if idx_cache < self.obtener_objeto(obj_idx).campos_vec.len() {
                                     let valor = self.obtener_objeto(obj_idx).campos_vec[idx_cache];
@@ -952,24 +966,27 @@ impl ForjaFast {
                         }
                         let obj = self.desapilar_valor()?;
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.runtime.obj_heap[idx as usize].clase;
-                        let valor =
-                            if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
-                                if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
-                                    if sidx < self.runtime.obj_heap[idx as usize].campos_vec.len() {
-                                        self.runtime.obj_heap[idx as usize].campos_vec[sidx]
-                                    } else {
-                                        ValorFast::nulo()
-                                    }
+                        let clase_sym = self.runtime.objeto_monticulo[idx as usize].clase;
+                        let valor = if let Some(desc) =
+                            self.runtime.descriptores_clase.get(&clase_sym)
+                        {
+                            if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
+                                if sidx
+                                    < self.runtime.objeto_monticulo[idx as usize].campos_vec.len()
+                                {
+                                    self.runtime.objeto_monticulo[idx as usize].campos_vec[sidx]
                                 } else {
                                     ValorFast::nulo()
                                 }
                             } else {
                                 ValorFast::nulo()
-                            };
+                            }
+                        } else {
+                            ValorFast::nulo()
+                        };
                         self.empujar_valor(valor);
                         let ip = self.ip;
-                        if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+                        if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym) {
                             if let Some(sidx) = desc.forma.obtener_indice(campo_sym) {
                                 self.ic_getfield[ip] =
                                     self.ic_getfield[ip].record_miss(clase_sym, sidx);
@@ -995,11 +1012,11 @@ impl ForjaFast {
                     let obj = self.desapilar_valor()?;
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.runtime.obj_heap[idx as usize].clase;
+                        let clase_sym = self.runtime.objeto_monticulo[idx as usize].clase;
                         let metodo_sym = self.runtime.tabla_simbolos.internar(&m);
                         // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
                         if clase_sym == self.sym_canal_emisor {
-                            let chan_idx = self.runtime.obj_heap[idx as usize].campos_vec[0]
+                            let chan_idx = self.runtime.objeto_monticulo[idx as usize].campos_vec[0]
                                 .a_entero() as usize;
                             if metodo_sym == self.sym_enviar || metodo_sym.0 == self.sym_send.0 {
                                 if !args.is_empty() {
@@ -1016,7 +1033,7 @@ impl ForjaFast {
                             continue;
                         }
                         if clase_sym == self.sym_canal_receptor {
-                            let chan_idx = self.runtime.obj_heap[idx as usize].campos_vec[0]
+                            let chan_idx = self.runtime.objeto_monticulo[idx as usize].campos_vec[0]
                                 .a_entero() as usize;
                             if metodo_sym == self.sym_recibir
                                 || metodo_sym.0 == self.sym_recibir.0
@@ -1048,21 +1065,24 @@ impl ForjaFast {
                             continue;
                         }
                         if clase_sym == self.sym_hilo {
-                            let hilo_indice = self.runtime.obj_heap[idx as usize].campos_vec[0]
-                                .a_entero() as usize;
+                            let hilo_indice = self.runtime.objeto_monticulo[idx as usize].campos_vec
+                                [0]
+                            .a_entero() as usize;
                             if metodo_sym == self.sym_unir
                                 || metodo_sym.0 == self.sym_unir.0
                                 || metodo_sym.0 == self.sym_join.0
                             {
-                                if hilo_indice < self.runtime.thread_rx.len() {
-                                    if let Some(rx) = self.runtime.thread_rx[hilo_indice].take() {
+                                if hilo_indice < self.runtime.hilo_receptor.len() {
+                                    if let Some(rx) = self.runtime.hilo_receptor[hilo_indice].take()
+                                    {
                                         let val = match rx.recv() {
                                             Ok(cv) => self.valor_de_channel(cv),
                                             Err(_) => ValorFast::nulo(),
                                         };
-                                        self.runtime.thread_heap[hilo_indice] = Some(val);
+                                        self.runtime.hilo_monticulo[hilo_indice] = Some(val);
                                         self.empujar_valor(val);
-                                    } else if let Some(val) = self.runtime.thread_heap[hilo_indice]
+                                    } else if let Some(val) =
+                                        self.runtime.hilo_monticulo[hilo_indice]
                                     {
                                         self.empujar_valor(val);
                                     } else {
@@ -1080,28 +1100,28 @@ impl ForjaFast {
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, metodo_sym);
                         if let Some(fn_sym) = fn_sym {
-                            if let Some(entry) = self.lookup_funcion_entrada(fn_sym) {
+                            if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                                 let max_frames = self.frame_buffer.len();
-                                if self.frame_count >= max_frames {
+                                if self.cantidad_marcos >= max_frames {
                                     return Err(ErrFast::StackUnder(
                                         "Stack overflow: demasiadas llamadas anidadas".into(),
                                     ));
                                 }
-                                self.frame_buffer[self.frame_count] = FrmFast {
+                                self.frame_buffer[self.cantidad_marcos] = FrmFast {
                                     ip_ret: self.ip + 1,
-                                    funcion_version: entry.version,
+                                    funcion_version: entrada.version,
                                     funcion_simbolo: fn_sym,
                                 };
-                                self.frame_count += 1;
+                                self.cantidad_marcos += 1;
                                 let total_vars = 1 + nargs;
-                                let tamano_variables = entry.tamano_variables.max(total_vars);
+                                let tamano_variables = entrada.tamano_variables.max(total_vars);
                                 let mut locals = vec![ValorFast::nulo(); tamano_variables];
                                 locals[0] = ValorFast::objeto(idx);
                                 for (i, arg) in args.into_iter().enumerate() {
                                     locals[1 + i] = arg;
                                 }
                                 self.frame_locals.push(locals);
-                                self.ip = entry.ip;
+                                self.ip = entrada.ip;
                                 continue;
                             }
                         }
@@ -1109,28 +1129,28 @@ impl ForjaFast {
                         let c = self.runtime.tabla_simbolos.texto(clase_sym);
                         let fn_name = format!("{}.{}", c, m);
                         let fn_sym = self.runtime.tabla_simbolos.internar(&fn_name);
-                        if let Some(entry) = self.lookup_funcion_entrada(fn_sym) {
+                        if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                             let max_frames = self.frame_buffer.len();
-                            if self.frame_count >= max_frames {
+                            if self.cantidad_marcos >= max_frames {
                                 return Err(ErrFast::StackUnder(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
-                            self.frame_buffer[self.frame_count] = FrmFast {
+                            self.frame_buffer[self.cantidad_marcos] = FrmFast {
                                 ip_ret: self.ip + 1,
-                                funcion_version: entry.version,
+                                funcion_version: entrada.version,
                                 funcion_simbolo: fn_sym,
                             };
-                            self.frame_count += 1;
+                            self.cantidad_marcos += 1;
                             let total_vars = 1 + nargs;
-                            let tamano_variables = entry.tamano_variables.max(total_vars);
+                            let tamano_variables = entrada.tamano_variables.max(total_vars);
                             let mut locals = vec![ValorFast::nulo(); tamano_variables];
                             locals[0] = ValorFast::objeto(idx);
                             for (i, arg) in args.into_iter().enumerate() {
                                 locals[1 + i] = arg;
                             }
                             self.frame_locals.push(locals);
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         } else {
                             self.empujar_valor(ValorFast::nulo());
                             self.ip += 1;
@@ -1367,11 +1387,11 @@ impl ForjaFast {
                             // divergencia VM/uops. Desenrollar como `Uop::Return`.
                             self.top_longitud = 0;
                             self.empujar_valor(err);
-                            if self.frame_count == 0 {
+                            if self.cantidad_marcos == 0 {
                                 break;
                             }
-                            self.frame_count -= 1;
-                            let frame = self.frame_buffer[self.frame_count];
+                            self.cantidad_marcos -= 1;
+                            let frame = self.frame_buffer[self.cantidad_marcos];
                             self.flush_pila();
                             self.flush_texto_builders();
                             self.liberar_locals();

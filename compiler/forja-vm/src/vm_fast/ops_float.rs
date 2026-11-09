@@ -32,17 +32,17 @@ impl ForjaFast {
         match op {
             // === SUPERINSTRUCTIONS FLOAT (Opcode path) ===
             Opcode::DeclararOperacionDecimal(idx, d) => {
-                prof_count!(declare_float_op);
+                prof_count!(declarar_flotante_op);
                 self.almacen_local(*idx, ValorFast::flotante(*d));
                 self.ip += 1;
             }
             Opcode::GuardarOperacionDecimal(idx, d) => {
-                prof_count!(store_float_op);
+                prof_count!(fijar_flotante_op);
                 self.almacen_local(*idx, ValorFast::flotante(*d));
                 self.ip += 1;
             }
             Opcode::CargarSumarDecimal(idx, d) => {
-                prof_count!(load_add_float);
+                prof_count!(cargar_sumar_flotante);
                 let val = self.cargar_local(*idx);
                 // La fusión se hace sobre un `Add` sin tipo: si el valor no es
                 // numérico (p. ej. `"pref " + 1.5`) se delega en el `Add`
@@ -58,7 +58,7 @@ impl ForjaFast {
                 }
             }
             Opcode::SumarGuardarDecimal(idx) => {
-                prof_count!(add_store_float);
+                prof_count!(sumar_fijar_flotante);
                 let b = self.desapilar_valor()?;
                 let a = self.desapilar_valor()?;
                 // Fast path directo: quickening garantiza float
@@ -66,7 +66,7 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::RestarGuardarDecimal(idx) => {
-                prof_count!(sub_store_float);
+                prof_count!(restar_fijar_flotante);
                 let b = self.desapilar_valor()?;
                 let a = self.desapilar_valor()?;
                 // Fast path directo: quickening garantiza float
@@ -74,7 +74,7 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::MultiplicarGuardarDecimal(idx) => {
-                prof_count!(mul_store_float);
+                prof_count!(multiplicar_fijar_flotante);
                 let b = self.desapilar_valor()?;
                 let a = self.desapilar_valor()?;
                 // Fast path directo: quickening garantiza float
@@ -85,28 +85,28 @@ impl ForjaFast {
             // === FASE 3a: Stack Bypass — Operaciones Directas sobre locales ===
             // Sin push/pop del stack — acceso directo a locals
             Opcode::DividirDecimalDirecto(dst, src1, src2) => {
-                prof_count!(div_float);
+                prof_count!(dividir_flotante);
                 let a = self.cargar_local(*src1);
                 let b = self.cargar_local(*src2);
                 self.almacen_local(*dst, ValorFast::flotante(a.a_flotante() / b.a_flotante()));
                 self.ip += 1;
             }
             Opcode::MultiplicarDecimalDirecto(dst, src1, src2) => {
-                prof_count!(mul_float);
+                prof_count!(multiplicar_flotante);
                 let a = self.cargar_local(*src1);
                 let b = self.cargar_local(*src2);
                 self.almacen_local(*dst, ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                 self.ip += 1;
             }
             Opcode::SumarDecimalDirecto(dst, src1, src2) => {
-                prof_count!(add_float);
+                prof_count!(sumar_flotante);
                 let a = self.cargar_local(*src1);
                 let b = self.cargar_local(*src2);
                 self.almacen_local(*dst, ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                 self.ip += 1;
             }
             Opcode::RestarDecimalDirecto(dst, src1, src2) => {
-                prof_count!(sub_float);
+                prof_count!(restar_flotante);
                 let a = self.cargar_local(*src1);
                 let b = self.cargar_local(*src2);
                 self.almacen_local(*dst, ValorFast::flotante(a.a_flotante() - b.a_flotante()));
@@ -116,8 +116,8 @@ impl ForjaFast {
             // === FASE 3b: Super-fusión FusedDivAdd/FusedDivSub ===
             // vars[dst] += vars[num_src] / vars[div_src]  (sin stack)
             Opcode::DividirSumarFusionado(dst, num_src, div_src) => {
-                prof_count!(add_float);
-                prof_count!(div_float);
+                prof_count!(sumar_flotante);
+                prof_count!(dividir_flotante);
                 let num = self.cargar_local(*num_src);
                 let div = self.cargar_local(*div_src);
                 let dst_val = self.cargar_local(*dst);
@@ -128,8 +128,8 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::DividirRestarFusionado(dst, num_src, div_src) => {
-                prof_count!(sub_float);
-                prof_count!(div_float);
+                prof_count!(restar_flotante);
+                prof_count!(dividir_flotante);
                 let num = self.cargar_local(*num_src);
                 let div = self.cargar_local(*div_src);
                 let dst_val = self.cargar_local(*dst);
@@ -141,8 +141,8 @@ impl ForjaFast {
             }
             // Fase 3b Const: vars[dst] += num / vars[div_src] (con constante inline)
             Opcode::DividirSumarFusionadoConst(dst, num, div_src) => {
-                prof_count!(add_float);
-                prof_count!(div_float);
+                prof_count!(sumar_flotante);
+                prof_count!(dividir_flotante);
                 let div = self.cargar_local(*div_src);
                 let dst_val = self.cargar_local(*dst);
                 self.almacen_local(
@@ -152,8 +152,8 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::DividirRestarFusionadoConst(dst, num, div_src) => {
-                prof_count!(sub_float);
-                prof_count!(div_float);
+                prof_count!(restar_flotante);
+                prof_count!(dividir_flotante);
                 let div = self.cargar_local(*div_src);
                 let dst_val = self.cargar_local(*dst);
                 self.almacen_local(
@@ -218,7 +218,7 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::CargarIndiceDecimal(idx) => {
-                prof_count!(load_idx_float);
+                prof_count!(cargar_indice_flotante);
                 let v = self.cargar_local(*idx);
                 // Fast path directo: quickening garantiza float
                 self.empujar_valor(v);
@@ -231,7 +231,7 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::GuardarIndiceDecimal(idx) => {
-                prof_count!(store_idx_float);
+                prof_count!(fijar_indice_flotante);
                 let val = self.desapilar_valor()?;
                 // Fast path directo: quickening garantiza float
                 self.almacen_local(*idx, val);
@@ -513,8 +513,8 @@ impl ForjaFast {
                 let b = self.desapilar_valor()?;
                 let a = self.desapilar_valor()?;
                 self.empujar_valor(ValorFast::booleano(
-                    a.es_verdadero_con_monticulo(&self.runtime.str_heap)
-                        && b.es_verdadero_con_monticulo(&self.runtime.str_heap),
+                    a.es_verdadero_con_monticulo(&self.runtime.texto_monticulo)
+                        && b.es_verdadero_con_monticulo(&self.runtime.texto_monticulo),
                 ));
                 self.ip += 1;
             }
@@ -522,8 +522,8 @@ impl ForjaFast {
                 let b = self.desapilar_valor()?;
                 let a = self.desapilar_valor()?;
                 self.empujar_valor(ValorFast::booleano(
-                    a.es_verdadero_con_monticulo(&self.runtime.str_heap)
-                        || b.es_verdadero_con_monticulo(&self.runtime.str_heap),
+                    a.es_verdadero_con_monticulo(&self.runtime.texto_monticulo)
+                        || b.es_verdadero_con_monticulo(&self.runtime.texto_monticulo),
                 ));
                 self.ip += 1;
             }

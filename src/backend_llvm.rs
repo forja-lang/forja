@@ -148,7 +148,7 @@ pub struct LlvmFuncion {
     pub tipo_retorno: LlvmTipo,
     pub params: Vec<(String, LlvmTipo)>,
     pub blocks: Vec<LlvmBlock>,
-    pub is_declaration: bool,
+    pub es_declaration: bool,
 }
 
 /// Módulo LLVM (colección de funciones + tipos global)
@@ -224,7 +224,7 @@ impl LlvmModulo {
     }
 
     fn funcion_to_ir(&self, func: &LlvmFuncion) -> String {
-        if func.is_declaration {
+        if func.es_declaration {
             let params_str = func
                 .params
                 .iter()
@@ -373,21 +373,21 @@ impl LlvmModulo {
 
 /// Backend LLVM
 pub struct LlvmBackend {
-    pub module: LlvmModulo,
+    pub modulo: LlvmModulo,
     siguiente_temporal: usize,
     next_block: usize,
-    pub class_structs: HashMap<String, LlvmTipo>,
-    pub method_table: HashMap<String, usize>,
+    pub estructuras_clase: HashMap<String, LlvmTipo>,
+    pub tabla_metodos: HashMap<String, usize>,
 }
 
 impl LlvmBackend {
     pub fn nuevo(modulo_name: &str) -> Self {
         LlvmBackend {
-            module: LlvmModulo::nuevo(modulo_name),
+            modulo: LlvmModulo::nuevo(modulo_name),
             siguiente_temporal: 0,
             next_block: 0,
-            class_structs: HashMap::new(),
-            method_table: HashMap::new(),
+            estructuras_clase: HashMap::new(),
+            tabla_metodos: HashMap::new(),
         }
     }
 
@@ -406,14 +406,14 @@ impl LlvmBackend {
     /// Registra una clase como struct LLVM
     pub fn register_clase(&mut self, name: &str, fields: Vec<(String, LlvmTipo)>) {
         let ty = LlvmTipo::Struct(name.to_string(), fields);
-        self.module.sumar_global_tipo(name, ty.clone());
-        self.class_structs.insert(name.to_string(), ty);
+        self.modulo.sumar_global_tipo(name, ty.clone());
+        self.estructuras_clase.insert(name.to_string(), ty);
     }
 
     /// Registra un string literal como global
     pub fn sumar_texto_literal(&mut self, valor: &str) -> String {
-        let name = format!("str.{}", self.module.global_strings.len());
-        self.module
+        let name = format!("str.{}", self.modulo.global_strings.len());
+        self.modulo
             .global_strings
             .push((name.clone(), valor.to_string()));
         name
@@ -431,10 +431,10 @@ impl LlvmBackend {
 
         // 2. Por cada función no-declaración, inyectar safe points y stack maps
         let funcion_ids: Vec<String> = self
-            .module
+            .modulo
             .functions
             .iter()
-            .filter(|f| !f.is_declaration)
+            .filter(|f| !f.es_declaration)
             .map(|f| f.name.clone())
             .collect();
 
@@ -447,44 +447,44 @@ impl LlvmBackend {
     fn declare_gc_intrinsics(&mut self) {
         // llvm.experimental.gc.statepoint - marca safe points para el GC
         if !self
-            .module
+            .modulo
             .functions
             .iter()
             .any(|f| f.name == "llvm.experimental.gc.statepoint")
         {
-            self.module.sumar_funcion(LlvmFuncion {
+            self.modulo.sumar_funcion(LlvmFuncion {
                 name: "llvm.experimental.gc.statepoint".to_string(),
                 tipo_retorno: LlvmTipo::Void,
                 params: vec![],
                 blocks: vec![],
-                is_declaration: true,
+                es_declaration: true,
             });
         }
 
         // llvm.experimental.gc.relocate - reubica punteros después de GC
         if !self
-            .module
+            .modulo
             .functions
             .iter()
             .any(|f| f.name == "llvm.experimental.gc.relocate")
         {
-            self.module.sumar_funcion(LlvmFuncion {
+            self.modulo.sumar_funcion(LlvmFuncion {
                 name: "llvm.experimental.gc.relocate".to_string(),
                 tipo_retorno: LlvmTipo::I64,
                 params: vec![],
                 blocks: vec![],
-                is_declaration: true,
+                es_declaration: true,
             });
         }
 
         // __gc_write_barrier - write barrier para generational GC
         if !self
-            .module
+            .modulo
             .functions
             .iter()
             .any(|f| f.name == "__gc_write_barrier")
         {
-            self.module.sumar_funcion(LlvmFuncion {
+            self.modulo.sumar_funcion(LlvmFuncion {
                 name: "__gc_write_barrier".to_string(),
                 tipo_retorno: LlvmTipo::Void,
                 params: vec![
@@ -492,29 +492,29 @@ impl LlvmBackend {
                     ("val".to_string(), LlvmTipo::Ptr),
                 ],
                 blocks: vec![],
-                is_declaration: true,
+                es_declaration: true,
             });
         }
 
         // __gc_poll - polling check para el GC thread
-        if !self.module.functions.iter().any(|f| f.name == "__gc_poll") {
-            self.module.sumar_funcion(LlvmFuncion {
+        if !self.modulo.functions.iter().any(|f| f.name == "__gc_poll") {
+            self.modulo.sumar_funcion(LlvmFuncion {
                 name: "__gc_poll".to_string(),
                 tipo_retorno: LlvmTipo::Void,
                 params: vec![],
                 blocks: vec![],
-                is_declaration: true,
+                es_declaration: true,
             });
         }
 
         // __gc_alloc - asignación de memoria con soporte GC
-        if !self.module.functions.iter().any(|f| f.name == "__gc_alloc") {
-            self.module.sumar_funcion(LlvmFuncion {
+        if !self.modulo.functions.iter().any(|f| f.name == "__gc_alloc") {
+            self.modulo.sumar_funcion(LlvmFuncion {
                 name: "__gc_alloc".to_string(),
                 tipo_retorno: LlvmTipo::Ptr,
                 params: vec![("size".to_string(), LlvmTipo::I64)],
                 blocks: vec![],
-                is_declaration: true,
+                es_declaration: true,
             });
         }
     }
@@ -522,7 +522,7 @@ impl LlvmBackend {
     /// Inyecta GC intrinsics en una función específica
     fn inject_funcion_gc(&mut self, func_name: &str) {
         let funcion_indice = self
-            .module
+            .modulo
             .functions
             .iter()
             .position(|f| f.name == func_name);
@@ -532,7 +532,7 @@ impl LlvmBackend {
             let id_funcion = gc_mgr.nuevo_funcion_id();
 
             // Analizar los bloques de la función para encontrar loops (back-edges)
-            let blocks = self.module.functions[idx].blocks.clone();
+            let blocks = self.modulo.functions[idx].blocks.clone();
             let block_names: Vec<String> = blocks.iter().map(|b| b.name.clone()).collect();
 
             for (block_idx, block) in blocks.iter().enumerate() {
@@ -610,7 +610,7 @@ impl LlvmBackend {
 
         // Insertar la llamada a __gc_poll al inicio del bloque
         // Desplazamos la primera instrucción y añadimos el poll
-        if !self.module.functions[funcion_indice].blocks[block_idx]
+        if !self.modulo.functions[funcion_indice].blocks[block_idx]
             .instructions
             .is_empty()
         {
@@ -624,7 +624,7 @@ impl LlvmBackend {
             // Insertar al inicio del bloque (antes de la primera instrucción)
             // Nota: no podemos insertar comentarios como instrucciones LLVM,
             // así que solo agregamos la llamada
-            self.module.functions[funcion_indice].blocks[block_idx]
+            self.modulo.functions[funcion_indice].blocks[block_idx]
                 .instructions
                 .insert(0, poll_inst);
         }
@@ -633,7 +633,7 @@ impl LlvmBackend {
     /// Retorna el LLVM IR del módulo con GC intrinsics inyectados
     pub fn to_llvm_ir_con_gc(&mut self) -> String {
         self.inject_gc_intrinsics();
-        self.module.to_llvm_ir()
+        self.modulo.to_llvm_ir()
     }
 }
 
@@ -671,7 +671,7 @@ fn escapar_texto(s: &str) -> String {
 /// → %Result = { i8, [max(sizeof(T), sizeof(E)) x i8] }
 /// ```
 pub struct EnumLayout {
-    pub tag_type: LlvmTipo,
+    pub tipo_etiqueta: LlvmTipo,
     pub payload_tipo: LlvmTipo,
     pub tag_values: Vec<(String, u8)>, // (variant_name, tag_value)
 }
@@ -679,7 +679,7 @@ pub struct EnumLayout {
 impl EnumLayout {
     /// Calcula el layout de un enum con las variantes dadas
     pub fn nuevo(variants: &[(String, Vec<LlvmTipo>)]) -> Self {
-        let tag_type = LlvmTipo::I8;
+        let tipo_etiqueta = LlvmTipo::I8;
         let max_payload_tamano = variants
             .iter()
             .map(|(_, fields)| fields.len())
@@ -694,7 +694,7 @@ impl EnumLayout {
             .collect();
 
         EnumLayout {
-            tag_type,
+            tipo_etiqueta,
             payload_tipo,
             tag_values,
         }
@@ -713,7 +713,7 @@ impl EnumLayout {
         LlvmTipo::Struct(
             enum_name.to_string(),
             vec![
-                ("tag".to_string(), self.tag_type.clone()),
+                ("tag".to_string(), self.tipo_etiqueta.clone()),
                 ("payload".to_string(), self.payload_tipo.clone()),
             ],
         )
@@ -756,16 +756,16 @@ pub fn option_tipo(inner: LlvmTipo) -> LlvmTipo {
 /// Closure layout — function pointer + environment
 ///
 /// ```text
-/// closure = { fn_ptr, env_ptr, env_size }
+/// closure = { fn_ptr, env_ptr, tamano_entorno }
 /// ```
 #[derive(Debug, Clone)]
 pub struct ClosureLayout {
     /// Puntero a la función
-    pub fn_ptr_type: LlvmTipo,
+    pub tipo_ptr_funcion: LlvmTipo,
     /// Puntero al environment capturado
-    pub env_ptr_type: LlvmTipo,
+    pub tipo_ptr_entorno: LlvmTipo,
     /// Tamaño del environment en bytes
-    pub env_size: usize,
+    pub tamano_entorno: usize,
 }
 
 impl Default for ClosureLayout {
@@ -777,9 +777,9 @@ impl Default for ClosureLayout {
 impl ClosureLayout {
     pub fn nuevo() -> Self {
         ClosureLayout {
-            fn_ptr_type: LlvmTipo::Ptr,
-            env_ptr_type: LlvmTipo::Ptr,
-            env_size: 0,
+            tipo_ptr_funcion: LlvmTipo::Ptr,
+            tipo_ptr_entorno: LlvmTipo::Ptr,
+            tamano_entorno: 0,
         }
     }
 
@@ -788,8 +788,8 @@ impl ClosureLayout {
         LlvmTipo::Struct(
             "Closure".to_string(),
             vec![
-                ("fn_ptr".to_string(), self.fn_ptr_type.clone()),
-                ("env_ptr".to_string(), self.env_ptr_type.clone()),
+                ("fn_ptr".to_string(), self.tipo_ptr_funcion.clone()),
+                ("env_ptr".to_string(), self.tipo_ptr_entorno.clone()),
                 ("env_size".to_string(), LlvmTipo::I64),
             ],
         )
@@ -807,8 +807,8 @@ impl ClosureLayout {
 /// ```
 #[derive(Debug, Clone)]
 pub struct AsyncLayout {
-    pub state_type: LlvmTipo,
-    pub resume_fn_type: LlvmTipo,
+    pub tipo_estado: LlvmTipo,
+    pub tipo_funcion_reanudar: LlvmTipo,
     pub captured_vars: Vec<(String, LlvmTipo)>,
 }
 
@@ -882,9 +882,9 @@ impl LlvmOptPipeline {
     }
 
     /// Aplica optimizaciones simples a un módulo LLVM
-    pub fn optimizar_modulo(&mut self, module: &mut LlvmModulo) {
-        for func in &mut module.functions {
-            if !func.is_declaration {
+    pub fn optimizar_modulo(&mut self, modulo: &mut LlvmModulo) {
+        for func in &mut modulo.functions {
+            if !func.es_declaration {
                 self.stats.functions_optimized += 1;
             }
         }
@@ -896,63 +896,63 @@ impl LlvmOptPipeline {
 // === 20J: Funciones builtins ===
 
 /// Declara funciones builtins del runtime de Forja
-pub fn declare_builtins(module: &mut LlvmModulo) {
+pub fn declare_builtins(modulo: &mut LlvmModulo) {
     // escribir(value: Entero) → void
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "forja_escribir_entero".to_string(),
         tipo_retorno: LlvmTipo::Void,
         params: vec![("value".to_string(), LlvmTipo::I64)],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 
     // escribir(value: Decimal) → void
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "forja_escribir_decimal".to_string(),
         tipo_retorno: LlvmTipo::Void,
         params: vec![("value".to_string(), LlvmTipo::Double)],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 
     // escribir(value: Texto) → void
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "forja_escribir_texto".to_string(),
         tipo_retorno: LlvmTipo::Void,
         params: vec![("ptr".to_string(), LlvmTipo::Ptr)],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 
     // leer() → Texto (ptr)
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "forja_leer".to_string(),
         tipo_retorno: LlvmTipo::Ptr,
         params: vec![],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 
     // malloc(size) → ptr
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "malloc".to_string(),
         tipo_retorno: LlvmTipo::Ptr,
         params: vec![("size".to_string(), LlvmTipo::I64)],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 
     // free(ptr) → void
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "free".to_string(),
         tipo_retorno: LlvmTipo::Void,
         params: vec![("ptr".to_string(), LlvmTipo::Ptr)],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 
     // memcpy(dest, src, len) → ptr
-    module.sumar_funcion(LlvmFuncion {
+    modulo.sumar_funcion(LlvmFuncion {
         name: "memcpy".to_string(),
         tipo_retorno: LlvmTipo::Ptr,
         params: vec![
@@ -961,7 +961,7 @@ pub fn declare_builtins(module: &mut LlvmModulo) {
             ("len".to_string(), LlvmTipo::I64),
         ],
         blocks: vec![],
-        is_declaration: true,
+        es_declaration: true,
     });
 }
 
@@ -974,8 +974,8 @@ impl Default for AsyncLayout {
 impl AsyncLayout {
     pub fn nuevo() -> Self {
         AsyncLayout {
-            state_type: LlvmTipo::I64,
-            resume_fn_type: LlvmTipo::Ptr,
+            tipo_estado: LlvmTipo::I64,
+            tipo_funcion_reanudar: LlvmTipo::Ptr,
             captured_vars: Vec::new(),
         }
     }
@@ -986,8 +986,8 @@ impl AsyncLayout {
 
     pub fn to_llvm_tipo(&self, name: &str) -> LlvmTipo {
         let mut fields = vec![
-            ("state".to_string(), self.state_type.clone()),
-            ("resume_fn".to_string(), self.resume_fn_type.clone()),
+            ("state".to_string(), self.tipo_estado.clone()),
+            ("resume_fn".to_string(), self.tipo_funcion_reanudar.clone()),
         ];
         for (n, t) in &self.captured_vars {
             fields.push((n.clone(), t.clone()));
@@ -1025,8 +1025,8 @@ mod tests {
 
     #[test]
     fn test_modulo_generation() {
-        let mut module = LlvmModulo::nuevo("test");
-        module.sumar_funcion(LlvmFuncion {
+        let mut modulo = LlvmModulo::nuevo("test");
+        modulo.sumar_funcion(LlvmFuncion {
             name: "add".to_string(),
             tipo_retorno: LlvmTipo::I64,
             params: vec![
@@ -1053,10 +1053,10 @@ mod tests {
                     })),
                 ],
             }],
-            is_declaration: false,
+            es_declaration: false,
         });
 
-        let ir = module.to_llvm_ir();
+        let ir = modulo.to_llvm_ir();
         assert!(ir.contains("define i64 @add(i64 %a, i64 %b)"));
         assert!(ir.contains("entry:"));
         assert!(ir.contains("add i64"));
@@ -1074,8 +1074,8 @@ mod tests {
             ],
         );
 
-        assert!(backend.class_structs.contains_key("Persona"));
-        assert!(backend.module.global_types.contains_key("Persona"));
+        assert!(backend.estructuras_clase.contains_key("Persona"));
+        assert!(backend.modulo.global_types.contains_key("Persona"));
     }
 
     #[test]
@@ -1088,8 +1088,8 @@ mod tests {
 
     #[test]
     fn test_icmp_ops() {
-        let mut module = LlvmModulo::nuevo("test");
-        module.sumar_funcion(LlvmFuncion {
+        let mut modulo = LlvmModulo::nuevo("test");
+        modulo.sumar_funcion(LlvmFuncion {
             name: "cmp_test".to_string(),
             tipo_retorno: LlvmTipo::I1,
             params: vec![
@@ -1117,17 +1117,17 @@ mod tests {
                     })),
                 ],
             }],
-            is_declaration: false,
+            es_declaration: false,
         });
 
-        let ir = module.to_llvm_ir();
+        let ir = modulo.to_llvm_ir();
         assert!(ir.contains("icmp"));
     }
 
     #[test]
     fn test_branch_generation() {
-        let mut module = LlvmModulo::nuevo("test");
-        module.sumar_funcion(LlvmFuncion {
+        let mut modulo = LlvmModulo::nuevo("test");
+        modulo.sumar_funcion(LlvmFuncion {
             name: "branch_test".to_string(),
             tipo_retorno: LlvmTipo::I64,
             params: vec![("x".to_string(), LlvmTipo::I64)],
@@ -1172,10 +1172,10 @@ mod tests {
                     }))],
                 },
             ],
-            is_declaration: false,
+            es_declaration: false,
         });
 
-        let ir = module.to_llvm_ir();
+        let ir = modulo.to_llvm_ir();
         assert!(ir.contains("br i1 %cmp, label %then, label %else"));
         assert!(ir.contains("then:"));
         assert!(ir.contains("else:"));

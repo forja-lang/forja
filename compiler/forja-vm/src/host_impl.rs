@@ -1,8 +1,8 @@
 //! Implementación de `forja_runtime::Anfitrion` para `ForjaFast`.
 
 use crate::vm_fast::ForjaFast;
-use forja_bytecode::symbol_table::{IdSimbolo, TablaSimbolos};
-use forja_runtime::class_descriptor::DescriptorClase;
+use forja_bytecode::tabla_simbolos::{IdSimbolo, TablaSimbolos};
+use forja_runtime::descriptor_clase::DescriptorClase;
 use forja_runtime::sandbox::{SandboxFilesystem, SandboxProceso, SandboxRed};
 use forja_runtime::shape::{IdForma, RegistroFormas};
 use forja_runtime::socket::SocketState;
@@ -49,7 +49,7 @@ impl forja_runtime::Anfitrion for ForjaFast {
         &mut self.runtime.registro_formas
     }
     fn clase_descriptors(&mut self) -> &mut HashMap<IdSimbolo, DescriptorClase> {
-        &mut self.runtime.class_descriptors
+        &mut self.runtime.descriptores_clase
     }
     fn tabla_simbolos(&mut self) -> &mut TablaSimbolos {
         &mut self.runtime.tabla_simbolos
@@ -89,10 +89,10 @@ impl forja_runtime::Anfitrion for ForjaFast {
         &mut self.sandbox_proc
     }
     fn arreglo_monticulo(&self) -> &Vec<Vec<ValorFast>> {
-        &self.runtime.array_heap
+        &self.runtime.arreglo_monticulo
     }
     fn mapa_monticulo(&self) -> &Vec<HashMap<String, ValorFast>> {
-        &self.runtime.map_heap
+        &self.runtime.mapa_monticulo
     }
     fn formas_objeto_mut(&mut self) -> &mut Vec<IdForma> {
         &mut self.runtime.formas_objeto

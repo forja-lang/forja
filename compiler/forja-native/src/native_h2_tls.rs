@@ -18,7 +18,7 @@ pub struct ConexionTls {
 }
 
 /// Heap global de conexiones TLS.
-/// Índices enteros (como socket_heap) para acceso desde Forja.
+/// Índices enteros (como socket_monticulo) para acceso desde Forja.
 static TLS_HEAP: Mutex<Vec<Option<ConexionTls>>> = Mutex::new(Vec::new());
 
 // ═══════════════════════════════════════════════════════════════════════

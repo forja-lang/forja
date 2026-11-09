@@ -80,7 +80,7 @@ impl ForjaFast {
                 Opcode::SaltoSiFalso(target) => {
                     let cond = self
                         .desapilar_valor()?
-                        .es_verdadero_con_monticulo(&self.runtime.str_heap);
+                        .es_verdadero_con_monticulo(&self.runtime.texto_monticulo);
                     // PGO: registrar el branch taken/not-taken
                     if let Some(p) = self.perfil_pgo.as_mut() {
                         p.record_branch(&ip.to_string(), !cond);
@@ -160,11 +160,11 @@ impl ForjaFast {
             match op {
                 // === ARITMÉTICA (con especialización adaptativa) ===
                 Opcode::Sumar => {
-                    prof_count!(add_generic);
+                    prof_count!(sumar_generico);
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math:
                     // quickening ya especializó estáticamente)
-                    if !self.fast_math && self.top_longitud + self.stack.len() >= 2 {
+                    if !self.fast_math && self.top_longitud + self.pila.len() >= 2 {
                         let a = self.peek_valor(0);
                         let b = self.peek_valor(1);
                         let ta = Self::tipo_etiqueta(a);
@@ -173,7 +173,7 @@ impl ForjaFast {
                             self.contador_especializacion[ip] =
                                 self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
-                                prof_count!(specializer_hits);
+                                prof_count!(aciertos_especializador);
                                 // TRACE TEMPORAL (investigación leibniz)
                                 if self.show_bytecode {
                                     eprintln!(
@@ -195,7 +195,7 @@ impl ForjaFast {
                                 });
                             }
                         } else {
-                            prof_count!(specializer_misses);
+                            prof_count!(fallos_especializador);
                             self.contador_especializacion[ip] = 0;
                         }
                     }
@@ -232,7 +232,7 @@ impl ForjaFast {
                     if self.cache_sumar_tipo == Some((ta, tb)) {
                         match ta {
                             0 => {
-                                prof_count!(type_check_int_pass);
+                                prof_count!(verificacion_entero_correcto);
                                 if a.es_entero() && b.es_entero() {
                                     self.empujar_valor(obtener_small_entero_fast(sumar_entero(
                                         a.a_entero(),
@@ -243,7 +243,7 @@ impl ForjaFast {
                                 }
                             }
                             1 => {
-                                prof_count!(type_check_float_pass);
+                                prof_count!(verificacion_flotante_correcto);
                                 if a.es_flotante() && b.es_flotante() {
                                     self.empujar_valor(ValorFast::flotante(
                                         a.a_flotante() + b.a_flotante(),
@@ -353,7 +353,7 @@ impl ForjaFast {
                 Opcode::Restar => {
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math)
-                    if !self.fast_math && self.top_longitud + self.stack.len() >= 2 {
+                    if !self.fast_math && self.top_longitud + self.pila.len() >= 2 {
                         let a = self.peek_valor(0);
                         let b = self.peek_valor(1);
                         let ta = Self::tipo_etiqueta(a);
@@ -455,7 +455,7 @@ impl ForjaFast {
                 Opcode::Multiplicar => {
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math)
-                    if !self.fast_math && self.top_longitud + self.stack.len() >= 2 {
+                    if !self.fast_math && self.top_longitud + self.pila.len() >= 2 {
                         let a = self.peek_valor(0);
                         let b = self.peek_valor(1);
                         let ta = Self::tipo_etiqueta(a);
@@ -546,7 +546,7 @@ impl ForjaFast {
                 Opcode::Dividir => {
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math)
-                    if !self.fast_math && self.top_longitud + self.stack.len() >= 2 {
+                    if !self.fast_math && self.top_longitud + self.pila.len() >= 2 {
                         let a = self.peek_valor(0);
                         let b = self.peek_valor(1);
                         let ta = Self::tipo_etiqueta(a);
@@ -699,7 +699,7 @@ impl ForjaFast {
                 // `ops_aritmetica.rs`. `SubFloat`/`MulFloat`/`DivFloat`
                 // permanecen aquí por usar `patch_op`/`continue`.
                 Opcode::RestarDecimal => {
-                    prof_count!(sub_float);
+                    prof_count!(restar_flotante);
                     let b = self.desapilar_valor()?;
                     let a = self.desapilar_valor()?;
                     // Fast-Math total (solo manual): sin checks de tipo.
@@ -732,7 +732,7 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Opcode::MultiplicarDecimal => {
-                    prof_count!(mul_float);
+                    prof_count!(multiplicar_flotante);
                     let b = self.desapilar_valor()?;
                     let a = self.desapilar_valor()?;
                     // Fast-Math total (solo manual): sin checks de tipo.
@@ -781,7 +781,7 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Opcode::DividirDecimal => {
-                    prof_count!(div_float);
+                    prof_count!(dividir_flotante);
                     let b = self.desapilar_valor()?;
                     let a = self.desapilar_valor()?;
                     // Fast-Math total (solo manual): sin checks de división por
@@ -865,7 +865,7 @@ impl ForjaFast {
                 Opcode::SaltoSiFalso(target) => {
                     let cond = self
                         .desapilar_valor()?
-                        .es_verdadero_con_monticulo(&self.runtime.str_heap);
+                        .es_verdadero_con_monticulo(&self.runtime.texto_monticulo);
                     // PGO: registrar el branch taken/not-taken
                     if let Some(p) = self.perfil_pgo.as_mut() {
                         p.record_branch(&ip.to_string(), !cond);
@@ -896,7 +896,7 @@ impl ForjaFast {
                     };
                     if self.show_bytecode {
                         eprintln!("[DEBUG Call] nombre={}, nargs={}, self.stack.len={}, top_len={}, frame_count={}",
-                            nombre, nargs, self.stack.len(), self.top_longitud, self.frame_count);
+                            nombre, nargs, self.pila.len(), self.top_longitud, self.cantidad_marcos);
                         if self.top_longitud > 0 {
                             eprintln!(
                                 "[DEBUG Call] stack_top[0..top_len] = [{}, {}, {}, {}]",
@@ -917,13 +917,13 @@ impl ForjaFast {
                                     "?".to_string()
                                 }
                             );
-                        } else if !self.stack.is_empty() {
-                            let top_idx = self.stack.len() - 1;
-                            let top = &self.stack[top_idx];
+                        } else if !self.pila.is_empty() {
+                            let top_idx = self.pila.len() - 1;
+                            let top = &self.pila[top_idx];
                             eprintln!("[DEBUG Call] stack_top_value = {}", self.mostrar_valor(top));
                         }
                     }
-                    if let Some(entry) = self.lookup_funcion_entrada(sym_id) {
+                    if let Some(entrada) = self.lookup_funcion_entrada(sym_id) {
                         // Tail Call Elimination: si el próximo opcode es Return,
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
                         let next_ip = call_ip + 1;
@@ -946,22 +946,22 @@ impl ForjaFast {
                                     l[i] = arg;
                                 }
                             }
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         } else {
                             self.flush_pila();
                             let max_frames = self.frame_buffer.len();
-                            if self.frame_count >= max_frames {
+                            if self.cantidad_marcos >= max_frames {
                                 return Err(ErrFast::StackUnder(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
-                            self.frame_buffer[self.frame_count] = FrmFast {
+                            self.frame_buffer[self.cantidad_marcos] = FrmFast {
                                 ip_ret: next_ip,
-                                funcion_version: entry.version,
+                                funcion_version: entrada.version,
                                 funcion_simbolo: sym_id,
                             };
-                            self.frame_count += 1;
-                            let vars_tamano = entry.tamano_variables.max(*nargs);
+                            self.cantidad_marcos += 1;
+                            let vars_tamano = entrada.tamano_variables.max(*nargs);
                             let mut locals = self.sacar_locals(vars_tamano);
                             for i in (0..*nargs).rev() {
                                 locals[i] = self.desapilar_valor()?;
@@ -970,12 +970,12 @@ impl ForjaFast {
 
                             if self.show_bytecode {
                                 eprintln!("[DEBUG Call] frame saved, entering func. frame_count={}, frame_locals.len={}",
-                                    self.frame_count, self.frame_locals.len());
-                                if self.top_longitud > 0 || !self.stack.is_empty() {
+                                    self.cantidad_marcos, self.frame_locals.len());
+                                if self.top_longitud > 0 || !self.pila.is_empty() {
                                     let val = if self.top_longitud > 0 {
                                         self.pila_top[self.top_longitud - 1]
                                     } else {
-                                        self.stack[self.stack.len() - 1]
+                                        self.pila[self.pila.len() - 1]
                                     };
                                     eprintln!(
                                         "[DEBUG Call] stack top after frame setup = {}",
@@ -984,7 +984,7 @@ impl ForjaFast {
                                 }
                             }
 
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         }
                     } else {
                         // Intentar builtin (ej: dividir() como standalone)
@@ -1040,7 +1040,8 @@ impl ForjaFast {
                     args.reverse();
                     let callee = self.desapilar_valor()?;
                     if callee.es_texto() {
-                        let nombre = self.runtime.str_heap[callee.indice_texto() as usize].clone();
+                        let nombre =
+                            self.runtime.texto_monticulo[callee.indice_texto() as usize].clone();
                         for a in args {
                             self.empujar_valor(a);
                         }
@@ -1071,7 +1072,7 @@ impl ForjaFast {
                 // ─── TAIL CALL ────────────────────────────────────────────────
                 Opcode::LlamadaFinal(nombre, nargs) => {
                     let sym_id = self.simbolo_para_ip(self.ip, nombre);
-                    if let Some(entry) = self.lookup_funcion_entrada(sym_id) {
+                    if let Some(entrada) = self.lookup_funcion_entrada(sym_id) {
                         self.flush_pila();
                         let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
                         for _ in 0..*nargs {
@@ -1086,7 +1087,7 @@ impl ForjaFast {
                                 l[i] = arg;
                             }
                         }
-                        self.ip = entry.ip;
+                        self.ip = entrada.ip;
                     } else {
                         let nombre_str = nombre.to_string();
                         if let Some(b) = resolver_builtin_fast(&nombre_str) {
@@ -1118,7 +1119,7 @@ impl ForjaFast {
                     }
                 }
 
-                // ─── CALLDIRECT (Fase 2b) — llama por índice de función, directo a function_table ───
+                // ─── CALLDIRECT (Fase 2b) — llama por índice de función, directo a tabla_funciones ───
                 Opcode::LlamarDirecto(func_idx, nargs) => {
                     // PGO: registrar la llamada directa (por nombre de función)
                     if let Some(p) = self.perfil_pgo.as_mut() {
@@ -1128,8 +1129,8 @@ impl ForjaFast {
                             }
                         }
                     }
-                    // Obtener la función de la function_table por índice
-                    if let Some(entry) = self.function_table.entries.get(*func_idx).copied() {
+                    // Obtener la función de la tabla_funciones por índice
+                    if let Some(entrada) = self.tabla_funciones.entries.get(*func_idx).copied() {
                         let next_ip = self.ip + 1;
                         let es_tail = next_ip < longitud
                             && matches!(self.bytecode.get(next_ip), Some(Opcode::Retornar));
@@ -1149,17 +1150,17 @@ impl ForjaFast {
                                     l[i] = arg;
                                 }
                             }
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         } else {
                             self.flush_pila();
                             let max_frames = self.frame_buffer.len();
-                            if self.frame_count >= max_frames {
+                            if self.cantidad_marcos >= max_frames {
                                 return Err(ErrFast::StackUnder(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
                             // derivar el símbolo de la función desde el
-                            // nombre PGO asociado al índice de la function_table.
+                            // nombre PGO asociado al índice de la tabla_funciones.
                             let nombre_pgo = self
                                 .funcion_names_pgo
                                 .get(*func_idx)
@@ -1170,19 +1171,19 @@ impl ForjaFast {
                             } else {
                                 self.runtime.tabla_simbolos.internar(&nombre_pgo)
                             };
-                            self.frame_buffer[self.frame_count] = FrmFast {
+                            self.frame_buffer[self.cantidad_marcos] = FrmFast {
                                 ip_ret: next_ip,
-                                funcion_version: entry.version,
+                                funcion_version: entrada.version,
                                 funcion_simbolo,
                             };
-                            self.frame_count += 1;
-                            let vars_tamano = entry.tamano_variables.max(*nargs);
+                            self.cantidad_marcos += 1;
+                            let vars_tamano = entrada.tamano_variables.max(*nargs);
                             let mut locals = self.sacar_locals(vars_tamano);
                             for i in (0..*nargs).rev() {
                                 locals[i] = self.desapilar_valor()?;
                             }
                             self.frame_locals.push(locals);
-                            self.ip = entry.ip;
+                            self.ip = entrada.ip;
                         }
                     } else {
                         self.empujar_valor(ValorFast::nulo());
@@ -1191,8 +1192,8 @@ impl ForjaFast {
                 }
 
                 // ─── CALLBUILTIN (Fase 2b) — builtin directo, sin lookup ───
-                Opcode::LlamarIncorporada(kind, nargs) => {
-                    match kind {
+                Opcode::LlamarIncorporada(tipo, nargs) => {
+                    match tipo {
                         TipoIncorporada::Escribir => {
                             for _ in 0..*nargs {
                                 let v = self.desapilar_valor()?;
@@ -1367,34 +1368,34 @@ impl ForjaFast {
                     if self.show_bytecode {
                         eprintln!(
                             "[DEBUG Return] frame_count={}, self.stack.len={}, top_len={}",
-                            self.frame_count,
-                            self.stack.len(),
+                            self.cantidad_marcos,
+                            self.pila.len(),
                             self.top_longitud
                         );
-                        if !self.stack.is_empty() {
+                        if !self.pila.is_empty() {
                             eprintln!(
                                 "[DEBUG Return] stack_top_value={}",
-                                self.mostrar_valor(self.stack.last().unwrap())
+                                self.mostrar_valor(self.pila.last().unwrap())
                             );
                         }
                     }
-                    if self.frame_count == 0 {
+                    if self.cantidad_marcos == 0 {
                         break;
                     }
-                    self.frame_count -= 1;
-                    let frame = self.frame_buffer[self.frame_count];
+                    self.cantidad_marcos -= 1;
+                    let frame = self.frame_buffer[self.cantidad_marcos];
                     // Liberar vars de la función que termina (O(1))
                     self.flush_pila();
                     if self.show_bytecode {
                         eprintln!(
                             "[DEBUG Return] after flush: self.stack.len={}, top_len={}",
-                            self.stack.len(),
+                            self.pila.len(),
                             self.top_longitud
                         );
-                        if !self.stack.is_empty() {
+                        if !self.pila.is_empty() {
                             eprintln!(
                                 "[DEBUG Return] stack_top_value after flush={}",
-                                self.mostrar_valor(self.stack.last().unwrap())
+                                self.mostrar_valor(self.pila.last().unwrap())
                             );
                         }
                     }
@@ -1426,11 +1427,11 @@ impl ForjaFast {
                             // objeto de error/none como valor de retorno.
                             self.top_longitud = 0;
                             self.empujar_valor(err);
-                            if self.frame_count == 0 {
+                            if self.cantidad_marcos == 0 {
                                 break;
                             }
-                            self.frame_count -= 1;
-                            let frame = self.frame_buffer[self.frame_count];
+                            self.cantidad_marcos -= 1;
+                            let frame = self.frame_buffer[self.cantidad_marcos];
                             self.flush_pila();
                             self.flush_texto_builders();
                             self.liberar_locals();

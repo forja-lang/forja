@@ -126,7 +126,6 @@ struct Var {
 /// Layout de un `tipo X = A(i64) | B(Texto, i64)`.
 #[derive(Clone)]
 struct EnumInformacion {
-    variantes: Vec<(String, usize)>, // (nombre, aridad)
     max_campos: usize,
 }
 
@@ -536,13 +535,8 @@ impl Lowering {
                         self.variantes
                             .insert(vn.clone(), (nombre.clone(), i, *aridad));
                     }
-                    self.enums.insert(
-                        nombre.clone(),
-                        EnumInformacion {
-                            variantes: campos,
-                            max_campos,
-                        },
-                    );
+                    self.enums
+                        .insert(nombre.clone(), EnumInformacion { max_campos });
                 }
                 Declaracion::Rasgo { .. } | Declaracion::Implementacion { .. } => {}
                 _ => {}

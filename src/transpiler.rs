@@ -116,7 +116,7 @@ pub struct Transpiler {
     /// Conteo de variables temporales para el bucle `para`
     temporal_counter: usize,
     /// Si es true, no genera el fn main() automático
-    pub saltar_main: bool,
+    pub saltar_principal: bool,
     /// Si es true, la app GUI compilada mantiene la consola (`forja compilar --console`)
     mantener_consola: bool,
     /// Clases declaradas (para generar impls)
@@ -201,7 +201,7 @@ impl Transpiler {
             clases: HashMap::new(),
             declaraciones_globales: Vec::new(),
             funciones_externas: Vec::new(),
-            saltar_main: false,
+            saltar_principal: false,
             postcondiciones_actuales: Vec::new(),
             modo_postcondiciones: false,
             tiene_resultado_var: false,
@@ -498,7 +498,7 @@ impl Transpiler {
         }
 
         // Si no hay GUI, generar main con código global
-        if !tiene_principal && !self.saltar_main {
+        if !tiene_principal && !self.saltar_principal {
             self.emitir_linea("fn main() {");
             self.sangria();
 

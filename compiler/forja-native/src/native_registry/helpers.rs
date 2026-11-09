@@ -75,7 +75,7 @@ pub fn extraer_indice_socket(vm: &mut dyn Anfitrion, val: ValorFast) -> Result<u
 pub fn crear_valor_socket(vm: &mut dyn Anfitrion, socket_idx: u32) -> ValorFast {
     let sym_socket = vm.tabla_simbolos().internar("@Socket");
     vm.clase_descriptors().entry(sym_socket).or_insert_with(|| {
-        use crate::class_descriptor::{DescriptorClase, FormaCampos};
+        use crate::descriptor_clase::{DescriptorClase, FormaCampos};
 
         DescriptorClase {
             nombre: sym_socket,

@@ -479,7 +479,7 @@ fn test_vm_fast_hola_mundo() {
 
 #[test]
 fn test_vm_fast_async_hilo_return_int() {
-    // Las strings no se pueden pasar entre threads (str_heap es local).
+    // Las strings no se pueden pasar entre threads (texto_monticulo es local).
     // Los enteros sí funcionan.
     let salida = salida_fast(
         "funcion asincrona foo() -> Entero {
@@ -495,4 +495,4 @@ fn test_vm_fast_async_hilo_return_int() {
     assert_eq!(salida, vec!["42"]);
 }
 
-// (Strings no se pueden pasar entre threads porque str_heap es local a cada VM)
+// (Strings no se pueden pasar entre threads porque texto_monticulo es local a cada VM)

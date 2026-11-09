@@ -8,23 +8,23 @@ impl ForjaFast {
 
     /// Aloca un nuevo socket en el socket heap y retorna su índice
     pub fn socket_reservar(&mut self, state: SocketState) -> u32 {
-        let idx = self.runtime.socket_heap.len() as u32;
-        self.runtime.socket_heap.push(state);
+        let idx = self.runtime.socket_monticulo.len() as u32;
+        self.runtime.socket_monticulo.push(state);
         idx
     }
 
     /// Obtiene referencia al estado de un socket por índice
     pub fn socket_obtener(&self, idx: u32) -> &SocketState {
-        &self.runtime.socket_heap[idx as usize]
+        &self.runtime.socket_monticulo[idx as usize]
     }
 
     /// Obtiene referencia mutable al estado de un socket
     pub fn socket_obtener_mut(&mut self, idx: u32) -> &mut SocketState {
-        &mut self.runtime.socket_heap[idx as usize]
+        &mut self.runtime.socket_monticulo[idx as usize]
     }
 
     /// Poll no bloqueante: retorna verdadero si el socket referenciado por la
-    /// variable `nombre` (un entero con el índice en socket_heap) tiene datos
+    /// variable `nombre` (un entero con el índice en socket_monticulo) tiene datos
     /// disponibles para leer. Retorna falso ante cualquier error/ausencia.
     pub fn socket_poll_by_name(&self, nombre: &str) -> bool {
         let idx = match self.nombre_local.get(nombre) {
@@ -39,12 +39,12 @@ impl ForjaFast {
         false
     }
 
-    /// Poll no bloqueante sobre un índice de socket en `socket_heap`.
+    /// Poll no bloqueante sobre un índice de socket en `socket_monticulo`.
     pub fn socket_poll_idx(&self, sock_idx: i64) -> bool {
         if sock_idx < 0 {
             return false;
         }
-        if let Some(socket) = self.runtime.socket_heap.get(sock_idx as usize) {
+        if let Some(socket) = self.runtime.socket_monticulo.get(sock_idx as usize) {
             if let Some(stream) = &socket.tcp_stream {
                 if let Ok(stream) = stream.lock() {
                     let mut buf = [0u8; 1];
@@ -76,13 +76,18 @@ impl ForjaFast {
         let valor = self.desapilar_valor()?;
         if valor.es_objeto() {
             let obj_idx = valor.indice_objeto();
-            let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
-            let es_error = if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+            let clase_sym = self.runtime.objeto_monticulo[obj_idx as usize].clase;
+            let es_error = if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym) {
                 if let Some(tipo_idx) = desc.forma.obtener_indice(self.sym_tipo) {
-                    if tipo_idx < self.runtime.obj_heap[obj_idx as usize].campos_vec.len() {
-                        let tipo_val = self.runtime.obj_heap[obj_idx as usize].campos_vec[tipo_idx];
+                    if tipo_idx
+                        < self.runtime.objeto_monticulo[obj_idx as usize]
+                            .campos_vec
+                            .len()
+                    {
+                        let tipo_val =
+                            self.runtime.objeto_monticulo[obj_idx as usize].campos_vec[tipo_idx];
                         if tipo_val.es_texto() {
-                            let s = &self.runtime.str_heap[tipo_val.indice_texto() as usize];
+                            let s = &self.runtime.texto_monticulo[tipo_val.indice_texto() as usize];
                             s.as_ref() == "error" || s.as_ref() == "none"
                         } else {
                             false
@@ -102,10 +107,15 @@ impl ForjaFast {
                 return Ok(Some(valor));
             }
             // Extraer valor interno
-            let valor_interno = if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
+            let valor_interno = if let Some(desc) = self.runtime.descriptores_clase.get(&clase_sym)
+            {
                 if let Some(valor_idx) = desc.forma.obtener_indice(self.sym_valor) {
-                    if valor_idx < self.runtime.obj_heap[obj_idx as usize].campos_vec.len() {
-                        self.runtime.obj_heap[obj_idx as usize].campos_vec[valor_idx]
+                    if valor_idx
+                        < self.runtime.objeto_monticulo[obj_idx as usize]
+                            .campos_vec
+                            .len()
+                    {
+                        self.runtime.objeto_monticulo[obj_idx as usize].campos_vec[valor_idx]
                     } else {
                         ValorFast::nulo()
                     }
@@ -125,7 +135,7 @@ impl ForjaFast {
 
     /// Cierra un socket por índice
     pub fn socket_cerrar(&mut self, idx: u32) {
-        if let Some(socket) = self.runtime.socket_heap.get_mut(idx as usize) {
+        if let Some(socket) = self.runtime.socket_monticulo.get_mut(idx as usize) {
             socket.cerrar();
         }
     }
@@ -134,7 +144,7 @@ impl ForjaFast {
 
     #[inline(always)]
     pub fn tipo_etiqueta(v: &ValorFast) -> u8 {
-        prof_count!(tipo_tag_calls);
+        prof_count!(llamadas_tipo_tag);
         if v.es_entero() {
             0
         } else if v.es_flotante() {
@@ -155,13 +165,13 @@ impl ForjaFast {
     /// y hace shift left.
     #[inline(always)]
     pub fn empujar_valor(&mut self, val: ValorFast) {
-        prof_count!(push_valor_calls);
+        prof_count!(llamadas_empujar_valor);
         if self.top_longitud < 4 {
             self.pila_top[self.top_longitud] = val;
             self.top_longitud += 1;
         } else {
             // Hacer espacio: mover el más viejo al stack real
-            self.stack.push(self.pila_top[0]);
+            self.pila.push(self.pila_top[0]);
             // Shift left
             self.pila_top[0] = self.pila_top[1];
             self.pila_top[1] = self.pila_top[2];
@@ -176,12 +186,12 @@ impl ForjaFast {
     /// Si el stack está vacío, retorna Nulo en lugar de error.
     #[inline(always)]
     pub fn desapilar_valor(&mut self) -> Result<ValorFast, ErrFast> {
-        prof_count!(pop_valor_calls);
+        prof_count!(llamadas_desapilar_valor);
         if self.top_longitud > 0 {
             self.top_longitud -= 1;
             Ok(self.pila_top[self.top_longitud])
-        } else if !self.stack.is_empty() {
-            Ok(self.stack.pop().unwrap())
+        } else if !self.pila.is_empty() {
+            Ok(self.pila.pop().unwrap())
         } else {
             // Stack vacío: devolver Nulo en lugar de error
             Ok(ValorFast::nulo())
@@ -194,14 +204,14 @@ impl ForjaFast {
     pub fn peek_valor(&self, depth: usize) -> &ValorFast {
         // Nulo estático para retorno seguro cuando depth excede el stack
         static NULO_VAL: ValorFast = ValorFast(0x7FF8000000000000);
-        if depth >= self.top_longitud + self.stack.len() {
+        if depth >= self.top_longitud + self.pila.len() {
             return &NULO_VAL;
         }
         if depth < self.top_longitud {
             &self.pila_top[self.top_longitud - 1 - depth]
         } else {
-            let idx = self.stack.len() - (depth - self.top_longitud) - 1;
-            &self.stack[idx]
+            let idx = self.pila.len() - (depth - self.top_longitud) - 1;
+            &self.pila[idx]
         }
     }
 
@@ -234,7 +244,7 @@ impl ForjaFast {
 
     pub fn flush_pila(&mut self) {
         for i in 0..self.top_longitud {
-            self.stack.push(self.pila_top[i]);
+            self.pila.push(self.pila_top[i]);
         }
         self.top_longitud = 0;
     }

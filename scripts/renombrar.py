@@ -134,7 +134,7 @@ RE_PARAM = re.compile(r"[(,]\s*(?:mut\s+)?([a-z_][a-z0-9_]*)\s*:")
 RE_FN = re.compile(r"\bfn\s+([a-z_][a-z0-9_]*)\b")
 
 
-RE_CAMPO = re.compile(r"^\s{4,}([a-z_][a-z0-9_]*)\s*:", re.MULTILINE)
+RE_CAMPO = re.compile(r"^\s{4,}(?:pub(?:\(?:[^)]*\))?\s+)?([a-z_][a-z0-9_]*)\s*:", re.MULTILINE)
 
 
 def campos_del_archivo(codigo: str) -> set[str]:

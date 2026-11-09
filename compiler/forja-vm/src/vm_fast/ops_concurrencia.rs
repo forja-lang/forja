@@ -57,25 +57,25 @@ impl ForjaFast {
                 captured.reverse();
                 // Buscar función en la tabla
                 let fn_sym = self.runtime.tabla_simbolos.internar(func_name.as_ref());
-                if let Some(entry) = self.lookup_funcion_entrada(fn_sym) {
+                if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                     let nargs = captured.len();
                     // Clonar estado necesario para el hilo
                     let hilo_bytecode = self.bytecode.clone();
                     let hilo_sym_tabla = self.runtime.tabla_simbolos.clone();
                     let hilo_funcs = self.funciones.clone();
                     let hilo_funcion_params = self.funcion_params.clone();
-                    // Clonar function_table para preservar índices de CallDirect
-                    let hilo_funcion_tabla = self.function_table.entries.clone();
-                    let hilo_sym_to_funcion_indice = self.sym_to_func_idx.clone();
-                    let hilo_objeto_monticulo = self.runtime.obj_heap.clone();
+                    // Clonar tabla_funciones para preservar índices de CallDirect
+                    let hilo_funcion_tabla = self.tabla_funciones.entries.clone();
+                    let hilo_sym_to_funcion_indice = self.indice_simbolo_funcion.clone();
+                    let hilo_objeto_monticulo = self.runtime.objeto_monticulo.clone();
                     let hilo_objeto_shapes = self.runtime.formas_objeto.clone();
-                    let hilo_chan_tx_monticulo = self.runtime.chan_tx_heap.clone();
+                    let hilo_chan_tx_monticulo = self.runtime.canal_envio_monticulo.clone();
                     // el hijo también necesita los receptores; sin esto
                     // `rx.recibir()` dentro de un `hilo` devolvía Nulo.
-                    let hilo_chan_rx_monticulo = self.runtime.chan_rx_heap.clone();
+                    let hilo_chan_rx_monticulo = self.runtime.canal_recepcion_monticulo.clone();
                     let hilo_salida = self.salida.clone();
-                    let hilo_ip = entry.ip;
-                    let hilo_vars_tamano = entry.tamano_variables.max(nargs);
+                    let hilo_ip = entrada.ip;
+                    let hilo_vars_tamano = entrada.tamano_variables.max(nargs);
                     // Canal para recibir resultado del hilo (usa CanalValor
                     // para transportar strings correctamente entre VMs)
                     let (tx_result, rx_result) = std::sync::mpsc::channel::<CanalValor>();
@@ -110,20 +110,20 @@ impl ForjaFast {
                             hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
                             hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
                             hilo_vm.ic_mapset = vec![false; hilo_vm.bytecode.len()];
-                            // function_table clonada → mismo orden de índices
-                            hilo_vm.function_table.entries = hilo_funcion_tabla;
-                            hilo_vm.sym_to_func_idx = hilo_sym_to_funcion_indice;
-                            hilo_vm.runtime.obj_heap = hilo_objeto_monticulo;
+                            // tabla_funciones clonada → mismo orden de índices
+                            hilo_vm.tabla_funciones.entries = hilo_funcion_tabla;
+                            hilo_vm.indice_simbolo_funcion = hilo_sym_to_funcion_indice;
+                            hilo_vm.runtime.objeto_monticulo = hilo_objeto_monticulo;
                             hilo_vm.runtime.formas_objeto = hilo_objeto_shapes;
-                            hilo_vm.runtime.chan_tx_heap = hilo_chan_tx_monticulo;
-                            hilo_vm.runtime.chan_rx_heap = hilo_chan_rx_monticulo;
+                            hilo_vm.runtime.canal_envio_monticulo = hilo_chan_tx_monticulo;
+                            hilo_vm.runtime.canal_recepcion_monticulo = hilo_chan_rx_monticulo;
                             hilo_vm.salida = hilo_salida;
                             hilo_vm.frame_buffer[0] = FrmFast {
                                 ip_ret: hilo_vm.bytecode.len(),
                                 funcion_version: 0,
                                 funcion_simbolo: IdSimbolo(0),
                             };
-                            hilo_vm.frame_count = 1;
+                            hilo_vm.cantidad_marcos = 1;
                             hilo_vm.ip = hilo_ip;
                             let resultado = hilo_vm.ejecutar();
                             if let Err(ref e) = resultado {
@@ -131,7 +131,7 @@ impl ForjaFast {
                                 eprintln!("[WARN] Hilo '{}': {:?}", funcion_name_owned, e);
                                 std::io::stderr().flush().ok();
                             }
-                            let ret = hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
+                            let ret = hilo_vm.pila.first().copied().unwrap_or(ValorFast::nulo());
                             // Resolver valor de retorno a CanalValor para
                             // que el padre pueda re-indexar strings
                             if ret.es_texto() {

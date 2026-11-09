@@ -510,7 +510,7 @@ pub struct ProgramaIr {
 
 /// Tabla de símbolos propia del IR.
 ///
-/// Es independiente de [`crate::symbol_table::TablaSimbolos`]: aquí el
+/// Es independiente de [`crate::tabla_simbolos::TablaSimbolos`]: aquí el
 /// identificador es directamente un índice `usize` y los textos se guardan sin
 /// compartir asignación, porque el IR se construye de una sola pasada y no se
 /// clona por cada nodo.

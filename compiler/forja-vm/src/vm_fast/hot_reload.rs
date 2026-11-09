@@ -14,9 +14,9 @@ impl ForjaFast {
         tamano_variables: usize,
         id_modulo: Option<IdSimbolo>,
     ) -> usize {
-        let version = self.function_versions.get(&sym).copied().unwrap_or(1);
+        let version = self.versiones_funcion.get(&sym).copied().unwrap_or(1);
         let idx = self
-            .sym_to_func_idx
+            .indice_simbolo_funcion
             .get(&sym)
             .copied()
             .unwrap_or(usize::MAX);
@@ -29,15 +29,15 @@ impl ForjaFast {
 
         if idx == usize::MAX {
             // Nueva función
-            let nuevo_indice = self.function_table.entries.len();
-            self.function_table.entries.push(entrada);
-            self.sym_to_func_idx.insert(sym, nuevo_indice);
-            self.function_versions.insert(sym, version);
+            let nuevo_indice = self.tabla_funciones.entries.len();
+            self.tabla_funciones.entries.push(entrada);
+            self.indice_simbolo_funcion.insert(sym, nuevo_indice);
+            self.versiones_funcion.insert(sym, version);
             nuevo_indice
         } else {
             // Reemplazar función existente (hot reload)
-            self.function_table.entries[idx] = entrada;
-            self.function_versions.insert(sym, version);
+            self.tabla_funciones.entries[idx] = entrada;
+            self.versiones_funcion.insert(sym, version);
             idx
         }
     }
@@ -49,15 +49,15 @@ impl ForjaFast {
         nueva_ip: usize,
         nuevo_vars_tamano: usize,
     ) -> bool {
-        if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
-            let version = self.function_versions.get(&sym).copied().unwrap_or(0) + 1;
-            self.function_table.entries[idx] = FuncionVersion {
+        if let Some(&idx) = self.indice_simbolo_funcion.get(&sym) {
+            let version = self.versiones_funcion.get(&sym).copied().unwrap_or(0) + 1;
+            self.tabla_funciones.entries[idx] = FuncionVersion {
                 ip: nueva_ip,
                 tamano_variables: nuevo_vars_tamano,
                 version,
-                id_modulo: self.function_table.entries[idx].id_modulo,
+                id_modulo: self.tabla_funciones.entries[idx].id_modulo,
             };
-            self.function_versions.insert(sym, version);
+            self.versiones_funcion.insert(sym, version);
             true
         } else {
             false
@@ -66,16 +66,16 @@ impl ForjaFast {
 
     /// Obtener versión actual de una función
     pub fn version_funcion(&self, sym: IdSimbolo) -> u32 {
-        self.function_versions.get(&sym).copied().unwrap_or(0)
+        self.versiones_funcion.get(&sym).copied().unwrap_or(0)
     }
 
-    /// Buscar una función en la function_table (indirección para hot reload)
+    /// Buscar una función en la tabla_funciones (indirección para hot reload)
     /// Retorna None si no está registrada; en ese caso se cae a funciones nativas.
     pub fn lookup_funcion_entrada(&self, sym: IdSimbolo) -> Option<FuncionVersion> {
-        self.sym_to_func_idx
+        self.indice_simbolo_funcion
             .get(&sym)
             .copied()
-            .and_then(|idx| self.function_table.entries.get(idx).copied())
+            .and_then(|idx| self.tabla_funciones.entries.get(idx).copied())
     }
 
     // ─── Hot Reload: Intercambio Completo de Módulo ─────────────────────
@@ -84,8 +84,8 @@ impl ForjaFast {
     ///
     /// 1. Preserva el bytecode anterior en `bytecode_pool` (para frames activos).
     /// 2. Reemplaza el rango [start, end) del módulo en `self.bytecode`.
-    /// 3. Re-mapea todas las funciones del módulo en `function_table`.
-    /// 4. Actualiza `module_registry[id_modulo].version`.
+    /// 3. Re-mapea todas las funciones del módulo en `tabla_funciones`.
+    /// 4. Actualiza `registro_modulos[id_modulo].version`.
     /// 5. Re-inicializa inline caches y aplica quickening.
     ///
     /// El módulo debe estar registrado en `modulo_bytecode_ranges`.
@@ -97,7 +97,7 @@ impl ForjaFast {
     ) -> Result<(), String> {
         // 1. Determinar la versión actual y calcular la nueva
         let version_actual = self
-            .module_registry
+            .registro_modulos
             .get(&id_modulo)
             .map(|informacion| informacion.version)
             .unwrap_or(0);
@@ -164,28 +164,28 @@ impl ForjaFast {
         self.modulo_bytecode_ranges
             .insert(id_modulo, (start, nuevo_end));
 
-        // 6. Re-mapear funciones del módulo en la function_table
+        // 6. Re-mapear funciones del módulo en la tabla_funciones
         let funciones = nuevo_bc.desglosar();
         for (nombre, ip_rel, tamano_variables) in &funciones {
             let sym = self.runtime.tabla_simbolos.internar(nombre.as_str());
             let ip_absoluta = start + ip_rel;
 
-            if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
-                self.function_table.entries[idx] = FuncionVersion {
+            if let Some(&idx) = self.indice_simbolo_funcion.get(&sym) {
+                self.tabla_funciones.entries[idx] = FuncionVersion {
                     ip: ip_absoluta,
                     tamano_variables: *tamano_variables,
                     version: nueva_version,
                     id_modulo: Some(id_modulo),
                 };
-                self.function_versions.insert(sym, nueva_version);
+                self.versiones_funcion.insert(sym, nueva_version);
             } else {
                 self.registrar_funcion(sym, ip_absoluta, *tamano_variables, Some(id_modulo));
-                self.function_versions.insert(sym, nueva_version);
+                self.versiones_funcion.insert(sym, nueva_version);
             }
         }
 
-        // 7. Actualizar versión en module_registry
-        if let Some(informacion) = self.module_registry.get_mut(&id_modulo) {
+        // 7. Actualizar versión en registro_modulos
+        if let Some(informacion) = self.registro_modulos.get_mut(&id_modulo) {
             informacion.version = nueva_version;
         }
 

@@ -523,7 +523,7 @@ impl GeneradorBytecode {
 
 // ─── ModuloBytecode: Bytecode producido para un módulo completo ────────────
 
-use crate::symbol_table::IdSimbolo;
+use crate::tabla_simbolos::IdSimbolo;
 
 /// Función de hilo diferida: (nombre, parámetros capturados, cuerpo).
 type FuncionHilo = (Arc<str>, Vec<Arc<str>>, Vec<Opcode>);

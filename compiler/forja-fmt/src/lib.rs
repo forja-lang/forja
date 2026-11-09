@@ -59,7 +59,7 @@ fn insertar_comentarios(base: String, comentarios: &[forja_syntax::lexer::Coment
         std::collections::HashMap::new();
     for t in &tokens {
         if matches!(
-            t.kind,
+            t.tipo,
             forja_syntax::token::TokenTipo::DocComment(_)
                 | forja_syntax::token::TokenTipo::EOF
                 | forja_syntax::token::TokenTipo::Error(_)
@@ -67,7 +67,7 @@ fn insertar_comentarios(base: String, comentarios: &[forja_syntax::lexer::Coment
             continue;
         }
         posiciones
-            .entry(format!("{:?}", t.kind))
+            .entry(format!("{:?}", t.tipo))
             .or_default()
             .push(t.linea);
     }

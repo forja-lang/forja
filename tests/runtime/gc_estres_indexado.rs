@@ -45,7 +45,7 @@ main()
 "#,
         500,
     );
-    let vivos = vm.runtime.obj_heap.len();
+    let vivos = vm.runtime.objeto_monticulo.len();
     assert!(
         vivos < 5_000,
         "obj_heap creció a {vivos} con 20 000 objetos temporales: la free list no reutiliza"
@@ -80,9 +80,9 @@ main()
 "#,
         500,
     );
-    let antes = vm.runtime.obj_heap.len();
+    let antes = vm.runtime.objeto_monticulo.len();
     vm.forzar_gc();
-    let despues = vm.runtime.obj_heap.len();
+    let despues = vm.runtime.objeto_monticulo.len();
     assert!(
         despues < 5_000,
         "tras forzar_gc el heap quedó en {despues} (antes {antes}): los ciclos no se liberan"
@@ -105,7 +105,7 @@ main()
 "#,
         500,
     );
-    let textos = vm.runtime.str_heap.len();
+    let textos = vm.runtime.texto_monticulo.len();
     assert!(
         textos < 5_000,
         "str_heap creció a {textos} con 10 000 textos temporales"

@@ -3,8 +3,8 @@
 //! No depende de `forja-vm`: los nativos reciben `&mut dyn Anfitrion`.
 
 pub use forja_bytecode as bytecode;
-pub use forja_bytecode::symbol_table;
-pub use forja_runtime::class_descriptor;
+pub use forja_bytecode::tabla_simbolos;
+pub use forja_runtime::descriptor_clase;
 
 pub mod base64;
 pub mod crypto;

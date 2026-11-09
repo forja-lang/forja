@@ -28,7 +28,7 @@ impl ForjaFast {
                 }
                 let contrato = &self.contratos[*idx].clone();
                 let resultado = self.ejecutar_uops_contrato(&contrato.condicion, None);
-                if !resultado.es_verdadero_con_monticulo(&self.runtime.str_heap) {
+                if !resultado.es_verdadero_con_monticulo(&self.runtime.texto_monticulo) {
                     return Err(ErrFast::Contrato(format!(
                         "precondición no se cumple: {}",
                         contrato.mensaje
@@ -50,7 +50,7 @@ impl ForjaFast {
                 let valor_retorno = self.desapilar_valor()?;
                 let resultado =
                     self.ejecutar_uops_contrato(&contrato.condicion, Some(valor_retorno));
-                if !resultado.es_verdadero_con_monticulo(&self.runtime.str_heap) {
+                if !resultado.es_verdadero_con_monticulo(&self.runtime.texto_monticulo) {
                     return Err(ErrFast::Contrato(format!(
                         "postcondición no se cumple: {}",
                         contrato.mensaje
@@ -82,7 +82,7 @@ impl ForjaFast {
                 }
                 let contrato = &self.contratos[*idx].clone();
                 let resultado = self.ejecutar_uops_contrato(&contrato.condicion, None);
-                if !resultado.es_verdadero_con_monticulo(&self.runtime.str_heap) {
+                if !resultado.es_verdadero_con_monticulo(&self.runtime.texto_monticulo) {
                     return Err(ErrFast::Contrato(format!(
                         "invariante no se cumple: {}",
                         contrato.mensaje

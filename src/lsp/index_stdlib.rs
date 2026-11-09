@@ -6,25 +6,25 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct FuncionInformacion {
     pub name: String,
-    pub module: String,
+    pub modulo: String,
     pub params: Vec<ParamInformacion>,
     pub tipo_retorno: String,
     pub doc: String,
-    pub is_method: bool,
-    pub class_name: Option<String>,
+    pub es_metodo: bool,
+    pub clase_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ParamInformacion {
     pub name: String,
-    pub type_str: String,
+    pub tipo_texto: String,
     pub prestado: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct ClassInfo {
+pub struct ClaseInformacion {
     pub name: String,
-    pub module: String,
+    pub modulo: String,
     pub fields: Vec<CampoInformacion>,
     pub methods: Vec<FuncionInformacion>,
     pub doc: String,
@@ -33,21 +33,21 @@ pub struct ClassInfo {
 #[derive(Debug, Clone)]
 pub struct CampoInformacion {
     pub name: String,
-    pub type_str: String,
+    pub tipo_texto: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct EnumInformacion {
     pub name: String,
-    pub module: String,
+    pub modulo: String,
     pub variants: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TraitInformacion {
     pub name: String,
-    pub module: String,
-    pub method_signatures: Vec<String>,
+    pub modulo: String,
+    pub metodo_signatures: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,7 +56,7 @@ pub struct ModuloIndice {
     pub ruta: String,
     pub doc: String,
     pub functions: Vec<FuncionInformacion>,
-    pub classes: Vec<ClassInfo>,
+    pub classes: Vec<ClaseInformacion>,
     pub enums: Vec<EnumInformacion>,
     pub traits: Vec<TraitInformacion>,
 }
@@ -65,7 +65,7 @@ pub struct ModuloIndice {
 pub struct StdlibIndex {
     pub modules: HashMap<String, ModuloIndice>,
     pub functions: HashMap<String, Vec<FuncionInformacion>>,
-    pub classes: HashMap<String, ClassInfo>,
+    pub classes: HashMap<String, ClaseInformacion>,
     pub enums: HashMap<String, EnumInformacion>,
     pub traits: HashMap<String, TraitInformacion>,
     pub builtin_types: Vec<(&'static str, &'static str)>,
@@ -139,7 +139,7 @@ impl StdlibIndex {
             };
 
             let doc = Self::extraer_doc_modulo(&content);
-            let mut module = ModuloIndice {
+            let mut modulo = ModuloIndice {
                 name: archivo_stem.clone(),
                 ruta: ruta.to_string_lossy().to_string(),
                 doc,
@@ -149,20 +149,20 @@ impl StdlibIndex {
                 traits: Vec::new(),
             };
 
-            Self::extraer_de_ast(&programa, &archivo_stem, &mut module, self);
+            Self::extraer_de_ast(&programa, &archivo_stem, &mut modulo, self);
 
-            self.modules.insert(archivo_stem.clone(), module);
+            self.modules.insert(archivo_stem.clone(), modulo);
         }
 
         // Índice inverso: nombre → lista de funciones (para búsqueda rápida)
-        for (_mod_name, module) in self.modules.clone().iter() {
-            for funcion in &module.functions {
+        for (_mod_name, modulo) in self.modules.clone().iter() {
+            for funcion in &modulo.functions {
                 self.functions
                     .entry(funcion.name.clone())
                     .or_default()
                     .push(funcion.clone());
             }
-            for class in &module.classes {
+            for class in &modulo.classes {
                 for method in &class.methods {
                     self.functions
                         .entry(method.name.clone())
@@ -170,15 +170,15 @@ impl StdlibIndex {
                         .push(method.clone());
                 }
             }
-            for class in &module.classes {
+            for class in &modulo.classes {
                 self.classes
                     .entry(class.name.clone())
                     .or_insert(class.clone());
             }
-            for en in &module.enums {
+            for en in &modulo.enums {
                 self.enums.entry(en.name.clone()).or_insert(en.clone());
             }
-            for tr in &module.traits {
+            for tr in &modulo.traits {
                 self.traits.entry(tr.name.clone()).or_insert(tr.clone());
             }
         }
@@ -210,7 +210,7 @@ impl StdlibIndex {
     fn extraer_de_ast(
         programa: &Programa,
         modulo_name: &str,
-        module: &mut ModuloIndice,
+        modulo: &mut ModuloIndice,
         _index: &mut StdlibIndex,
     ) {
         for decl in &programa.declaraciones {
@@ -231,7 +231,7 @@ impl StdlibIndex {
                             };
                             ParamInformacion {
                                 name: p.nombre.clone(),
-                                type_str: ts,
+                                tipo_texto: ts,
                                 prestado: p.prestado,
                             }
                         })
@@ -242,14 +242,14 @@ impl StdlibIndex {
                     };
                     let funcion = FuncionInformacion {
                         name: nombre.clone(),
-                        module: modulo_name.to_string(),
+                        modulo: modulo_name.to_string(),
                         params,
                         tipo_retorno: rt,
                         doc: doc.clone().unwrap_or_default(),
-                        is_method: false,
-                        class_name: None,
+                        es_metodo: false,
+                        clase_name: None,
                     };
-                    module.functions.push(funcion);
+                    modulo.functions.push(funcion);
                 }
                 Declaracion::Clase {
                     nombre,
@@ -261,7 +261,7 @@ impl StdlibIndex {
                         .iter()
                         .map(|c| CampoInformacion {
                             name: c.nombre.clone(),
-                            type_str: c.tipo.as_ref().map(format_tipo).unwrap_or("?".to_string()),
+                            tipo_texto: c.tipo.as_ref().map(format_tipo).unwrap_or("?".to_string()),
                         })
                         .collect();
                     let mut methods: Vec<FuncionInformacion> = Vec::new();
@@ -271,7 +271,7 @@ impl StdlibIndex {
                             .iter()
                             .map(|p| ParamInformacion {
                                 name: p.nombre.clone(),
-                                type_str: p
+                                tipo_texto: p
                                     .tipo
                                     .as_ref()
                                     .map(format_tipo)
@@ -282,17 +282,17 @@ impl StdlibIndex {
                         let rt = m.tipo_retorno.as_ref().map(format_tipo).unwrap_or_default();
                         methods.push(FuncionInformacion {
                             name: m.nombre.clone(),
-                            module: modulo_name.to_string(),
+                            modulo: modulo_name.to_string(),
                             params,
                             tipo_retorno: rt,
                             doc: String::new(),
-                            is_method: true,
-                            class_name: Some(nombre.clone()),
+                            es_metodo: true,
+                            clase_name: Some(nombre.clone()),
                         });
                     }
-                    module.classes.push(ClassInfo {
+                    modulo.classes.push(ClaseInformacion {
                         name: nombre.clone(),
-                        module: modulo_name.to_string(),
+                        modulo: modulo_name.to_string(),
                         fields,
                         methods,
                         doc: String::new(),
@@ -302,18 +302,18 @@ impl StdlibIndex {
                     nombre, variantes, ..
                 } => {
                     let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
-                    module.enums.push(EnumInformacion {
+                    modulo.enums.push(EnumInformacion {
                         name: nombre.clone(),
-                        module: modulo_name.to_string(),
+                        modulo: modulo_name.to_string(),
                         variants: vars,
                     });
                 }
                 Declaracion::Rasgo { nombre, metodos } => {
                     let sigs: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
-                    module.traits.push(TraitInformacion {
+                    modulo.traits.push(TraitInformacion {
                         name: nombre.clone(),
-                        module: modulo_name.to_string(),
-                        method_signatures: sigs,
+                        modulo: modulo_name.to_string(),
+                        metodo_signatures: sigs,
                     });
                 }
                 _ => {}
@@ -333,7 +333,7 @@ impl StdlibIndex {
         results
     }
 
-    pub fn buscar_clases(&self, prefix: &str) -> Vec<&ClassInfo> {
+    pub fn buscar_clases(&self, prefix: &str) -> Vec<&ClaseInformacion> {
         let mut results = Vec::new();
         for c in self.classes.values() {
             if c.name.starts_with(prefix) {
@@ -347,7 +347,7 @@ impl StdlibIndex {
         let mut results = Vec::new();
         for funcs in self.functions.values() {
             for f in funcs {
-                if f.is_method && f.class_name.as_deref() == Some(tipo) {
+                if f.es_metodo && f.clase_name.as_deref() == Some(tipo) {
                     results.push(f);
                 }
             }

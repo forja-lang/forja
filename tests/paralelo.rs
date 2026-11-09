@@ -1,7 +1,7 @@
 //! La compilación paralela de módulos no cambia el bytecode ni el orden.
 #![cfg(feature = "parallel")]
 
-use forja::bytecode::symbol_table::IdSimbolo;
+use forja::bytecode::tabla_simbolos::IdSimbolo;
 use forja::ModuleId;
 
 #[test]

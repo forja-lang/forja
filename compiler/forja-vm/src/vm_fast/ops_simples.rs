@@ -21,7 +21,7 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::PushDecimal(d) => {
-                prof_count!(push_decimal);
+                prof_count!(empujar_decimal);
                 self.empujar_valor(ValorFast::flotante(*d));
                 self.ip += 1;
             }

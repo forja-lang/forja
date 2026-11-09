@@ -6,7 +6,7 @@
 // el struct `NativoRegistro`, el constructor `new()`, la API pública y los
 // registros que no dependen de un dominio externo.
 
-use forja_bytecode::symbol_table::{IdSimbolo, TablaSimbolos};
+use forja_bytecode::tabla_simbolos::{IdSimbolo, TablaSimbolos};
 use forja_runtime::{Anfitrion, ErrFast, ValorFast};
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;

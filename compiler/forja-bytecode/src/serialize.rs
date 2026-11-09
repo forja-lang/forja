@@ -37,8 +37,8 @@ pub fn sanitizar_para_serializacion(bc: &[Opcode]) -> Vec<Opcode> {
                 resultado.push(Opcode::SumarEntero);
             }
             // Runtime-only: CallBuiltin → Call genérico
-            Opcode::LlamarIncorporada(kind, nargs) => {
-                let name = match kind {
+            Opcode::LlamarIncorporada(tipo, nargs) => {
+                let name = match tipo {
                     TipoIncorporada::Escribir => "escribir",
                     TipoIncorporada::Longitud => "longitud",
                     TipoIncorporada::Len => "len",

@@ -91,11 +91,11 @@ impl DiagramGenerator {
         let mut ultimo: Option<String> = None;
         for d in decls {
             let (e_entry, e_exit) = self.gen_decl(d);
-            if let Some(entry) = e_entry {
+            if let Some(entrada) = e_entry {
                 if let Some(prev_last) = ultimo {
-                    self.connect_exits(&prev_last, &entry);
+                    self.connect_exits(&prev_last, &entrada);
                 } else {
-                    primero = Some(entry.clone());
+                    primero = Some(entrada.clone());
                 }
                 ultimo = e_exit;
             }

@@ -15,7 +15,7 @@ fn kinds(fuente: &str) -> Vec<TokenTipo> {
         .tokenize()
         .unwrap()
         .into_iter()
-        .map(|t| t.kind)
+        .map(|t| t.tipo)
         .collect()
 }
 

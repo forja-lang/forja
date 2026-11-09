@@ -14,7 +14,7 @@ const VERSION_CACHE: u32 = 2;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedModulo {
     /// Hash del código fuente al momento de compilar
-    pub source_hash: u64,
+    pub fuente_hash: u64,
     /// Versión del formato de caché
     pub cache_version: u32,
     /// Bytecode serializado en binario (formato .fbc)
@@ -55,10 +55,10 @@ impl IncrementalCache {
 
     /// Intenta obtener bytecode cacheado para un módulo.
     /// Retorna `Some(codigos)` si el hash del fuente coincide.
-    pub fn get(&mut self, ruta_modulo: &str, source_hash: u64) -> Option<Vec<Opcode>> {
-        if let Some(entry) = self.entries.get(ruta_modulo) {
-            if entry.source_hash == source_hash && entry.cache_version == VERSION_CACHE {
-                if let Some((codigos, _cab)) = deserializar_con_metadata(&entry.bytecode_bin) {
+    pub fn get(&mut self, ruta_modulo: &str, fuente_hash: u64) -> Option<Vec<Opcode>> {
+        if let Some(entrada) = self.entries.get(ruta_modulo) {
+            if entrada.fuente_hash == fuente_hash && entrada.cache_version == VERSION_CACHE {
+                if let Some((codigos, _cab)) = deserializar_con_metadata(&entrada.bytecode_bin) {
                     self.hits += 1;
                     return Some(codigos);
                 }
@@ -72,13 +72,13 @@ impl IncrementalCache {
     pub fn put(
         &mut self,
         ruta_modulo: &str,
-        source_hash: u64,
+        fuente_hash: u64,
         codigos: &[Opcode],
         imports: &[String],
     ) {
         let bytecode_bin = serializar_con_metadata(codigos, &[]);
         let cached = CachedModulo {
-            source_hash,
+            fuente_hash,
             cache_version: VERSION_CACHE,
             bytecode_bin,
             imports: imports.to_vec(),
@@ -134,10 +134,10 @@ impl IncrementalCache {
         let changed: Vec<String> = self
             .entries
             .iter()
-            .filter(|(ruta, entry)| {
+            .filter(|(ruta, entrada)| {
                 let archivo = self.directorio_raiz.join(ruta);
                 let nuevo_hash = crate::hash_fuente(archivo.to_str().unwrap_or(ruta));
-                nuevo_hash != 0 && nuevo_hash != entry.source_hash
+                nuevo_hash != 0 && nuevo_hash != entrada.fuente_hash
             })
             .map(|(k, _)| k.clone())
             .collect();

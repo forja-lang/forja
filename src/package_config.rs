@@ -14,7 +14,7 @@ pub struct ForjaConfig {
     #[serde(default)]
     pub descripcion: String,
     #[serde(default = "predeterminado_entrada")]
-    pub entry: String,
+    pub entrada: String,
     #[serde(default)]
     pub modulos: Vec<String>,
     #[serde(default)]
@@ -49,7 +49,7 @@ impl ForjaConfig {
             forja: "0.1.0".to_string(),
             autor: String::new(),
             descripcion: String::new(),
-            entry: predeterminado_entrada(),
+            entrada: predeterminado_entrada(),
             modulos: vec!["std".to_string()],
             dependencias: HashMap::new(),
             dev_dependencias: HashMap::new(),

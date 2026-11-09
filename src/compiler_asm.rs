@@ -1556,27 +1556,27 @@ impl CompilerAsm {
         }
 
         // Combinar todo
-        let mut final_output = String::new();
-        final_output.push_str(&self.salida);
+        let mut salida_final = String::new();
+        salida_final.push_str(&self.salida);
         if !self.rdata.is_empty() {
-            final_output.push_str(&format!("\n{}\n", self.arch.section_rodata()));
-            final_output.push_str(&self.rdata);
+            salida_final.push_str(&format!("\n{}\n", self.arch.section_rodata()));
+            salida_final.push_str(&self.rdata);
         }
 
         if !self.errores.is_empty() {
             return Err(self.errores.clone());
         }
 
-        let final_output = if matches!(
+        let salida_final = if matches!(
             self.arch,
             DestinoArch::X86_64Windows | DestinoArch::X86_64Linux
         ) {
-            peephole_x86(final_output)
+            peephole_x86(salida_final)
         } else {
-            final_output
+            salida_final
         };
 
-        Ok(final_output)
+        Ok(salida_final)
     }
 
     // ── Recolección ──

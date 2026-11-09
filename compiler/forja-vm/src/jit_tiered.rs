@@ -50,7 +50,7 @@ pub struct HotnessThresholds {
     /// Número de ejecuciones antes de compilar de JitSimple → JitOptimized
     pub jit_simple_to_optimized: u64,
     /// Número de iteraciones de loop antes de activar OSR
-    pub osr_loop_iterations: u64,
+    pub iteraciones_bucle_osr: u64,
 }
 
 impl Default for HotnessThresholds {
@@ -58,7 +58,7 @@ impl Default for HotnessThresholds {
         HotnessThresholds {
             interpret_to_jit_simple: 1000,
             jit_simple_to_optimized: 100_000,
-            osr_loop_iterations: 10_000,
+            iteraciones_bucle_osr: 10_000,
         }
     }
 }
@@ -69,7 +69,7 @@ pub struct FuncionState {
     /// Tier actual de la función
     pub tier: Tier,
     /// Contador de hotness (número de llamadas)
-    pub call_count: u64,
+    pub cantidad_llamadas: u64,
     /// Código JIT compilado (si existe)
     pub compiled_code: Option<CompiledCode>,
     /// Frame de deoptimización (para volver al intérprete)
@@ -80,7 +80,7 @@ impl FuncionState {
     pub fn nuevo() -> Self {
         FuncionState {
             tier: Tier::Interpret,
-            call_count: 0,
+            cantidad_llamadas: 0,
             compiled_code: None,
             deopt_frame: None,
         }
@@ -88,17 +88,17 @@ impl FuncionState {
 
     /// Incrementa el contador y retorna true si debería compilarse
     pub fn tick(&mut self, thresholds: &HotnessThresholds) -> ShouldCompilar {
-        self.call_count += 1;
+        self.cantidad_llamadas += 1;
         match self.tier {
             Tier::Interpret => {
-                if self.call_count >= thresholds.interpret_to_jit_simple {
+                if self.cantidad_llamadas >= thresholds.interpret_to_jit_simple {
                     ShouldCompilar::Yes(Tier::JitSimple)
                 } else {
                     ShouldCompilar::No
                 }
             }
             Tier::JitSimple => {
-                if self.call_count >= thresholds.jit_simple_to_optimized {
+                if self.cantidad_llamadas >= thresholds.jit_simple_to_optimized {
                     ShouldCompilar::Yes(Tier::JitOptimized)
                 } else {
                     ShouldCompilar::No
@@ -151,7 +151,7 @@ pub struct DeoptFrame {
     /// Valores de las variables locales (snapshot)
     pub locals: Vec<u64>,
     /// Valor del stack del intérprete
-    pub stack: Vec<u64>,
+    pub pila: Vec<u64>,
     /// Tier desde el que se deoptimizó
     pub from_tier: Tier,
 }
@@ -177,7 +177,7 @@ pub struct JitStats {
     /// Número de OSR completados
     pub osr_completions: u64,
     /// Número de deoptimizaciones
-    pub deopt_count: u64,
+    pub cantidad_desoptimizaciones: u64,
     /// Tiempo total de compilación (microsegundos)
     pub compilation_time_us: u64,
 }
@@ -218,7 +218,7 @@ impl TieredJit {
         let clave = format!("{}:{}", func_id, loop_pc);
         let counter = self.osr_counters.entry(clave).or_insert(0);
         *counter += 1;
-        *counter >= self.thresholds.osr_loop_iterations
+        *counter >= self.thresholds.iteraciones_bucle_osr
     }
 
     /// Marca una función como compilada al tier dado
@@ -240,7 +240,7 @@ impl TieredJit {
             state.tier = Tier::Interpret;
             state.compiled_code = None;
             state.deopt_frame = Some(frame);
-            self.stats.deopt_count += 1;
+            self.stats.cantidad_desoptimizaciones += 1;
         }
     }
 
@@ -333,13 +333,13 @@ mod tests {
             pc: 42,
             base_ptr: 0,
             locals: vec![1, 2, 3],
-            stack: vec![],
+            pila: vec![],
             from_tier: Tier::JitSimple,
         };
         jit.deoptimize("baz", frame);
 
         assert_eq!(jit.tier_of("baz"), Tier::Interpret);
-        assert_eq!(jit.stats().deopt_count, 1);
+        assert_eq!(jit.stats().cantidad_desoptimizaciones, 1);
     }
 
     #[test]
@@ -367,7 +367,7 @@ mod tests {
         let thresholds = HotnessThresholds {
             interpret_to_jit_simple: 10,
             jit_simple_to_optimized: 100,
-            osr_loop_iterations: 5,
+            iteraciones_bucle_osr: 5,
         };
         let mut jit = TieredJit::con_thresholds(thresholds);
         jit.register_funcion("fast");
