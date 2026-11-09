@@ -22,8 +22,8 @@ enum TomlVal {
     Tabla(BTreeMap<String, TomlVal>),
 }
 
-fn error_toml(msg: impl Into<String>) -> ErrFast {
-    ErrFast::TipoInv(format!("toml_invalido: {}", msg.into()))
+fn error_toml(mensaje: impl Into<String>) -> ErrFast {
+    ErrFast::TipoInv(format!("toml_invalido: {}", mensaje.into()))
 }
 
 pub fn native_toml_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
@@ -129,7 +129,7 @@ fn parsear_valor(s: &str) -> Result<TomlVal, String> {
 }
 
 fn split_nivel_superior(s: &str) -> Vec<&str> {
-    let mut out = Vec::new();
+    let mut salida = Vec::new();
     let mut inicio = 0;
     let mut profundidad = 0i32;
     let mut comilla: Option<char> = None;
@@ -145,39 +145,39 @@ fn split_nivel_superior(s: &str) -> Vec<&str> {
                 '[' => profundidad += 1,
                 ']' => profundidad -= 1,
                 ',' if profundidad == 0 => {
-                    out.push(&s[inicio..i]);
+                    salida.push(&s[inicio..i]);
                     inicio = i + 1;
                 }
                 _ => {}
             },
         }
     }
-    out.push(&s[inicio..]);
-    out
+    salida.push(&s[inicio..]);
+    salida
 }
 
 fn unescape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
+    let mut salida = String::with_capacity(s.len());
+    let mut caracteres = s.chars();
+    while let Some(c) = caracteres.next() {
         if c != '\\' {
-            out.push(c);
+            salida.push(c);
             continue;
         }
-        match chars.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
-            Some('r') => out.push('\r'),
-            Some('"') => out.push('"'),
-            Some('\\') => out.push('\\'),
+        match caracteres.next() {
+            Some('n') => salida.push('\n'),
+            Some('t') => salida.push('\t'),
+            Some('r') => salida.push('\r'),
+            Some('"') => salida.push('"'),
+            Some('\\') => salida.push('\\'),
             Some(otro) => {
-                out.push('\\');
-                out.push(otro);
+                salida.push('\\');
+                salida.push(otro);
             }
-            None => out.push('\\'),
+            None => salida.push('\\'),
         }
     }
-    out
+    salida
 }
 
 fn convertir_tabla(vm: &mut dyn Host, tabla: BTreeMap<String, TomlVal>) -> ValorFast {
@@ -191,8 +191,8 @@ fn convertir_tabla(vm: &mut dyn Host, tabla: BTreeMap<String, TomlVal>) -> Valor
 fn convertir_valor(vm: &mut dyn Host, v: TomlVal) -> ValorFast {
     match v {
         TomlVal::Texto(s) => {
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            ValorFast::texto(indice)
         }
         TomlVal::Entero(n) => ValorFast::entero(n),
         TomlVal::Decimal(d) => ValorFast::flotante(d),
@@ -215,16 +215,16 @@ pub fn native_toml_generar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
             "_toml_generar requiere un mapa como argumento".into(),
         ));
     }
-    let mut out = String::new();
-    escribir_tabla(vm, mapa.indice_mapa(), "", &mut out);
-    let idx = vm.alloc_str(Arc::from(out.as_str()));
-    Ok(ValorFast::texto(idx))
+    let mut salida = String::new();
+    escribir_tabla(vm, mapa.indice_mapa(), "", &mut salida);
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
-fn escribir_tabla(vm: &dyn Host, idx: u32, prefijo: &str, out: &mut String) {
+fn escribir_tabla(vm: &dyn Host, indice: u32, prefijo: &str, salida: &mut String) {
     let mut escalares = Vec::new();
     let mut tablas = Vec::new();
-    for (k, v) in vm.get_map(idx).iter() {
+    for (k, v) in vm.get_map(indice).iter() {
         if v.es_mapa() {
             tablas.push((k.clone(), v.indice_mapa()));
         } else {
@@ -235,7 +235,7 @@ fn escribir_tabla(vm: &dyn Host, idx: u32, prefijo: &str, out: &mut String) {
     tablas.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (k, v) in escalares {
-        out.push_str(&format!("{} = {}\n", k, valor_toml(vm, &v)));
+        salida.push_str(&format!("{} = {}\n", k, valor_toml(vm, &v)));
     }
     for (k, sub) in tablas {
         let ruta = if prefijo.is_empty() {
@@ -243,11 +243,11 @@ fn escribir_tabla(vm: &dyn Host, idx: u32, prefijo: &str, out: &mut String) {
         } else {
             format!("{prefijo}.{k}")
         };
-        if !out.is_empty() && !out.ends_with("\n\n") {
-            out.push('\n');
+        if !salida.is_empty() && !salida.ends_with("\n\n") {
+            salida.push('\n');
         }
-        out.push_str(&format!("[{ruta}]\n"));
-        escribir_tabla(vm, sub, &ruta, out);
+        salida.push_str(&format!("[{ruta}]\n"));
+        escribir_tabla(vm, sub, &ruta, salida);
     }
 }
 
