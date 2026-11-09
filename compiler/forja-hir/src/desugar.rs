@@ -142,8 +142,8 @@ fn es_recepcion(nombre: &str) -> bool {
 
 /// Sentencias equivalentes a un `seleccionar`.
 fn desugar_seleccionar(brazos: &[BrazoSeleccionar], n: usize) -> Vec<Declaracion> {
-    let canal_tmp = format!("__sel{n}");
-    let indice_tmp = format!("__sel{n}_i");
+    let canal_temporal = format!("__sel{n}");
+    let indice_temporal = format!("__sel{n}_i");
 
     let canales: Vec<Expresion> = brazos
         .iter()
@@ -187,7 +187,7 @@ fn desugar_seleccionar(brazos: &[BrazoSeleccionar], n: usize) -> Vec<Declaracion
                 mutable: true,
                 nombre: variable.clone(),
                 tipo: None,
-                valor: Some(indice(&canal_tmp, 1)),
+                valor: Some(indice(&canal_temporal, 1)),
                 linea: 0,
                 columna: 0,
             });
@@ -195,7 +195,7 @@ fn desugar_seleccionar(brazos: &[BrazoSeleccionar], n: usize) -> Vec<Declaracion
         cuerpo.extend(brazo.cuerpo.clone());
         resto = vec![Declaracion::Si {
             condicion: Box::new(Expresion::Binaria {
-                izquierda: Box::new(ident(&indice_tmp)),
+                izquierda: Box::new(ident(&indice_temporal)),
                 operador: Operador::IgualIgual,
                 derecha: Box::new(Expresion::LiteralNumero(i as i64)),
             }),
@@ -207,7 +207,7 @@ fn desugar_seleccionar(brazos: &[BrazoSeleccionar], n: usize) -> Vec<Declaracion
     let mut sentencias = vec![
         Declaracion::Variable {
             mutable: false,
-            nombre: canal_tmp.clone(),
+            nombre: canal_temporal.clone(),
             tipo: None,
             valor: Some(llamada),
             linea: 0,
@@ -215,9 +215,9 @@ fn desugar_seleccionar(brazos: &[BrazoSeleccionar], n: usize) -> Vec<Declaracion
         },
         Declaracion::Variable {
             mutable: false,
-            nombre: indice_tmp,
+            nombre: indice_temporal,
             tipo: None,
-            valor: Some(indice(&canal_tmp, 0)),
+            valor: Some(indice(&canal_temporal, 0)),
             linea: 0,
             columna: 0,
         },
