@@ -138,8 +138,8 @@ fn tidy() -> ExitCode {
     use std::fs;
     use std::path::Path;
 
-    fn recorrer(dir: &Path, fallos: &mut Vec<String>) {
-        let Ok(entradas) = fs::read_dir(dir) else {
+    fn recorrer(directorio: &Path, fallos: &mut Vec<String>) {
+        let Ok(entradas) = fs::read_dir(directorio) else {
             return;
         };
         for e in entradas.flatten() {
