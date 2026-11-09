@@ -15,6 +15,13 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 pub trait Anfitrion {
+    /// Vuelca la salida acumulada antes de terminar el proceso.
+    ///
+    /// `escribir` acumula en un buffer que se imprime al final; sin esto,
+    /// `_salir(n)` perdía todo lo impreso (incluido el resumen de un test).
+    /// El host que no acumula salida no necesita implementarlo.
+    fn volcar_salida(&mut self) {}
+
     fn reservar_texto(&mut self, s: Arc<str>) -> u32;
     fn obtener_texto(&self, idx: u32) -> &Arc<str>;
 

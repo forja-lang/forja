@@ -38,6 +38,7 @@ pub mod fechas;
 mod hash;
 mod helpers;
 mod log;
+mod mapas;
 mod mmap_terminal;
 mod perfilado;
 mod pq;
@@ -163,6 +164,7 @@ impl NativoRegistro {
         reg.registrar_toml();
         reg.registrar_xhb();
         reg.registrar_seleccionar();
+        reg.registrar_mapas();
         reg
     }
 

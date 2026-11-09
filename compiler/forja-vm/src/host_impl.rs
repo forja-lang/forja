@@ -12,6 +12,19 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 impl forja_runtime::Anfitrion for ForjaFast {
+    fn volcar_salida(&mut self) {
+        use std::io::Write;
+        let lineas: Vec<String> = {
+            let mut guardia = self.salida.lock().unwrap();
+            std::mem::take(&mut *guardia)
+        };
+        let mut salida = std::io::stdout().lock();
+        for linea in lineas {
+            let _ = writeln!(salida, "{linea}");
+        }
+        let _ = salida.flush();
+    }
+
     fn reservar_texto(&mut self, s: Arc<str>) -> u32 {
         self.reservar_texto(s)
     }

@@ -50,6 +50,13 @@ echo "==> cargo check --workspace --locked"
 echo "==> cargo test --workspace --locked"
 "$CARGO_BIN" test --workspace --locked
 
+echo "==> tests de la stdlib (VM)"
+if [ -x target/debug/forja ] || [ -f target/debug/forja.exe ]; then
+    bash scripts/probar-stdlib.sh
+else
+    "$CARGO_BIN" build -q --locked --bin forja && bash scripts/probar-stdlib.sh
+fi
+
 echo "==> métricas de documentación"
 if command -v python >/dev/null 2>&1; then
     PYTHON=python

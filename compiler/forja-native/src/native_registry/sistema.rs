@@ -64,12 +64,18 @@ pub fn nativo_args(vm: &mut dyn Anfitrion, _args: &[ValorFast]) -> Result<ValorF
 
 /// Termina el proceso con el código dado.
 /// _salir(codigo: Entero)
-pub fn nativo_salir(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_salir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let codigo = if args.is_empty() {
         0i32
     } else {
         obtener_entero(args[0])? as i32
     };
+    // Sin volcar la salida acumulada se pierde todo lo impreso antes de salir
+    // (por ejemplo el resumen de un test que termina con `_salir(1)`).
+    vm.volcar_salida();
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
     std::process::exit(codigo);
 }
 
