@@ -40,15 +40,15 @@ fn registrar(region: MmapRegion) -> i64 {
     h
 }
 
-pub fn obtener(handle: i64) -> Option<MmapRegion> {
-    regions().lock().unwrap().get(&handle).cloned()
+pub fn obtener(manejador: i64) -> Option<MmapRegion> {
+    regions().lock().unwrap().get(&manejador).cloned()
 }
 
-pub fn eliminar(handle: i64) -> Option<MmapRegion> {
-    regions().lock().unwrap().remove(&handle)
+pub fn eliminar(manejador: i64) -> Option<MmapRegion> {
+    regions().lock().unwrap().remove(&manejador)
 }
 
-// ─── Page size ─────────────────────────────────────────────────────────────
+// ─── Page tamano ─────────────────────────────────────────────────────────────
 
 pub fn page_size() -> usize {
     #[cfg(target_os = "windows")]
@@ -214,8 +214,8 @@ mod windows_impl {
                 h_file,
                 std::ptr::null_mut(),
                 protect,
-                0, // max size high
-                0, // max size low (0 = tamaño del archivo)
+                0, // max tamano high
+                0, // max tamano low (0 = tamaño del archivo)
                 std::ptr::null_mut(),
             )
         };
@@ -304,8 +304,8 @@ pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, _writable: bool) -> Resul
 }
 
 /// Lee bytes de la región mapeada.
-pub fn mmap_leer(handle: i64, offset_local: usize, len: usize) -> Result<Vec<u8>, String> {
-    let region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
+pub fn mmap_leer(manejador: i64, offset_local: usize, len: usize) -> Result<Vec<u8>, String> {
+    let region = obtener(manejador).ok_or_else(|| "Handle inválido".to_string())?;
     if offset_local + len > region.len {
         return Err("offset_local + len excede el tamaño del mapping".into());
     }
@@ -314,8 +314,8 @@ pub fn mmap_leer(handle: i64, offset_local: usize, len: usize) -> Result<Vec<u8>
 }
 
 /// Escribe bytes en la región mapeada (requiere modo "rw").
-pub fn mmap_escribir(handle: i64, offset_local: usize, datos: &[u8]) -> Result<usize, String> {
-    let region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
+pub fn mmap_escribir(manejador: i64, offset_local: usize, datos: &[u8]) -> Result<usize, String> {
+    let region = obtener(manejador).ok_or_else(|| "Handle inválido".to_string())?;
     if !region.writable {
         return Err("El mapping no es escribible".into());
     }
@@ -328,8 +328,8 @@ pub fn mmap_escribir(handle: i64, offset_local: usize, datos: &[u8]) -> Result<u
 }
 
 /// Sincroniza cambios a disco.
-pub fn mmap_sincronizar(handle: i64) -> Result<(), String> {
-    let _region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
+pub fn mmap_sincronizar(manejador: i64) -> Result<(), String> {
+    let _region = obtener(manejador).ok_or_else(|| "Handle inválido".to_string())?;
     #[cfg(unix)]
     {
         unix::sincronizar(&_region)
@@ -344,9 +344,9 @@ pub fn mmap_sincronizar(handle: i64) -> Result<(), String> {
     }
 }
 
-/// Cierra el mapping y libera el handle.
-pub fn mmap_cerrar(handle: i64) -> Result<(), String> {
-    let _region = eliminar(handle).ok_or_else(|| "Handle inválido".to_string())?;
+/// Cierra el mapping y libera el manejador.
+pub fn mmap_cerrar(manejador: i64) -> Result<(), String> {
+    let _region = eliminar(manejador).ok_or_else(|| "Handle inválido".to_string())?;
     #[cfg(unix)]
     {
         unix::cerrar(&_region)
