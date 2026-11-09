@@ -39,10 +39,14 @@ impl NativeRegistry {
 
 /// Verifica el sandbox de red antes de una conexión.
 /// Si el sandbox bloquea la operación, retorna un error con mensaje claro.
-pub fn verificar_sandbox_red(vm: &mut dyn Host, host: &str, puerto: u16) -> Result<(), ErrFast> {
+pub fn verificar_sandbox_red(
+    vm: &mut dyn Host,
+    anfitrion: &str,
+    puerto: u16,
+) -> Result<(), ErrFast> {
     vm.sandbox()
-        .verificar_conexion(host, puerto)
-        .map_err(|msg| ErrFast::TipoInv(format!("sandbox_red: {}", msg)))
+        .verificar_conexion(anfitrion, puerto)
+        .map_err(|mensaje| ErrFast::TipoInv(format!("sandbox_red: {}", mensaje)))
 }
 
 pub fn native_socket_tcp_conectar(
@@ -70,7 +74,7 @@ pub fn native_socket_tcp_conectar(
 
     let addr = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
-        Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
+        Err(mensaje) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", mensaje))),
     };
 
     // Verificar sandbox con la IP resuelta DESPUÉS de DNS (evita DNS rebinding)
@@ -164,13 +168,13 @@ pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
         Ok(0) => {
             drop(stream);
             vm.socket_get_mut(socket_idx).connected = false;
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
         Ok(n) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
-            let idx = vm.alloc_str(Arc::from(datos.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(datos.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e)
             if e.kind() == std::io::ErrorKind::WouldBlock
@@ -179,8 +183,8 @@ pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
                 || e.kind() == std::io::ErrorKind::BrokenPipe =>
         {
             drop(stream);
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
@@ -225,21 +229,21 @@ pub fn native_socket_recibir_binario(
         Ok(0) => {
             drop(stream);
             vm.socket_get_mut(socket_idx).connected = false;
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
         Ok(n) => {
-            let hex_str = buffer[..n]
+            let hex_texto = buffer[..n]
                 .iter()
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
-            let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
             drop(stream);
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
@@ -319,8 +323,8 @@ pub fn native_socket_direccion_local(
     let state = vm.socket_get(socket_idx);
     match &state.local_addr {
         Some(addr) => {
-            let idx = vm.alloc_str(Arc::from(addr.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(addr.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         None => Err(ErrFast::TipoInv(
             "error_interno: no se pudo obtener la dirección local".into(),
@@ -341,8 +345,8 @@ pub fn native_socket_direccion_remota(
     let state = vm.socket_get(socket_idx);
     match &state.peer_addr {
         Some(addr) => {
-            let idx = vm.alloc_str(Arc::from(addr.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(addr.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         None => Err(ErrFast::TipoInv(
             "error_interno: el socket no tiene dirección remota".into(),
@@ -530,7 +534,7 @@ pub fn native_socket_udp_enviar(
 
     let destino = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
-        Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
+        Err(mensaje) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", mensaje))),
     };
 
     // Verificar sandbox con la IP resuelta (evita DNS rebinding)
@@ -574,15 +578,15 @@ pub fn native_socket_udp_recibir(
     match socket.recv_from(&mut buffer) {
         Ok((n, _origen)) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
-            let idx = vm.alloc_str(Arc::from(datos.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(datos.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e)
             if e.kind() == std::io::ErrorKind::WouldBlock
                 || e.kind() == std::io::ErrorKind::TimedOut =>
         {
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
@@ -624,10 +628,10 @@ pub fn native_socket_udp_enviar_binario(
 
     let destino = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
-        Err(msg) => {
+        Err(mensaje) => {
             eprintln!(
                 "[DEBUG] resolver_direccion error for {}:{}: {}",
-                direccion, puerto, msg
+                direccion, puerto, mensaje
             );
             return Ok(ValorFast::entero(0));
         }
@@ -637,9 +641,9 @@ pub fn native_socket_udp_enviar_binario(
     let ip_resuelta = destino.ip().to_string();
     verificar_sandbox_red(vm, &ip_resuelta, puerto as u16)?;
 
-    let bytes = hex_a_bytes(&hex_datos);
+    let octetos = hex_a_bytes(&hex_datos);
     let socket = socket_arc.lock().unwrap();
-    match socket.send_to(&bytes, destino) {
+    match socket.send_to(&octetos, destino) {
         Ok(n) => Ok(ValorFast::entero(n as i64)),
         Err(e) => {
             eprintln!("[DEBUG] send_to error for {}:{}: {}", direccion, puerto, e);
@@ -679,16 +683,16 @@ pub fn native_socket_udp_recibir_binario(
     match socket.recv_from(&mut buffer) {
         Ok((n, _origen)) => {
             let hex_string: String = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect();
-            let idx = vm.alloc_str(Arc::from(hex_string.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(hex_string.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => {
             eprintln!(
                 "[DEBUG] native_socket_udp_recibir_binario recv_from err: {}",
                 e
             );
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
     }
 }
