@@ -7,7 +7,7 @@
 #
 # Uso:
 #   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-#   bash scripts/build-aar.sh 0.10.1                    # versión específica
+#   bash scripts/build-aar.sh 0.10.2                    # versión específica
 #   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
 #   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 #
@@ -55,7 +55,7 @@ usage() {
     cat <<'EOF'
 Uso:
   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-  bash scripts/build-aar.sh 0.10.1                    # versión específica
+  bash scripts/build-aar.sh 0.10.2                    # versión específica
   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 
@@ -124,11 +124,12 @@ if [ -n "$ONLY_TARGET" ]; then
     TARGETS=("$ONLY_TARGET")
 fi
 
-# Si no se pasa versión como argumento, la lee automáticamente de Cargo.toml
+# Si no se pasa versión como argumento, la lee automáticamente del crate principal
+# (Cargo.toml raíz es un workspace virtual: no tiene `version`).
 if [ -z "$VERSION" ]; then
-    VERSION=$(grep '^version' "$PROJECT_DIR/Cargo.toml" | head -1 | cut -d'"' -f2)
+    VERSION=$(awk -F'"' '/^version = /{print $2; exit}' "$PROJECT_DIR/compiler/forja/Cargo.toml")
     if [ -z "$VERSION" ]; then
-        echo "❌ Error: No se pudo detectar versión desde Cargo.toml"
+        echo "❌ Error: No se pudo detectar versión desde compiler/forja/Cargo.toml"
         echo "   Especificala manualmente: $0 <version>"
         exit 1
     fi
