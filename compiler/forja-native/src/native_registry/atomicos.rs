@@ -39,17 +39,17 @@ pub fn native_atomico_entero_nuevo(
     } else {
         obtener_entero(args[0])?
     };
-    let mut store = atomicos_mutex().lock().unwrap();
-    let idx = store.len();
-    store.push(AtomicI64::new(val));
-    Ok(ValorFast::entero(idx as i64))
+    let mut almacen = atomicos_mutex().lock().unwrap();
+    let indice = almacen.len();
+    almacen.push(AtomicI64::new(val));
+    Ok(ValorFast::entero(indice as i64))
 }
 
 pub fn native_atomico_cargar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
-    let store = atomicos_mutex().lock().unwrap();
-    let val = store
-        .get(idx)
+    let indice = obtener_entero(args[0])? as usize;
+    let almacen = atomicos_mutex().lock().unwrap();
+    let val = almacen
+        .get(indice)
         .map(|a| a.load(Ordering::Relaxed))
         .unwrap_or(0);
     Ok(ValorFast::entero(val))
@@ -59,53 +59,53 @@ pub fn native_atomico_almacenar(
     _vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
+    let indice = obtener_entero(args[0])? as usize;
     let val = obtener_entero(args[1])?;
-    let store = atomicos_mutex().lock().unwrap();
-    if let Some(a) = store.get(idx) {
+    let almacen = atomicos_mutex().lock().unwrap();
+    if let Some(a) = almacen.get(indice) {
         a.store(val, Ordering::Relaxed);
     }
     Ok(ValorFast::nulo())
 }
 
 pub fn native_atomico_sumar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
+    let indice = obtener_entero(args[0])? as usize;
     let delta = obtener_entero(args[1])?;
-    let store = atomicos_mutex().lock().unwrap();
-    let prev = store
-        .get(idx)
+    let almacen = atomicos_mutex().lock().unwrap();
+    let anterior = almacen
+        .get(indice)
         .map(|a| a.fetch_add(delta, Ordering::Relaxed))
         .unwrap_or(0);
-    Ok(ValorFast::entero(prev))
+    Ok(ValorFast::entero(anterior))
 }
 
 pub fn native_atomico_intercambiar(
     _vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
+    let indice = obtener_entero(args[0])? as usize;
     let val = obtener_entero(args[1])?;
-    let store = atomicos_mutex().lock().unwrap();
-    let prev = store
-        .get(idx)
+    let almacen = atomicos_mutex().lock().unwrap();
+    let anterior = almacen
+        .get(indice)
         .map(|a| a.swap(val, Ordering::Relaxed))
         .unwrap_or(0);
-    Ok(ValorFast::entero(prev))
+    Ok(ValorFast::entero(anterior))
 }
 
 pub fn native_atomico_cas(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
+    let indice = obtener_entero(args[0])? as usize;
     let esperado = obtener_entero(args[1])?;
     let nuevo = obtener_entero(args[2])?;
-    let store = atomicos_mutex().lock().unwrap();
-    let ok = store
-        .get(idx)
+    let almacen = atomicos_mutex().lock().unwrap();
+    let correcto = almacen
+        .get(indice)
         .map(|a| {
             a.compare_exchange(esperado, nuevo, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
         })
         .unwrap_or(false);
-    Ok(ValorFast::booleano(ok))
+    Ok(ValorFast::booleano(correcto))
 }
 
 pub fn native_atomico_booleano_nuevo(
@@ -117,20 +117,20 @@ pub fn native_atomico_booleano_nuevo(
     } else {
         args[0].a_entero() != 0
     };
-    let mut store = atomic_bools_mutex().lock().unwrap();
-    let idx = store.len();
-    store.push(AtomicBool::new(val));
-    Ok(ValorFast::entero(idx as i64))
+    let mut almacen = atomic_bools_mutex().lock().unwrap();
+    let indice = almacen.len();
+    almacen.push(AtomicBool::new(val));
+    Ok(ValorFast::entero(indice as i64))
 }
 
 pub fn native_atomico_booleano_cargar(
     _vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
-    let store = atomic_bools_mutex().lock().unwrap();
-    let val = store
-        .get(idx)
+    let indice = obtener_entero(args[0])? as usize;
+    let almacen = atomic_bools_mutex().lock().unwrap();
+    let val = almacen
+        .get(indice)
         .map(|a| a.load(Ordering::Relaxed))
         .unwrap_or(false);
     Ok(ValorFast::booleano(val))
@@ -140,10 +140,10 @@ pub fn native_atomico_booleano_almacenar(
     _vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
+    let indice = obtener_entero(args[0])? as usize;
     let val = obtener_entero(args[1])? != 0;
-    let store = atomic_bools_mutex().lock().unwrap();
-    if let Some(a) = store.get(idx) {
+    let almacen = atomic_bools_mutex().lock().unwrap();
+    if let Some(a) = almacen.get(indice) {
         a.store(val, Ordering::Relaxed);
     }
     Ok(ValorFast::nulo())
