@@ -13,15 +13,15 @@ pub enum RegInstruction {
     Move {
         dst: VirtReg,
         src: VirtReg,
-        class: RegClass,
+        clase: RegClass,
     },
     LoadImm {
         dst: VirtReg,
-        value: i64,
+        valor: i64,
     },
     LoadFloat {
         dst: VirtReg,
-        value: f64,
+        valor: f64,
     },
 
     // Operaciones enteras (dos operandos → resultado)
@@ -74,27 +74,27 @@ pub enum RegInstruction {
     LoadVar {
         dst: VirtReg,
         var_idx: usize,
-        class: RegClass,
+        clase: RegClass,
     },
     StoreVar {
         src: VirtReg,
         var_idx: usize,
-        class: RegClass,
+        clase: RegClass,
     },
 
     // Saltos
     Jump {
-        label: usize,
+        etiqueta: usize,
     },
     JumpIfFalse {
         cond: VirtReg,
-        label: usize,
+        etiqueta: usize,
     },
     Label(usize),
 
     // Función
     Call {
-        func_name: String,
+        nombre_funcion: String,
         args: Vec<VirtReg>,
     },
     Return {
@@ -118,7 +118,7 @@ pub enum CmpOp {
 /// Bloque básico del IR
 #[derive(Debug, Clone)]
 pub struct BloqueBasico {
-    pub label: usize,
+    pub etiqueta: usize,
     pub instructions: Vec<RegInstruction>,
     pub terminator: RegInstruction,
 }
@@ -167,7 +167,7 @@ pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<V
     match instr {
         RegInstruction::LoadImm { dst, .. } => (vec![], vec![*dst]),
         RegInstruction::LoadFloat { dst, .. } => (vec![], vec![*dst]),
-        RegInstruction::Move { dst, src, class } => (vec![(*src, *class)], vec![*dst]),
+        RegInstruction::Move { dst, src, clase } => (vec![(*src, *clase)], vec![*dst]),
         RegInstruction::RegAdd { dst, a, b }
         | RegInstruction::RegSub { dst, a, b }
         | RegInstruction::RegMul { dst, a, b }
@@ -183,7 +183,7 @@ pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<V
         ),
         RegInstruction::RegNot { dst, src } => (vec![(*src, RClass::Integer)], vec![*dst]),
         RegInstruction::LoadVar { dst, .. } => (vec![], vec![*dst]),
-        RegInstruction::StoreVar { src, class, .. } => (vec![(*src, *class)], vec![]),
+        RegInstruction::StoreVar { src, clase, .. } => (vec![(*src, *clase)], vec![]),
         RegInstruction::JumpIfFalse { cond, .. } => (vec![(*cond, RClass::Integer)], vec![]),
         RegInstruction::Jump { .. } | RegInstruction::Label(_) | RegInstruction::Nop => {
             (vec![], vec![])
@@ -208,8 +208,8 @@ fn clase_de_def(
     match instr {
         RegInstruction::LoadImm { .. } => Some(RClass::Integer),
         RegInstruction::LoadFloat { .. } => Some(RClass::Float),
-        RegInstruction::Move { class, .. } => Some(*class),
-        RegInstruction::LoadVar { class, .. } => Some(*class),
+        RegInstruction::Move { clase, .. } => Some(*clase),
+        RegInstruction::LoadVar { clase, .. } => Some(*clase),
         RegInstruction::RegAdd { a, b, .. }
         | RegInstruction::RegSub { a, b, .. }
         | RegInstruction::RegMul { a, b, .. }
@@ -260,7 +260,7 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
         }
     }
 
-    // (start, end, class, posiciones_de_uso)
+    // (inicio, end, clase, posiciones_de_uso)
     let mut intervals: HashMap<VirtReg, (usize, usize, RClass, Vec<usize>)> = HashMap::new();
     let mut instr_idx = 0;
 
@@ -294,11 +294,11 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
 
     intervals
         .into_iter()
-        .map(|(vreg, (start, end, class, uses))| LiveInterval {
+        .map(|(vreg, (inicio, end, clase, uses))| LiveInterval {
             virt_reg: vreg,
-            start,
+            inicio,
             end: end + 1,
-            reg_class: class,
+            clase_registro: clase,
             uses,
         })
         .collect()
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_get_uses_defs_load_imm() {
-        let instr = RegInstruction::LoadImm { dst: 5, value: 42 };
+        let instr = RegInstruction::LoadImm { dst: 5, valor: 42 };
         let (uses, defs) = get_uses_defs(&instr);
         assert!(uses.is_empty());
         assert_eq!(defs, vec![5]);
@@ -339,7 +339,7 @@ mod tests {
         let instr = RegInstruction::StoreVar {
             src: 0,
             var_idx: 3,
-            class: RegClass::Integer,
+            clase: RegClass::Integer,
         };
         let (uses, defs) = get_uses_defs(&instr);
         assert_eq!(uses.len(), 1);
@@ -352,7 +352,7 @@ mod tests {
         let instr = RegInstruction::LoadVar {
             dst: 2,
             var_idx: 1,
-            class: RegClass::Float,
+            clase: RegClass::Float,
         };
         let (uses, defs) = get_uses_defs(&instr);
         assert!(uses.is_empty());
@@ -362,7 +362,10 @@ mod tests {
 
     #[test]
     fn test_get_uses_defs_jump_if_false() {
-        let instr = RegInstruction::JumpIfFalse { cond: 4, label: 10 };
+        let instr = RegInstruction::JumpIfFalse {
+            cond: 4,
+            etiqueta: 10,
+        };
         let (uses, defs) = get_uses_defs(&instr);
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].0, 4);
@@ -381,7 +384,7 @@ mod tests {
     #[test]
     fn test_get_uses_defs_call() {
         let instr = RegInstruction::Call {
-            func_name: "foo".into(),
+            nombre_funcion: "foo".into(),
             args: vec![1, 2, 3],
         };
         let (uses, defs) = get_uses_defs(&instr);
@@ -393,10 +396,10 @@ mod tests {
     fn test_compute_live_intervals_simple() {
         let mut prog = RegProgram::new();
         let block = BloqueBasico {
-            label: 0,
+            etiqueta: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: 0, value: 5 }, // idx 0: def v0
-                RegInstruction::LoadImm { dst: 1, value: 3 }, // idx 1: def v1
+                RegInstruction::LoadImm { dst: 0, valor: 5 }, // idx 0: def v0
+                RegInstruction::LoadImm { dst: 1, valor: 3 }, // idx 1: def v1
                 RegInstruction::RegAdd { dst: 2, a: 0, b: 1 }, // idx 2: use v0, v1; def v2
             ],
             terminator: RegInstruction::Return { src: 2 },
@@ -406,19 +409,19 @@ mod tests {
         let intervals = compute_live_intervals(&prog);
         assert_eq!(intervals.len(), 3);
 
-        // v0: def at 0, used at 2 → start=0, end=3
+        // v0: def at 0, used at 2 → inicio=0, end=3
         let v0 = intervals.iter().find(|i| i.virt_reg == 0).unwrap();
-        assert_eq!(v0.start, 0);
+        assert_eq!(v0.inicio, 0);
         assert_eq!(v0.end, 3);
 
-        // v1: def at 1, used at 2 → start=1, end=3
+        // v1: def at 1, used at 2 → inicio=1, end=3
         let v1 = intervals.iter().find(|i| i.virt_reg == 1).unwrap();
-        assert_eq!(v1.start, 1);
+        assert_eq!(v1.inicio, 1);
         assert_eq!(v1.end, 3);
 
-        // v2: def at 2, used in terminator at 3 → start=2, end=4
+        // v2: def at 2, used in terminator at 3 → inicio=2, end=4
         let v2 = intervals.iter().find(|i| i.virt_reg == 2).unwrap();
-        assert_eq!(v2.start, 2);
+        assert_eq!(v2.inicio, 2);
         assert_eq!(v2.end, 4);
     }
 
@@ -426,15 +429,15 @@ mod tests {
     fn test_compute_live_intervals_no_overlap() {
         let mut prog = RegProgram::new();
         let block = BloqueBasico {
-            label: 0,
+            etiqueta: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: 0, value: 1 }, // idx 0
+                RegInstruction::LoadImm { dst: 0, valor: 1 }, // idx 0
                 RegInstruction::LoadVar {
                     dst: 1,
                     var_idx: 0,
-                    class: RegClass::Integer,
+                    clase: RegClass::Integer,
                 }, // idx 1, v0 dead after idx 0
-                RegInstruction::LoadImm { dst: 2, value: 2 }, // idx 2, v1 dead after idx 1
+                RegInstruction::LoadImm { dst: 2, valor: 2 }, // idx 2, v1 dead after idx 1
             ],
             terminator: RegInstruction::Return { src: 2 },
         };
@@ -446,11 +449,11 @@ mod tests {
         let v1 = intervals.iter().find(|i| i.virt_reg == 1).unwrap();
         let v2 = intervals.iter().find(|i| i.virt_reg == 2).unwrap();
 
-        assert_eq!(v0.start, 0);
+        assert_eq!(v0.inicio, 0);
         assert_eq!(v0.end, 1);
-        assert_eq!(v1.start, 1);
+        assert_eq!(v1.inicio, 1);
         assert_eq!(v1.end, 2);
-        assert_eq!(v2.start, 2);
+        assert_eq!(v2.inicio, 2);
         assert_eq!(v2.end, 4);
     }
 
@@ -458,7 +461,7 @@ mod tests {
     fn test_reg_program_instruction_count() {
         let mut prog = RegProgram::new();
         let block = BloqueBasico {
-            label: 0,
+            etiqueta: 0,
             instructions: vec![RegInstruction::Nop, RegInstruction::Nop],
             terminator: RegInstruction::Nop,
         };
