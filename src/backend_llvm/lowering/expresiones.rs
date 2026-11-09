@@ -357,8 +357,19 @@ impl Lowering {
                 }
                 Ok(nuevo)
             }
-            Expresion::Ok(v) | Expresion::Error(v) | Expresion::Algo(v) => self.expr(v),
-            Expresion::Nada | Expresion::Ninguno => Ok(V::Nulo),
+            Expresion::Ok(v) => {
+                let val = self.expr(v)?;
+                self.construir_variante_con("Ok", &[val])
+            }
+            Expresion::Error(v) => {
+                let val = self.expr(v)?;
+                self.construir_variante_con("Error", &[val])
+            }
+            Expresion::Algo(v) => {
+                let val = self.expr(v)?;
+                self.construir_variante_con("Algo", &[val])
+            }
+            Expresion::Nada | Expresion::Ninguno => self.construir_variante("Ninguno", &[]),
             Expresion::Referencia { expr, .. } => self.expr(expr),
             Expresion::Mapa(pares) => {
                 let m = self.r();
@@ -394,10 +405,54 @@ impl Lowering {
             Expresion::Seleccionar { .. } => {
                 Err("`seleccionar` no está soportado por la ruta LLVM".into())
             }
-            Expresion::Try(_) => Err(
-                "el operador `?` requiere `Resultado`/`Opcion`, no soportado en la ruta LLVM"
-                    .into(),
-            ),
+            Expresion::Try(expr) => {
+                let v = self.expr(expr)?;
+                let (obj, en) = match v {
+                    V::Enum(r, e) => (r, e),
+                    otro => {
+                        return Err(format!(
+                            "`?` espera un `Resultado`/`Opcion`, no un {}",
+                            otro.t().nombre()
+                        ))
+                    }
+                };
+                let ptag = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds %Enum.{}, ptr {}, i32 0, i32 0",
+                    ptag, en, obj
+                ));
+                let tag = self.r();
+                self.linea(&format!("{} = load i64, ptr {}", tag, ptag));
+                // Error = 1 en Resultado/Opcion; si vino Error, se propaga tal cual.
+                let es_error = self.r();
+                self.linea(&format!("{} = icmp ne i64 {}, 0", es_error, tag));
+                let err_bb = self.bloque("try.error");
+                let ok_bb = self.bloque("try.ok");
+                self.linea(&format!(
+                    "br i1 {}, label %{}, label %{}",
+                    es_error, err_bb, ok_bb
+                ));
+                self.etiqueta(&err_bb);
+                if matches!(self.ret_actual, T::Nulo) {
+                    self.linea("ret void");
+                } else {
+                    self.linea(&format!(
+                        "ret {} {}",
+                        self.ret_actual.llvm().to_llvm_ir(),
+                        obj
+                    ));
+                }
+                self.etiqueta(&ok_bb);
+                let pp = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds %Enum.{}, ptr {}, i32 0, i32 1",
+                    pp, en, obj
+                ));
+                let payload = self.r();
+                self.linea(&format!("{} = load i64, ptr {}", payload, pp));
+                // El payload viaja como i64; los contextos de texto lo convierten.
+                Ok(V::Int(payload))
+            }
             Expresion::Si { .. } => {
                 Err("`si` usado como expresión de UI no tiene sentido fuera de la GUI".into())
             }
@@ -1081,8 +1136,8 @@ impl Lowering {
             ));
             let crudo = self.r();
             self.linea(&format!("{} = load i64, ptr {}", crudo, ep));
-            let val = self.como(&V::Int(crudo), t.clone());
-            self.guardar(&slot, valor_desde(&val, t), t);
+            let valor = self.desde_slot(&crudo, t);
+            self.guardar(&slot, valor, t);
             self.vars.insert(nombre.clone(), Var { slot, t: t.clone() });
         }
         for (i, p) in parametros.iter().enumerate() {
@@ -1201,8 +1256,8 @@ impl Lowering {
             ));
             let crudo = self.r();
             self.linea(&format!("{} = load i64, ptr {}", crudo, ep));
-            let val = self.como(&V::Int(crudo), t.clone());
-            self.guardar(&slot, valor_desde(&val, t), t);
+            let valor = self.desde_slot(&crudo, t);
+            self.guardar(&slot, valor, t);
             self.vars.insert(nombre.clone(), Var { slot, t: t.clone() });
         }
         for s in cuerpo {
@@ -1238,11 +1293,22 @@ impl Lowering {
 
     /// `Variante(a, b)` → objeto `%Enum.X` con tag en el slot 0 y payloads en i64.
     fn construir_variante(&mut self, nombre: &str, args: &[Expresion]) -> Result<V, String> {
-        let (en, idx, aridad) = self
+        let mut evaluados = Vec::with_capacity(args.len());
+        for a in args {
+            evaluados.push(self.expr(a)?);
+        }
+        self.construir_variante_con(nombre, &evaluados)
+    }
+
+    /// Igual que [`Self::construir_variante`] pero con valores ya evaluados
+    /// (lo usan `Ok`/`Error`/`Algo`/`?`, que no tienen una `Expresion`).
+    fn construir_variante_con(&mut self, nombre: &str, args: &[V]) -> Result<V, String> {
+        let (en, idx, tipos) = self
             .variantes
             .get(nombre)
             .cloned()
             .ok_or_else(|| format!("variante `{nombre}` desconocida"))?;
+        let aridad = tipos.len();
         let max = self
             .enums
             .get(&en)
@@ -1258,9 +1324,8 @@ impl Lowering {
             p0, en, r
         ));
         self.linea(&format!("store i64 {}, ptr {}", idx, p0));
-        for (i, a) in args.iter().enumerate() {
-            let v = self.expr(a)?;
-            let x = self.como(&v, T::Int);
+        for (i, v) in args.iter().enumerate() {
+            let x = self.como_slot(v);
             let p = self.r();
             self.linea(&format!(
                 "{} = getelementptr inbounds %Enum.{}, ptr {}, i32 0, i32 {}",
@@ -1340,9 +1405,15 @@ impl Lowering {
             self.linea(&format!("{} = icmp eq i64 {}, {}", c, tag, idx));
             self.linea(&format!("br i1 {}, label %{}, label %{}", c, cuerpo, sig));
             self.etiqueta(&cuerpo);
+            let tipos_campo = self
+                .variantes
+                .get(&variante)
+                .map(|(_, _, t)| t.clone())
+                .unwrap_or_default();
             for (k, sub) in subs.iter().enumerate() {
                 if let crate::ast::Patron::Variable(nombre) = sub {
-                    let slot = self.alloca(&T::Int, nombre);
+                    let t_campo = tipos_campo.get(k).cloned().unwrap_or(T::Int);
+                    let slot = self.alloca(&t_campo, nombre);
                     let pp = self.r();
                     self.linea(&format!(
                         "{} = getelementptr inbounds %Enum.{}, ptr {}, i32 0, i32 {}",
@@ -1353,8 +1424,9 @@ impl Lowering {
                     ));
                     let val = self.r();
                     self.linea(&format!("{} = load i64, ptr {}", val, pp));
-                    self.guardar(&slot, V::Int(val), &T::Int);
-                    self.vars.insert(nombre.clone(), Var { slot, t: T::Int });
+                    let enlazado = self.desde_slot(&val, &t_campo);
+                    self.guardar(&slot, enlazado, &t_campo);
+                    self.vars.insert(nombre.clone(), Var { slot, t: t_campo });
                 }
             }
             for s in &brazo.cuerpo {
@@ -1372,6 +1444,60 @@ impl Lowering {
 
     /// Convierte un valor a la casilla `i64` de un arreglo o mapa: los punteros
     /// viajan como `ptrtoint` (no como el número que "parezca" el texto).
+    /// Inverso de [`Self::como_slot`]: reconstruye un valor tipado desde la
+    /// casilla i64 de un arreglo, entorno o payload de enum.
+    pub(super) fn desde_slot(&mut self, crudo: &str, t: &T) -> V {
+        match t {
+            T::Texto => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Texto(p)
+            }
+            T::Arreglo => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Arreglo(p)
+            }
+            T::Mapa => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Mapa(p)
+            }
+            T::Canal => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Canal(p)
+            }
+            T::Closure => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Closure(p)
+            }
+            T::Enum(c) => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Enum(p, c.clone())
+            }
+            T::Clase(c) => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Clase(p, c.clone())
+            }
+            T::Funcion => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Funcion(p)
+            }
+            T::Dec => {
+                let d = self.r();
+                self.linea(&format!("{} = sitofp i64 {} to double", d, crudo));
+                V::Dec(d)
+            }
+            T::Nulo => V::Nulo,
+            T::Int => V::Int(crudo.to_string()),
+        }
+    }
+
     pub(super) fn como_slot(&mut self, v: &V) -> String {
         match v.t() {
             T::Texto

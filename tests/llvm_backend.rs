@@ -240,6 +240,61 @@ escribir(c)
 }
 
 #[test]
+fn resultado_y_operador_try() {
+    let fuente = r#"
+funcion dividir(a: Entero, b: Entero) -> Resultado<Entero, Texto> {
+    si (b == 0) { retornar Error("division por cero") }
+    retornar Ok(a / b)
+}
+funcion calcular(x: Entero) -> Resultado<Entero, Texto> {
+    variable r = dividir(100, x)?
+    retornar Ok(r + 1)
+}
+variable bueno = calcular(4)
+coincidir (bueno) {
+    caso Ok(n) { escribir("ok: " + a_texto(n)) }
+    caso Error(e) { escribir("error: " + e) }
+}
+variable malo = calcular(0)
+coincidir (malo) {
+    caso Ok(n) { escribir("ok: " + a_texto(n)) }
+    caso Error(e) { escribir("error: " + e) }
+}
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida,
+            "ok: 26
+error: division por cero
+"
+        );
+    }
+}
+
+#[test]
+fn enums_con_payload_de_texto() {
+    let fuente = r#"
+tipo Forma = Circulo(Entero) | Etiqueta(Texto)
+funcion describir(f: Forma) -> Texto {
+    coincidir (f) {
+        caso Circulo(r) { retornar "circulo de " + a_texto(r) }
+        caso Etiqueta(e) { retornar "etiqueta: " + e }
+    }
+}
+escribir(describir(Etiqueta("hola")))
+escribir(describir(Circulo(3)))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida,
+            "etiqueta: hola
+circulo de 3
+"
+        );
+    }
+}
+
+#[test]
 fn imprimir_agregados_y_repetir_arreglo() {
     let fuente = r#"
 variable a = [1, 2, 3]

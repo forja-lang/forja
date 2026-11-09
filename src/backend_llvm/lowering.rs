@@ -62,6 +62,10 @@ impl T {
             Tipo::Nulo => T::Nulo,
             Tipo::Clase(n) => T::Clase(n.clone()),
             Tipo::Arreglo(_) => T::Arreglo,
+            // `Resultado`/`Opcion` son los tipos del preludio: se representan
+            // como los enums homónimos (tag + un payload i64).
+            Tipo::Resultado(..) => T::Enum("Resultado".to_string()),
+            Tipo::Opcion(..) => T::Enum("Opcion".to_string()),
             _ => T::Int,
         })
     }
@@ -169,7 +173,7 @@ pub struct Lowering {
     clases: HashMap<String, Clase>,
     enums: HashMap<String, EnumInformacion>,
     /// variante → (enum, índice, aridad)
-    variantes: HashMap<String, (String, usize, usize)>,
+    variantes: HashMap<String, (String, usize, Vec<T>)>,
     consts: HashMap<String, String>,
     /// tipos inferidos por pre-escaneo (variables declaradas como `nulo`).
     tipos_pre: HashMap<String, T>,
@@ -577,9 +581,16 @@ impl Lowering {
                         .map(|v| (v.nombre.clone(), v.tipos.len()))
                         .collect();
                     let max_campos = campos.iter().map(|(_, n)| *n).max().unwrap_or(0);
-                    for (i, (vn, aridad)) in campos.iter().enumerate() {
+                    for (i, v) in variantes.iter().enumerate() {
+                        // se guardan los tipos de los campos: al hacer `coincidir`
+                        // el payload se enlaza con su tipo real (texto vs entero).
+                        let tipos: Vec<T> = v
+                            .tipos
+                            .iter()
+                            .map(|t| self.tipo_declarado(&Some(t.clone())).unwrap_or(T::Int))
+                            .collect();
                         self.variantes
-                            .insert(vn.clone(), (nombre.clone(), i, *aridad));
+                            .insert(v.nombre.clone(), (nombre.clone(), i, tipos));
                     }
                     self.enums
                         .insert(nombre.clone(), EnumInformacion { max_campos });
@@ -603,6 +614,35 @@ impl Lowering {
         for (nombre, firma) in RUNTIME.iter().filter(|(n, _)| *n != "forja_alloc") {
             let (ret, params) = firma.split_once(' ').unwrap_or(("i64", "()"));
             let _ = writeln!(self.decls, "declare {} @{}{}", ret, nombre, params);
+        }
+
+        // 3.4 Preludio: `Resultado` y `Opcion` son tipos del lenguaje (los inyecta
+        // el pipeline como `enum`), pero el backend los registra siempre para que
+        // `Ok`/`Error`/`Algo`/`Ninguno` y `?` funcionen sin declararlos.
+        // shortcut: sin genéricos en la representación, se asume el uso
+        // convencional (`Ok`/`Algo` con Entero, `Error` con Texto). Upgrade:
+        // propagar `Resultado<T, E>` desde la firma de la función.
+        for (nombre_enum, variantes) in [
+            (
+                "Resultado",
+                vec![("Ok", vec![T::Int]), ("Error", vec![T::Texto])],
+            ),
+            ("Opcion", vec![("Algo", vec![T::Int]), ("Ninguno", vec![])]),
+        ] {
+            if self.enums.contains_key(nombre_enum) {
+                continue;
+            }
+            let max_campos = variantes
+                .iter()
+                .map(|(_, tipos)| tipos.len())
+                .max()
+                .unwrap_or(0);
+            for (i, (v, tipos)) in variantes.iter().enumerate() {
+                self.variantes
+                    .insert(v.to_string(), (nombre_enum.to_string(), i, tipos.clone()));
+            }
+            self.enums
+                .insert(nombre_enum.to_string(), EnumInformacion { max_campos });
         }
 
         // 3.5 Variables de nivel superior: las que usan funciones/closures/hilos
