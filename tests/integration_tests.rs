@@ -5,11 +5,11 @@ use forja::vm_fast::ForjaFast;
 
 /// Helper: ejecuta código Forja en la VM y devuelve output
 fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
     let mut gen = GeneradorBytecode::nuevo();
     let bytecode = gen
@@ -391,26 +391,26 @@ fn test_mapa_obtener_edad() {
 // ============================================================
 
 fn assert_format_roundtrip(fuente: &str) {
-    let mut lexer1 = Lexer::new(fuente);
+    let mut lexer1 = Lexer::nuevo(fuente);
     let tokens1 = lexer1
         .tokenize()
         .unwrap_or_else(|e| panic!("Lexer error: {:?}", e));
     let mut parser1 = Parser::nuevo(tokens1);
     let ast1 = parser1
-        .parse()
+        .parsear()
         .unwrap_or_else(|e| panic!("Parser error: {:?}", e));
 
     let mut fmt = forja::formatter::Formatter::nuevo();
     let formatted = fmt.formatear(&ast1);
 
     // Format second time to test stability (idempotency)
-    let mut lexer2 = Lexer::new(&formatted);
+    let mut lexer2 = Lexer::nuevo(&formatted);
     let tokens2 = lexer2
         .tokenize()
         .unwrap_or_else(|e| panic!("Lexer error on formatted: {:?}\nCode:\n{}", e, formatted));
     let mut parser2 = Parser::nuevo(tokens2);
     let ast2 = parser2
-        .parse()
+        .parsear()
         .unwrap_or_else(|e| panic!("Parser error on formatted: {:?}\nCode:\n{}", e, formatted));
 
     let mut fmt2 = forja::formatter::Formatter::nuevo();

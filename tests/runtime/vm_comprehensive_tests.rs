@@ -4,10 +4,10 @@ use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
 fn ejecutar(fuente: &str) -> ForjaFast {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut gen = GeneradorBytecode::nuevo();
     let mut bc = gen.generar(&programa).unwrap();
     bc = optimizar_indices(&bc);
@@ -454,10 +454,10 @@ fn test_vm_cuando_verdadero() {
 // ============================================================
 
 fn salida_fast(fuente: &str) -> Vec<String> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut gen = GeneradorBytecode::nuevo();
     let bc = gen.generar(&programa).unwrap();
     let bc = optimizar_indices(&bc);

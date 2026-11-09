@@ -53,7 +53,7 @@ fn insertar_comentarios(base: String, comentarios: &[forja_syntax::lexer::Coment
         return base;
     }
 
-    let mut lexer = forja_syntax::lexer::Lexer::new(&base);
+    let mut lexer = forja_syntax::lexer::Lexer::nuevo(&base);
     let tokens = lexer.tokenize().unwrap_or_default();
     let mut posiciones: std::collections::HashMap<String, Vec<usize>> =
         std::collections::HashMap::new();
@@ -937,7 +937,7 @@ impl Formatter {
                 let val_texto = self.expresion_a_texto(valor);
                 format!("{}.{} = {}", obj_texto, campo, val_texto)
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 let arr_texto = self.expresion_a_texto(array);
                 let val_texto = self.expresion_a_texto(valor);
                 format!("{} = {}", arr_texto, val_texto)
@@ -1006,10 +1006,10 @@ mod tests {
 
     /// Formatea un fragmento de código fuente.
     fn formatear(fuente: &str) -> String {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().expect("el lexer no debe fallar");
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().expect("el parser no debe fallar");
+        let programa = parser.parsear().expect("el parser no debe fallar");
         let mut fmt = Formatter::nuevo();
         fmt.formatear(&programa)
     }

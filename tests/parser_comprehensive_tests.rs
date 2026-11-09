@@ -3,10 +3,10 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 
 fn parsear(fuente: &str) -> Programa {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    parser.parse().unwrap()
+    parser.parsear().unwrap()
 }
 
 // ============================================================
@@ -830,8 +830,8 @@ fn errores_de_parser_traen_span_de_bytes() {
 
     let fuente = "variable x = @
 ";
-    let tokens = Lexer::new(fuente).tokenize().unwrap();
-    let err = Parser::nuevo(tokens).parse().unwrap_err();
+    let tokens = Lexer::nuevo(fuente).tokenize().unwrap();
+    let err = Parser::nuevo(tokens).parsear().unwrap_err();
     let span = err[0]
         .span_bytes
         .expect("el error debe traer span de bytes");

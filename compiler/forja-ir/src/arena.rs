@@ -59,7 +59,7 @@ impl Drop for Chunk {
 ///
 /// ```ignore
 /// let arena = Arena::new();
-/// let x = arena.alloc(42u64);
+/// let x = arena.reservar(42u64);
 /// let slice = arena.alloc_slice(&[1, 2, 3]);
 /// // Al final, todo se libera de golpe con `arena.reiniciar()`
 /// ```
@@ -117,7 +117,7 @@ impl Arena {
     ///
     /// **Nota**: Solo funciona correctamente cuando no se mantienen
     /// referencias previas al hacer nuevas asignaciones (patrón secuencial típico de compiladores).
-    pub fn alloc<T>(&mut self, valor: T) -> &mut T {
+    pub fn reservar<T>(&mut self, valor: T) -> &mut T {
         unsafe { &mut *self.reservar_raw(valor) }
     }
 
@@ -223,8 +223,8 @@ impl ScopedArena {
         }
     }
 
-    pub fn alloc<T>(&mut self, valor: T) -> &mut T {
-        self.arena.alloc(valor)
+    pub fn reservar<T>(&mut self, valor: T) -> &mut T {
+        self.arena.reservar(valor)
     }
 
     pub fn reservar_slice<T: Clone>(&mut self, slice: &[T]) -> &[T] {
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn test_arena_reservar_basico() {
         let mut arena = Arena::nuevo();
-        let x = arena.alloc(42u64);
+        let x = arena.reservar(42u64);
         assert_eq!(*x, 42);
         *x = 100;
         assert_eq!(*x, 100);
@@ -270,8 +270,8 @@ mod tests {
     #[test]
     fn test_arena_reiniciar() {
         let mut arena = Arena::nuevo();
-        arena.alloc(42u64);
-        arena.alloc(100u64);
+        arena.reservar(42u64);
+        arena.reservar(100u64);
         assert!(arena.bytes_allocated() > 0);
 
         arena.reiniciar();
@@ -283,7 +283,7 @@ mod tests {
         let mut arena = Arena::con_tamano_bloque(256);
         // Asignar muchos valores para forzar múltiples chunks
         for i in 0..1000 {
-            let val = arena.alloc(i as u64);
+            let val = arena.reservar(i as u64);
             assert_eq!(*val, i as u64);
         }
         assert!(
@@ -295,9 +295,9 @@ mod tests {
     #[test]
     fn test_arena_different_types() {
         let mut arena = Arena::nuevo();
-        let a = arena.alloc(42i32);
+        let a = arena.reservar(42i32);
         assert_eq!(*a, 42);
-        let b = arena.alloc(2.5f64);
+        let b = arena.reservar(2.5f64);
         assert_eq!(*b, 2.5);
         let c = arena.reservar_slice(&["hello", "world"]);
         assert_eq!(c, &["hello", "world"]);
@@ -311,7 +311,7 @@ mod tests {
 
         // Llenar el chunk (256 bytes / 1 byte cada alloc = 256 allocs + header overhead)
         for _ in 0..300 {
-            arena.alloc(0u8);
+            arena.reservar(0u8);
         }
         // Después de llenar, debería tener al menos 2 chunks
         assert!(
@@ -324,11 +324,11 @@ mod tests {
     #[test]
     fn test_scoped_arena() {
         let mut arena = ScopedArena::nuevo();
-        arena.alloc(1u64);
+        arena.reservar(1u64);
 
         arena.empujar_scope();
-        arena.alloc(2u64);
-        arena.alloc(3u64);
+        arena.reservar(2u64);
+        arena.reservar(3u64);
         let antes = arena.bytes_allocated();
         assert!(antes > 0);
 

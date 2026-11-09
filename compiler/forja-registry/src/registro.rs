@@ -34,7 +34,7 @@ pub struct Semver {
 
 impl Semver {
     /// Parsea una cadena semver. Acepta `1`, `1.2`, `1.2.3` y `1.2.3-pre`.
-    pub fn parse(s: &str) -> Result<Semver, String> {
+    pub fn parsear(s: &str) -> Result<Semver, String> {
         let s = s.trim();
         if s.is_empty() {
             return Err("versión vacía".to_string());
@@ -67,7 +67,7 @@ impl Semver {
 
     /// Valida que una cadena sea semver correcta.
     pub fn es_valida(s: &str) -> bool {
-        Semver::parse(s).is_ok()
+        Semver::parsear(s).is_ok()
     }
 
     /// Clave de ordenamiento: una versión estable es mayor que cualquier
@@ -187,7 +187,7 @@ impl Index {
             .versiones
             .values()
             .filter(|v| !v.yanked)
-            .filter_map(|v| Semver::parse(&v.version).ok().map(|s| (s, v)))
+            .filter_map(|v| Semver::parsear(&v.version).ok().map(|s| (s, v)))
             .max_by(|a, b| a.0.cmp(&b.0))
             .map(|(_, v)| v)
     }
@@ -612,10 +612,10 @@ mod tests {
 
     #[test]
     fn semver_ordena_correctamente() {
-        let a = Semver::parse("1.2.3").unwrap();
-        let b = Semver::parse("1.2.4").unwrap();
-        let c = Semver::parse("1.3.0").unwrap();
-        let d = Semver::parse("2.0.0").unwrap();
+        let a = Semver::parsear("1.2.3").unwrap();
+        let b = Semver::parsear("1.2.4").unwrap();
+        let c = Semver::parsear("1.3.0").unwrap();
+        let d = Semver::parsear("2.0.0").unwrap();
         assert!(a < b);
         assert!(b < c);
         assert!(c < d);
@@ -623,8 +623,8 @@ mod tests {
 
     #[test]
     fn semver_estable_mayor_que_prerelease() {
-        let estable = Semver::parse("1.0.0").unwrap();
-        let pre = Semver::parse("1.0.0-alpha").unwrap();
+        let estable = Semver::parsear("1.0.0").unwrap();
+        let pre = Semver::parsear("1.0.0-alpha").unwrap();
         assert!(estable > pre);
     }
 

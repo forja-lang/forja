@@ -54,7 +54,7 @@ pub struct ConversorABytecode {
 }
 
 /// Base del espacio de labels de las funciones diferidas (closures).
-const LABEL_BASE_DIFERIDO: usize = 1_000_000;
+const ETIQUETA_BASE_DIFERIDA: usize = 1_000_000;
 
 impl ConversorABytecode {
     /// Crea el conversor con la tabla de símbolos del programa IR.
@@ -66,7 +66,7 @@ impl ConversorABytecode {
             es_principal: false,
             etiqueta_offset: 0,
             defs_diferidas: Vec::new(),
-            siguiente_etiqueta_diferido: LABEL_BASE_DIFERIDO,
+            siguiente_etiqueta_diferido: ETIQUETA_BASE_DIFERIDA,
             slots_valor: HashMap::new(),
         }
     }

@@ -582,7 +582,7 @@ impl DiagramGenerator {
                 campo,
                 valor,
             } => format!("{}.{} = {}", self.ec(objeto), campo, self.ec(valor)),
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 format!("{} = {}", self.ec(array), self.ec(valor))
             }
             Expresion::AsignacionCompuesta {

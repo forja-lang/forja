@@ -2,12 +2,12 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 
 fn parsear(codigo: &str) {
-    let mut lexer = Lexer::new(codigo);
+    let mut lexer = Lexer::nuevo(codigo);
     let tokens = lexer
         .tokenize()
         .unwrap_or_else(|e| panic!("error léxico en ejemplo:\n{codigo}\n{e:?}"));
     let mut parser = Parser::nuevo(tokens);
-    if let Err(e) = parser.parse() {
+    if let Err(e) = parser.parsear() {
         panic!("error de parseo en ejemplo:\n{codigo}\n{e:?}");
     }
 }

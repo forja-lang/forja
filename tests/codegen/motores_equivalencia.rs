@@ -141,9 +141,11 @@ fn bytecode(fuente: &str) -> Vec<forja::bytecode::Opcode> {
 /// (antes la ejecutaba `ForjaDT`, hoy archivado; `ForjaFast` requiere índices).
 fn bytecode_raw(fuente: &str) -> Vec<forja::bytecode::Opcode> {
     use forja::bytecode::GeneradorBytecode;
-    let tokens = forja::lexer::Lexer::new(fuente).tokenize().expect("lexer");
+    let tokens = forja::lexer::Lexer::nuevo(fuente)
+        .tokenize()
+        .expect("lexer");
     let prog = forja::parser::Parser::nuevo(tokens)
-        .parse()
+        .parsear()
         .expect("parser");
     let mut gen = GeneradorBytecode::nuevo();
     gen.generar(&prog).expect("generar bytecode")

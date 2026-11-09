@@ -551,7 +551,7 @@ impl ForjaFast {
         // los resultados de hilos se marcan desde su handle (objeto Hilo),
         // no como raíz incondicional, para poder liberar hilos inalcanzables.
         roots.extend_from_slice(&self.global_var_persist);
-        roots.extend(self.anterior_stack.values().copied());
+        roots.extend(self.pila_anterior.values().copied());
 
         // Marcar todas las raíces
         for &val in &roots {
@@ -825,16 +825,16 @@ impl ForjaFast {
             if idx < self.runtime.mapa_monticulo.len() && !self.runtime.mapa_marcado[idx] {
                 self.runtime.mapa_marcado[idx] = true;
                 // Marcar valores del mapa usando stack buffer para evitar alloc
-                const MAP_BUF_SIZE: usize = 32;
+                const TAMANO_BUFFER_MAPA: usize = 32;
                 let mapa_longitud = self.runtime.mapa_monticulo[idx].len();
-                let mut buf = [ValorFast::nulo(); MAP_BUF_SIZE];
-                let actual_longitud = mapa_longitud.min(MAP_BUF_SIZE);
+                let mut buf = [ValorFast::nulo(); TAMANO_BUFFER_MAPA];
+                let actual_longitud = mapa_longitud.min(TAMANO_BUFFER_MAPA);
                 for (i, v) in self.runtime.mapa_monticulo[idx]
                     .values()
                     .copied()
                     .enumerate()
                 {
-                    if i >= MAP_BUF_SIZE {
+                    if i >= TAMANO_BUFFER_MAPA {
                         break;
                     }
                     buf[i] = v;

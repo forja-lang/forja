@@ -441,7 +441,7 @@ impl Instruccion {
             }
 
             // `FieldSet`/`FieldSetIdx` llevan un `IdSimboloIr`/`usize` en el medio,
-            // que no se renumera. `ArraySet`/`MapSet` llevan un **valor**
+            // que no se renumera. `ArregloFijar`/`MapSet` llevan un **valor**
             // (índice o clave) y sí: saltárselo dejaba el operando apuntando a
             // un `IdValor` ya reasignado (sin materializar), y el conversor
             // caía en el global 0 → `a[0] = 5` escribía con índice Nulo.

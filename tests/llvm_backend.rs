@@ -184,18 +184,13 @@ escribir(c.doble())
 fn constructos_no_soportados_fallan_con_mensaje() {
     // Nunca generar IR que miente: mapas, enums, hilos y closures dan error.
     for (fuente, esperado) in [
-        // usos observables: si no, el DCE del pipeline los elimina antes del backend
+        // Las closures siguen sin bajar a la ruta nativa; el resto (mapas,
+        // enums, hilos, canales, arreglos, clases) ya está soportado.
         (
             "variable f = func(x) { retornar x }
 escribir(f(1))
 ",
             "closures",
-        ),
-        (
-            "variable e, r = canal()
-escribir(1)
-",
-            "no está soportado",
         ),
     ] {
         let err = forja::compilar_a_llvm(fuente).expect_err("debía fallar");
@@ -251,6 +246,32 @@ escribir(area(Rectangulo(3, 4)))
 12
 "
         );
+    }
+}
+
+#[test]
+fn hilos_y_canales() {
+    let fuente = r#"
+funcion cuadrado(n: Entero) -> Entero {
+    retornar n * n
+}
+variable emisor, receptor = canal()
+variable k = 0
+mientras (k < 3) {
+    hilo { emisor.enviar(cuadrado(k + 10)) }
+    k = k + 1
+}
+variable total = 0
+variable i = 0
+mientras (i < 3) {
+    total = total + receptor.recibir()
+    i = i + 1
+}
+escribir(total)
+"#;
+    // 100 + 121 + 144
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "365");
     }
 }
 

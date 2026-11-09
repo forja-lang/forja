@@ -88,7 +88,7 @@ macro_rules! ignorado {
 }
 
 fn tipos(fuente: &str) -> Vec<TokenTipo> {
-    Lexer::new(fuente)
+    Lexer::nuevo(fuente)
         .tokenize()
         .unwrap_or_else(|e| panic!("no tokenizó: {e:?}\n{fuente}"))
         .into_iter()

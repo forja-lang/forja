@@ -44,7 +44,7 @@ fn utf8_invalido_no_crashea() {
     let entrada = vec![0xff, 0xfe, 0x00, 0x01];
     let s = String::from_utf8_lossy(&entrada);
     let resultado = std::panic::catch_unwind(|| {
-        let mut lexer = forja::lexer::Lexer::new(&s);
+        let mut lexer = forja::lexer::Lexer::nuevo(&s);
         let _ = lexer.tokenize();
     });
     assert!(
@@ -75,7 +75,7 @@ fn unicode_raro_no_crashea() {
 fn bytes_nulos_no_crashean() {
     let entrada = "let a = \x00\x00\x001;\n".to_string();
     let resultado = std::panic::catch_unwind(|| {
-        let mut lexer = forja::lexer::Lexer::new(&entrada);
+        let mut lexer = forja::lexer::Lexer::nuevo(&entrada);
         let _ = lexer.tokenize();
     });
     assert!(resultado.is_ok(), "Bytes NUL no deberían crashear el lexer");
@@ -100,7 +100,7 @@ fn binario_fijo_no_crashea() {
     ];
     let s = String::from_utf8_lossy(&octetos);
     let resultado = std::panic::catch_unwind(|| {
-        let mut lexer = forja::lexer::Lexer::new(&s);
+        let mut lexer = forja::lexer::Lexer::nuevo(&s);
         let _ = lexer.tokenize();
     });
     assert!(

@@ -19,7 +19,7 @@ pub struct ConexionTls {
 
 /// Heap global de conexiones TLS.
 /// Índices enteros (como socket_monticulo) para acceso desde Forja.
-static TLS_HEAP: Mutex<Vec<Option<ConexionTls>>> = Mutex::new(Vec::new());
+static MONTICULO_TLS: Mutex<Vec<Option<ConexionTls>>> = Mutex::new(Vec::new());
 
 // ═══════════════════════════════════════════════════════════════════════
 // API interna (usada desde native_registry para registrar)
@@ -79,7 +79,7 @@ fn nativo_tls_conectar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Val
     let stream_tls = rustls::StreamOwned::new(conn, stream);
 
     // Almacenar en monticulo global
-    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let mut monticulo = MONTICULO_TLS.lock().unwrap();
     let idx = monticulo.len() as u32;
     monticulo.push(Some(ConexionTls { stream: stream_tls }));
 
@@ -96,7 +96,7 @@ fn nativo_tls_enviar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Valor
     let tls_idx = obtener_entero(args[0])? as usize;
     let datos = obtener_texto(vm, args[1])?;
 
-    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let mut monticulo = MONTICULO_TLS.lock().unwrap();
     let conn = monticulo
         .get_mut(tls_idx)
         .and_then(|c| c.as_mut())
@@ -118,7 +118,7 @@ fn nativo_tls_recibir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Valo
     }
     let tls_idx = obtener_entero(args[0])? as usize;
 
-    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let mut monticulo = MONTICULO_TLS.lock().unwrap();
     let conn = monticulo
         .get_mut(tls_idx)
         .and_then(|c| c.as_mut())
@@ -148,7 +148,7 @@ fn nativo_tls_cerrar(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Valo
     }
     let tls_idx = obtener_entero(args[0])? as usize;
 
-    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let mut monticulo = MONTICULO_TLS.lock().unwrap();
     if let Some(Some(conn)) = monticulo.get_mut(tls_idx) {
         let _ = conn.stream.sock.shutdown(std::net::Shutdown::Both);
         monticulo[tls_idx] = None;
@@ -166,7 +166,7 @@ fn nativo_tls_activo(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Valo
     }
     let tls_idx = obtener_entero(args[0])? as usize;
 
-    let monticulo = TLS_HEAP.lock().unwrap();
+    let monticulo = MONTICULO_TLS.lock().unwrap();
     let activo = monticulo
         .get(tls_idx)
         .and_then(|c| c.as_ref())

@@ -302,10 +302,10 @@ pub(crate) fn ejecutar_asm(fuente: &str, entrada_ruta: &str) -> Result<Vec<Strin
     use forja::lexer::Lexer;
     use forja::parser::Parser;
 
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
     let asm_code = compiler_asm::compilar_a_asm(&programa)
         .map_err(|e| format!("Error de compilación ASM: {:?}", e))?;
 
@@ -366,10 +366,10 @@ pub(crate) fn ejecutar_nativo(
 ) -> Result<(), String> {
     // 1. Parsear el programa (usando módulos locales para evitar conflictos
     //    entre crate forja (lib) y crate forja (bin))
-    let mut lexer = lexer::Lexer::new(fuente);
+    let mut lexer = lexer::Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
     // 2. Detectar si usa GUI
     let usa_gui = programa

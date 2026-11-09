@@ -25,29 +25,31 @@ pub fn pila_to_reg(ops: &[Opcode]) -> RegProgram {
                 let v = prog.reservar_vreg();
                 actual_block
                     .instructions
-                    .push(RegInstruction::LoadImm { dst: v, valor: *n });
+                    .push(RegInstruction::CargarInmediato { dst: v, valor: *n });
                 pila.push((v, RegClase::Integer));
             }
             Opcode::EmpujarDecimal(d) => {
                 let v = prog.reservar_vreg();
                 actual_block
                     .instructions
-                    .push(RegInstruction::LoadFloat { dst: v, valor: *d });
+                    .push(RegInstruction::CargarFlotante { dst: v, valor: *d });
                 pila.push((v, RegClase::Float));
             }
             Opcode::EmpujarBooleano(b) => {
                 let v = prog.reservar_vreg();
-                actual_block.instructions.push(RegInstruction::LoadImm {
-                    dst: v,
-                    valor: if *b { 1 } else { 0 },
-                });
+                actual_block
+                    .instructions
+                    .push(RegInstruction::CargarInmediato {
+                        dst: v,
+                        valor: if *b { 1 } else { 0 },
+                    });
                 pila.push((v, RegClase::Integer));
             }
             Opcode::EmpujarNulo => {
                 let v = prog.reservar_vreg();
                 actual_block
                     .instructions
-                    .push(RegInstruction::LoadImm { dst: v, valor: 0 });
+                    .push(RegInstruction::CargarInmediato { dst: v, valor: 0 });
                 pila.push((v, RegClase::Integer));
             }
             Opcode::Descartar => {
@@ -111,37 +113,45 @@ pub fn pila_to_reg(ops: &[Opcode]) -> RegProgram {
             // === Carga de variables ===
             Opcode::CargarIndice(idx) | Opcode::CargarIndiceEntero(idx) => {
                 let v = prog.reservar_vreg();
-                actual_block.instructions.push(RegInstruction::LoadVar {
-                    dst: v,
-                    var_idx: *idx,
-                    clase: RegClase::Integer,
-                });
+                actual_block
+                    .instructions
+                    .push(RegInstruction::CargarVariable {
+                        dst: v,
+                        var_idx: *idx,
+                        clase: RegClase::Integer,
+                    });
                 pila.push((v, RegClase::Integer));
             }
             Opcode::CargarIndiceDecimal(idx) => {
                 let v = prog.reservar_vreg();
-                actual_block.instructions.push(RegInstruction::LoadVar {
-                    dst: v,
-                    var_idx: *idx,
-                    clase: RegClase::Float,
-                });
+                actual_block
+                    .instructions
+                    .push(RegInstruction::CargarVariable {
+                        dst: v,
+                        var_idx: *idx,
+                        clase: RegClase::Float,
+                    });
                 pila.push((v, RegClase::Float));
             }
             Opcode::GuardarIndice(idx) | Opcode::GuardarIndiceEntero(idx) => {
                 let (src, _) = pila.pop().unwrap_or((0, RegClase::Integer));
-                actual_block.instructions.push(RegInstruction::StoreVar {
-                    src,
-                    var_idx: *idx,
-                    clase: RegClase::Integer,
-                });
+                actual_block
+                    .instructions
+                    .push(RegInstruction::FijarVariable {
+                        src,
+                        var_idx: *idx,
+                        clase: RegClase::Integer,
+                    });
             }
             Opcode::GuardarIndiceDecimal(idx) => {
                 let (src, _) = pila.pop().unwrap_or((0, RegClase::Float));
-                actual_block.instructions.push(RegInstruction::StoreVar {
-                    src,
-                    var_idx: *idx,
-                    clase: RegClase::Float,
-                });
+                actual_block
+                    .instructions
+                    .push(RegInstruction::FijarVariable {
+                        src,
+                        var_idx: *idx,
+                        clase: RegClase::Float,
+                    });
             }
 
             // === Comparaciones ===
@@ -351,7 +361,7 @@ mod tests {
 
         // Verificar LoadImm para 5
         match &block.instructions[0] {
-            RegInstruction::LoadImm { dst, valor } => {
+            RegInstruction::CargarInmediato { dst, valor } => {
                 assert_eq!(*dst, 0);
                 assert_eq!(*valor, 5);
             }
@@ -360,7 +370,7 @@ mod tests {
 
         // Verificar LoadImm para 3
         match &block.instructions[1] {
-            RegInstruction::LoadImm { dst, valor } => {
+            RegInstruction::CargarInmediato { dst, valor } => {
                 assert_eq!(*dst, 1);
                 assert_eq!(*valor, 3);
             }
@@ -430,7 +440,7 @@ mod tests {
 
         // StoreIdx
         match &block.instructions[1] {
-            RegInstruction::StoreVar {
+            RegInstruction::FijarVariable {
                 src,
                 var_idx,
                 clase,
@@ -444,7 +454,7 @@ mod tests {
 
         // LoadIdx
         match &block.instructions[2] {
-            RegInstruction::LoadVar {
+            RegInstruction::CargarVariable {
                 dst,
                 var_idx,
                 clase,
@@ -516,7 +526,7 @@ mod tests {
 
         let block = &prog.blocks[0];
         match &block.instructions[0] {
-            RegInstruction::LoadFloat { dst, valor } => {
+            RegInstruction::CargarFlotante { dst, valor } => {
                 assert_eq!(*dst, 0);
                 assert_eq!(*valor, 2.5);
             }

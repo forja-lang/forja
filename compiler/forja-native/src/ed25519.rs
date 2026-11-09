@@ -607,7 +607,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod debug_tmp {
+mod depuracion_temporal {
     use super::*;
 
     #[test]

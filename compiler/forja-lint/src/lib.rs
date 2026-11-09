@@ -36,7 +36,7 @@ pub enum Severidad {
     /// Regla desactivada.
     Off,
     /// Advertencia (no rompe el build salvo `--deny warnings`).
-    Warn,
+    Aviso,
     /// Error (rompe el build siempre).
     Error,
 }
@@ -46,7 +46,7 @@ impl Severidad {
     pub fn desde_str(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "off" | "apagado" | "desactivado" => Some(Severidad::Off),
-            "warn" | "warning" | "advertencia" => Some(Severidad::Warn),
+            "warn" | "warning" | "advertencia" => Some(Severidad::Aviso),
             "error" | "deny" | "denegar" => Some(Severidad::Error),
             _ => None,
         }
@@ -56,7 +56,7 @@ impl Severidad {
     pub fn como_str(&self) -> &'static str {
         match self {
             Severidad::Off => "off",
-            Severidad::Warn => "warn",
+            Severidad::Aviso => "warn",
             Severidad::Error => "error",
         }
     }
@@ -111,8 +111,8 @@ impl Regla {
     /// Severidad por defecto de la regla.
     pub fn severidad_por_defecto(&self) -> Severidad {
         match self {
-            Regla::Complejidad => Severidad::Warn,
-            _ => Severidad::Warn,
+            Regla::Complejidad => Severidad::Aviso,
+            _ => Severidad::Aviso,
         }
     }
 
@@ -248,7 +248,7 @@ pub struct Linter {
 
 impl Linter {
     /// Crea un linter con la configuración dada.
-    pub fn new(config: ConfigLint) -> Self {
+    pub fn nuevo(config: ConfigLint) -> Self {
         Linter {
             config,
             diagnosticos: Vec::new(),
@@ -257,7 +257,7 @@ impl Linter {
 
     /// Crea un linter con la configuración por defecto.
     pub fn con_defecto() -> Self {
-        Self::new(ConfigLint::default())
+        Self::nuevo(ConfigLint::default())
     }
 
     /// Analiza un programa completo y devuelve los diagnósticos.
@@ -546,7 +546,7 @@ impl Linter {
                 self.analizar_expresion(objeto);
                 self.analizar_expresion(valor);
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 self.analizar_expresion(array);
                 self.analizar_expresion(valor);
             }
@@ -806,7 +806,7 @@ fn recolectar_llamadas_expr(expr: &Expresion, llamadas: &mut HashSet<String>) {
             recolectar_llamadas_expr(objeto, llamadas);
             recolectar_llamadas_expr(valor, llamadas);
         }
-        Expresion::ArraySet { array, valor } => {
+        Expresion::ArregloFijar { array, valor } => {
             recolectar_llamadas_expr(array, llamadas);
             recolectar_llamadas_expr(valor, llamadas);
         }
@@ -1024,7 +1024,7 @@ fn recolectar_uso_expr(expr: &Expresion, leidas: &mut HashSet<String>) {
             recolectar_uso_expr(objeto, leidas);
             recolectar_uso_expr(valor, leidas);
         }
-        Expresion::ArraySet { array, valor } => {
+        Expresion::ArregloFijar { array, valor } => {
             recolectar_uso_expr(array, leidas);
             recolectar_uso_expr(valor, leidas);
         }
@@ -1164,7 +1164,7 @@ fn es_funcion_especial(nombre: &str) -> bool {
 
 /// Analiza un programa y devuelve los diagnósticos con la configuración dada.
 pub fn lint_programa(programa: &Programa, config: ConfigLint) -> Vec<DiagnosticoLint> {
-    let mut linter = Linter::new(config);
+    let mut linter = Linter::nuevo(config);
     linter.analizar(programa)
 }
 
@@ -1175,10 +1175,10 @@ pub fn lint_fuente(
     fuente: &str,
     config: ConfigLint,
 ) -> Result<Vec<DiagnosticoLint>, Vec<ErrorForja>> {
-    let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
+    let mut lexer = forja_syntax::lexer::Lexer::nuevo(fuente);
     let tokens = lexer.tokenize()?;
     let mut parser = forja_syntax::parser::Parser::nuevo(tokens);
-    let programa = parser.parse()?;
+    let programa = parser.parsear()?;
     Ok(lint_programa(&programa, config))
 }
 

@@ -2720,7 +2720,7 @@ impl Transpiler {
                     val_str, obj_str, campo
                 )
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 // arr[i] = val como expresión → tmp = val; array = tmp; tmp
                 let arr_str = self.transpilar_expresion(array);
                 let val_str = self.transpilar_expresion(valor);
@@ -3336,7 +3336,7 @@ impl Transpiler {
                 format!("Expresion::AsignacionCampo {{ objeto: Box::new({}), campo: String::from(\"{}\"), valor: Box::new({}) }}",
                     self.generar_ast_expresion(objeto), self.esc_ast_texto(campo), self.generar_ast_expresion(valor))
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 format!(
                     "Expresion::ArraySet {{ array: Box::new({}), valor: Box::new({}) }}",
                     self.generar_ast_expresion(array),
@@ -3540,10 +3540,10 @@ mod tests {
     use crate::semantics::PrestamoChecker;
 
     fn transpilar_fuente(fuente: &str) -> Result<String, Vec<ErrorForja>> {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse()?;
+        let programa = parser.parsear()?;
 
         let mut checker = PrestamoChecker::nuevo();
         checker.analizar(&programa)?;

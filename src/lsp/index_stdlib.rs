@@ -127,13 +127,13 @@ impl StdlibIndex {
                 Err(_) => continue,
             };
 
-            let mut lexer = Lexer::new(&content);
+            let mut lexer = Lexer::nuevo(&content);
             let tokens = match lexer.tokenize() {
                 Ok(t) => t,
                 Err(_) => continue,
             };
             let mut parser = Parser::nuevo(tokens);
-            let programa = match parser.parse() {
+            let programa = match parser.parsear() {
                 Ok(p) => p,
                 Err(_) => continue,
             };

@@ -158,7 +158,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
             }
             let cold = t2.elapsed().as_secs_f64() * 1_000_000_000.0;
 
-            vm.reset();
+            vm.reiniciar();
             // `reset` conserva las globales de módulo (para el REPL), pero
             // esas globales guardan índices al heap de textos que reset acaba
             // de limpiar. En el hot run hay que arrancar sin estado previo o
@@ -224,7 +224,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
         let _ = jit.ejecutar();
         let cold = t2.elapsed().as_secs_f64() * 1_000_000_000.0;
 
-        jit.reset();
+        jit.reiniciar();
         let t3 = std::time::Instant::now();
         for _ in 0..iters {
             let _ = jit.ejecutar();

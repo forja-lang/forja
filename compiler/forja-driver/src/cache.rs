@@ -173,7 +173,7 @@ impl IncrementalCache {
     }
 
     /// Limpia toda la caché.
-    pub fn clear(&mut self) -> Result<(), std::io::Error> {
+    pub fn limpiar(&mut self) -> Result<(), std::io::Error> {
         if self.directorio_cache.exists() {
             std::fs::remove_dir_all(&self.directorio_cache)?;
         }

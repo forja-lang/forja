@@ -3,10 +3,10 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 
 fn formatear(fuente: &str) -> String {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut fmt = Formatter::nuevo();
     fmt.formatear(&programa)
 }
@@ -183,10 +183,10 @@ escribir(r)
 // ============================================================
 
 fn primer_literal_texto(fuente: &str) -> String {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     for decl in &programa.declaraciones {
         if let forja::ast::Declaracion::Variable {
             valor: Some(forja::ast::Expresion::LiteralTexto(s)),
@@ -250,10 +250,10 @@ fn test_fmt_round_trip_exacto() {
 // ============================================================
 
 fn formatear_con_comentarios(fuente: &str) -> String {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let comentarios = forja::lexer::extraer_comentarios(fuente);
     let mut fmt = Formatter::nuevo();
     fmt.formatear_con_comentarios(&programa, &comentarios)

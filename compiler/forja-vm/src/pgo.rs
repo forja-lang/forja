@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 /// ID de función (nombre o índice)
-pub type FuncId = String;
+pub type IdFuncion = String;
 
 /// ID de bloque (función + offset)
 pub type IdBloque = String;
@@ -27,7 +27,7 @@ pub type IdBloque = String;
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProfileData {
     /// Conteo de llamadas por función
-    pub frecuencia_funcion: HashMap<FuncId, u64>,
+    pub frecuencia_funcion: HashMap<IdFuncion, u64>,
     /// Conteo de branches: (función, block_id) → (taken, not_taken)
     pub branch_counts: HashMap<IdBloque, (u64, u64)>,
     /// Iteraciones de loop: (función, loop_pc) → iteraciones totales
@@ -105,14 +105,14 @@ impl ProfileData {
     }
 
     /// Retorna la función más caliente
-    pub fn hottest_funcion(&self) -> Option<(&FuncId, &u64)> {
+    pub fn hottest_funcion(&self) -> Option<(&IdFuncion, &u64)> {
         self.frecuencia_funcion
             .iter()
             .max_by_key(|(_, &count)| count)
     }
 
     /// Retorna funciones con hotness mayor al umbral
-    pub fn hot_functions(&self, threshold: u64) -> Vec<(&FuncId, &u64)> {
+    pub fn hot_functions(&self, threshold: u64) -> Vec<(&IdFuncion, &u64)> {
         self.frecuencia_funcion
             .iter()
             .filter(|(_, &count)| count >= threshold)
@@ -152,13 +152,13 @@ pub enum BranchHotness {
 #[derive(Debug, Clone)]
 pub struct ProfileGuidedDecisions {
     /// Funciones que deben ser inlined (hot + pequeña)
-    pub candidatos_en_linea: Vec<FuncId>,
+    pub candidatos_en_linea: Vec<IdFuncion>,
     /// Branches que deben tener layout lineal (HotTaken → fall-through)
     pub hot_branches: Vec<(IdBloque, BranchHotness)>,
     /// Loops que deben tener unrolling más agresivo
     pub hot_loops: Vec<(IdBloque, u64)>,
     /// Funciones que deben tener optimización agresiva
-    pub tier2_candidates: Vec<FuncId>,
+    pub tier2_candidates: Vec<IdFuncion>,
 }
 
 impl ProfileGuidedDecisions {
@@ -322,7 +322,7 @@ impl ProfileManager {
     }
 
     /// Carga un perfil desde disco
-    pub fn load(&self) -> Option<ProfileData> {
+    pub fn cargar(&self) -> Option<ProfileData> {
         let data = std::fs::read(self.profile_ruta()).ok()?;
         ProfileData::deserialize(&data)
     }

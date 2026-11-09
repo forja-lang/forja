@@ -134,7 +134,7 @@ impl ForjaFast {
                         if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                             let max_frames = self.frame_buffer.len();
                             if self.cantidad_marcos >= max_frames {
-                                return Err(ErrFast::StackUnder(
+                                return Err(ErrFast::PilaInsuficiente(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
@@ -163,7 +163,7 @@ impl ForjaFast {
                     if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                         let max_frames = self.frame_buffer.len();
                         if self.cantidad_marcos >= max_frames {
-                            return Err(ErrFast::StackUnder(
+                            return Err(ErrFast::PilaInsuficiente(
                                 "Stack overflow: demasiadas llamadas anidadas".into(),
                             ));
                         }
@@ -280,7 +280,7 @@ impl ForjaFast {
                                 if clase_id == clase_id_cache {
                                     let max_frames = self.frame_buffer.len();
                                     if self.cantidad_marcos >= max_frames {
-                                        return Err(ErrFast::StackUnder(
+                                        return Err(ErrFast::PilaInsuficiente(
                                             "Stack overflow: demasiadas llamadas anidadas".into(),
                                         ));
                                     }
@@ -411,7 +411,7 @@ impl ForjaFast {
                         if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                             let max_frames = self.frame_buffer.len();
                             if self.cantidad_marcos >= max_frames {
-                                return Err(ErrFast::StackUnder(
+                                return Err(ErrFast::PilaInsuficiente(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
@@ -448,7 +448,7 @@ impl ForjaFast {
                     if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                         let max_frames = self.frame_buffer.len();
                         if self.cantidad_marcos >= max_frames {
-                            return Err(ErrFast::StackUnder(
+                            return Err(ErrFast::PilaInsuficiente(
                                 "Stack overflow: demasiadas llamadas anidadas".into(),
                             ));
                         }

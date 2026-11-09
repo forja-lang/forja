@@ -259,7 +259,7 @@ impl REPL {
                                                 error::aviso("No hay código cargado para recargar")
                                             );
                                         } else {
-                                            let mut lexer = Lexer::new(&full_fuente);
+                                            let mut lexer = Lexer::nuevo(&full_fuente);
                                             let tokens = match lexer.tokenize() {
                                                 Ok(t) => t,
                                                 Err(e) => {
@@ -274,7 +274,7 @@ impl REPL {
                                                 }
                                             };
                                             let mut parser = Parser::nuevo(tokens);
-                                            let programa = match parser.parse() {
+                                            let programa = match parser.parsear() {
                                                 Ok(p) => p,
                                                 Err(e) => {
                                                     eprintln!(
@@ -466,7 +466,7 @@ impl REPL {
         vm.verificar_contratos = self.verificar_contratos;
         vm.fijar_fast_math(self.matematica_rapida);
         vm.contratos = contratos_vm;
-        vm.reset();
+        vm.reiniciar();
         vm.cargar_bytecode(bytecode);
         let resultado = vm.ejecutar().map_err(|e| format!("{e}"));
         let salida = vm.obtener_salida();
@@ -604,11 +604,11 @@ impl REPL {
 ///
 /// Es sólo para `/variables`: si el código no parsea devuelve lo que pudo.
 fn variables_declaradas(fuente: &str) -> Vec<String> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let Ok(tokens) = lexer.tokenize() else {
         return Vec::new();
     };
-    let Ok(programa) = Parser::nuevo(tokens).parse() else {
+    let Ok(programa) = Parser::nuevo(tokens).parsear() else {
         return Vec::new();
     };
     let mut nombres = Vec::new();
@@ -746,7 +746,7 @@ fn elegir(titulo: &str, opciones: &[&str], por_defecto: usize) -> std::io::Resul
                 let marca = if i == seleccion { ">" } else { " " };
                 let texto = recortar(&format!(" {marca} {opcion}"), columnas - 1);
                 if i == seleccion {
-                    lineas.push(format!("{}{texto}{}", color::VERDE, color::RESET));
+                    lineas.push(format!("{}{texto}{}", color::VERDE, color::REINICIO));
                 } else {
                     lineas.push(texto);
                 }

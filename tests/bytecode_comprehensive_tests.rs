@@ -5,19 +5,19 @@ use forja::semantics::TipoChecker;
 use std::sync::Arc;
 
 fn generar(fuente: &str) -> Vec<Opcode> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut gen = GeneradorBytecode::nuevo();
     gen.generar(&programa).unwrap()
 }
 
 fn generar_con_tipos(fuente: &str) -> Vec<Opcode> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut tc = TipoChecker::nuevo();
     tc.analizar(&programa).unwrap();
     let tipos = tc.obtener_tipos_inferidos();

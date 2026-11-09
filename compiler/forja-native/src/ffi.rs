@@ -22,10 +22,10 @@ unsafe impl Sync for LibManejar {}
 // Registro global de librerías cargadas
 // ─────────────────────────────────────────────────────────────────────
 
-static FFI_REGISTRY: OnceLock<Mutex<HashMap<String, LibManejar>>> = OnceLock::new();
+static REGISTRO_FFI: OnceLock<Mutex<HashMap<String, LibManejar>>> = OnceLock::new();
 
 fn registro() -> &'static Mutex<HashMap<String, LibManejar>> {
-    FFI_REGISTRY.get_or_init(|| {
+    REGISTRO_FFI.get_or_init(|| {
         let mapa = HashMap::new();
         Mutex::new(mapa)
     })

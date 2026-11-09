@@ -242,9 +242,9 @@ mod tests {
     use forja_syntax::parser::Parser;
 
     fn analizar(fuente: &str) -> Programa {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
-        Parser::nuevo(tokens).parse().unwrap()
+        Parser::nuevo(tokens).parsear().unwrap()
     }
 
     #[test]

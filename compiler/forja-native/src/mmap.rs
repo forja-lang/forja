@@ -14,7 +14,7 @@ use std::sync::{Mutex, OnceLock};
 #[derive(Clone)]
 pub struct MmapRegion {
     pub addr: *mut u8,
-    pub len: usize,
+    pub longitud: usize,
     #[allow(dead_code)]
     pub desplazamiento_archivo: u64,
     pub writable: bool,
@@ -26,7 +26,7 @@ unsafe impl Sync for MmapRegion {}
 // ─── Gestión global de handles ─────────────────────────────────────────────
 
 #[cfg(any(unix, windows))]
-static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
+static SIGUIENTE_HANDLE: AtomicI64 = AtomicI64::new(1);
 static REGIONS: OnceLock<Mutex<HashMap<i64, MmapRegion>>> = OnceLock::new();
 
 fn regions() -> &'static Mutex<HashMap<i64, MmapRegion>> {
@@ -35,7 +35,7 @@ fn regions() -> &'static Mutex<HashMap<i64, MmapRegion>> {
 
 #[cfg(any(unix, windows))]
 fn registrar(region: MmapRegion) -> i64 {
-    let h = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    let h = SIGUIENTE_HANDLE.fetch_add(1, Ordering::Relaxed);
     regions().lock().unwrap().insert(h, region);
     h
 }
@@ -131,14 +131,14 @@ mod unix {
 
         Ok(registrar(MmapRegion {
             addr,
-            len: mapa_longitud,
+            longitud: mapa_longitud,
             desplazamiento_archivo: aligned_offset,
             writable,
         }))
     }
 
     pub fn cerrar(region: &MmapRegion) -> Result<(), String> {
-        let ret = unsafe { munmap(region.addr, region.len) };
+        let ret = unsafe { munmap(region.addr, region.longitud) };
         if ret != 0 {
             return Err("munmap falló".into());
         }
@@ -146,7 +146,7 @@ mod unix {
     }
 
     pub fn sincronizar(region: &MmapRegion) -> Result<(), String> {
-        let ret = unsafe { msync(region.addr, region.len, MS_SYNC) };
+        let ret = unsafe { msync(region.addr, region.longitud, MS_SYNC) };
         if ret != 0 {
             return Err("msync falló".into());
         }
@@ -247,7 +247,7 @@ mod windows_impl {
 
         Ok(registrar(MmapRegion {
             addr,
-            len: mapa_longitud,
+            longitud: mapa_longitud,
             desplazamiento_archivo: aligned_offset,
             writable,
         }))
@@ -262,7 +262,7 @@ mod windows_impl {
     }
 
     pub fn sincronizar(region: &MmapRegion) -> Result<(), String> {
-        let ret = unsafe { FlushViewOfFile(region.addr, region.len) };
+        let ret = unsafe { FlushViewOfFile(region.addr, region.longitud) };
         if ret == 0 {
             return Err("FlushViewOfFile falló".into());
         }
@@ -306,7 +306,7 @@ pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, _writable: bool) -> Resul
 /// Lee bytes de la región mapeada.
 pub fn mmap_leer(manejador: i64, offset_local: usize, len: usize) -> Result<Vec<u8>, String> {
     let region = obtener(manejador).ok_or_else(|| "Handle inválido".to_string())?;
-    if offset_local + len > region.len {
+    if offset_local + len > region.longitud {
         return Err("offset_local + len excede el tamaño del mapping".into());
     }
     let slice = unsafe { std::slice::from_raw_parts(region.addr.add(offset_local), len) };
@@ -319,7 +319,7 @@ pub fn mmap_escribir(manejador: i64, offset_local: usize, datos: &[u8]) -> Resul
     if !region.writable {
         return Err("El mapping no es escribible".into());
     }
-    if offset_local + datos.len() > region.len {
+    if offset_local + datos.len() > region.longitud {
         return Err("offset_local + datos excede el tamaño del mapping".into());
     }
     let dst = unsafe { std::slice::from_raw_parts_mut(region.addr.add(offset_local), datos.len()) };

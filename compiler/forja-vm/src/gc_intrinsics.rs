@@ -49,7 +49,7 @@ pub enum EscribirBarrier {
     /// No se necesita write barrier
     None,
     /// El objeto destino está en old generation y el valor podría estar en young
-    RememberedSet,
+    ConjuntoRecordados,
     /// El objeto destino está en young generation (no necesita barrier)
     YoungOnly,
 }
@@ -58,7 +58,7 @@ impl EscribirBarrier {
     /// Determina qué write barrier se necesita para una escritura
     pub fn for_escribir(obj_gen: Generation, val_gen: Generation) -> Self {
         match (obj_gen, val_gen) {
-            (Generation::Old, Generation::Young) => EscribirBarrier::RememberedSet,
+            (Generation::Old, Generation::Young) => EscribirBarrier::ConjuntoRecordados,
             (Generation::Young, _) => EscribirBarrier::YoungOnly,
             _ => EscribirBarrier::None,
         }
@@ -191,7 +191,9 @@ impl LlvmGcPatterns {
     pub fn emitir_escribir_barrier(barrier: EscribirBarrier) -> &'static str {
         match barrier {
             EscribirBarrier::None => "; no barrier needed",
-            EscribirBarrier::RememberedSet => "call void @__gc_write_barrier(ptr %obj, ptr %val)",
+            EscribirBarrier::ConjuntoRecordados => {
+                "call void @__gc_write_barrier(ptr %obj, ptr %val)"
+            }
             EscribirBarrier::YoungOnly => "; young object, no barrier needed",
         }
     }
@@ -258,7 +260,7 @@ mod tests {
     fn test_escribir_barrier() {
         assert_eq!(
             EscribirBarrier::for_escribir(Generation::Old, Generation::Young),
-            EscribirBarrier::RememberedSet
+            EscribirBarrier::ConjuntoRecordados
         );
         assert_eq!(
             EscribirBarrier::for_escribir(Generation::Young, Generation::Old),

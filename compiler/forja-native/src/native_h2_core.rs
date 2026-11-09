@@ -100,7 +100,7 @@ const DEFAULT_MAX_FRAME_SIZE: u32 = 16384;
 // 61 entradas: (nombre, valor)
 // ═══════════════════════════════════════════════════════════════════════
 
-const STATIC_TABLE: &[(&str, &str)] = &[
+const TABLA_ESTATICA: &[(&str, &str)] = &[
     (":authority", ""),
     (":method", "GET"),
     (":method", "POST"),
@@ -166,15 +166,15 @@ const STATIC_TABLE: &[(&str, &str)] = &[
 
 /// Retorna entrada de la tabla estática por índice (1-based como en RFC)
 fn static_tabla_entrada(idx: usize) -> Option<(&'static str, &'static str)> {
-    if idx >= 1 && idx <= STATIC_TABLE.len() {
-        Some(STATIC_TABLE[idx - 1])
+    if idx >= 1 && idx <= TABLA_ESTATICA.len() {
+        Some(TABLA_ESTATICA[idx - 1])
     } else {
         None
     }
 }
 
 fn static_tabla_indice(name: &str, valor: &str) -> Option<usize> {
-    for (i, (n, v)) in STATIC_TABLE.iter().enumerate() {
+    for (i, (n, v)) in TABLA_ESTATICA.iter().enumerate() {
         if *n == name && *v == valor {
             return Some(i + 1);
         }
@@ -183,7 +183,7 @@ fn static_tabla_indice(name: &str, valor: &str) -> Option<usize> {
 }
 
 fn static_tabla_indice_name(name: &str) -> Option<usize> {
-    for (i, (n, _)) in STATIC_TABLE.iter().enumerate() {
+    for (i, (n, _)) in TABLA_ESTATICA.iter().enumerate() {
         if *n == name {
             return Some(i + 1);
         }
@@ -216,7 +216,7 @@ impl TablaDinamica {
     }
 
     pub fn obtener(&self, idx: usize) -> Option<(&str, &str)> {
-        let static_longitud = STATIC_TABLE.len();
+        let static_longitud = TABLA_ESTATICA.len();
         if idx >= 1 && idx <= static_longitud {
             return static_tabla_entrada(idx);
         }
@@ -266,7 +266,7 @@ impl TablaDinamica {
         // Buscar en dinámica
         for (i, (n, v)) in self.entries.iter().enumerate() {
             if n == name && v == valor {
-                return Some(STATIC_TABLE.len() + 1 + i);
+                return Some(TABLA_ESTATICA.len() + 1 + i);
             }
         }
         None
@@ -278,7 +278,7 @@ impl TablaDinamica {
         }
         for (i, (n, _)) in self.entries.iter().enumerate() {
             if n == name {
-                return Some(STATIC_TABLE.len() + 1 + i);
+                return Some(TABLA_ESTATICA.len() + 1 + i);
             }
         }
         None
@@ -290,7 +290,7 @@ impl TablaDinamica {
 // 256 caracteres, cada uno con (code, length_in_bits)
 // ═══════════════════════════════════════════════════════════════════════
 
-const HUFFMAN_TABLE: &[(u32, u8)] = &[
+const TABLA_HUFFMAN: &[(u32, u8)] = &[
     (0x1ff8, 13),
     (0x7fffd8, 23),
     (0xfffffe2, 28),
@@ -560,7 +560,7 @@ fn huffman_codificar(entrada: &str) -> Vec<u8> {
     let mut salida = Vec::new();
 
     for &byte in entrada.as_bytes() {
-        let (code, longitud) = HUFFMAN_TABLE[byte as usize];
+        let (code, longitud) = TABLA_HUFFMAN[byte as usize];
         bits = (bits << longitud) | code as u64;
         n_bits += longitud as u32;
 
@@ -594,7 +594,7 @@ impl HuffmanNodo {
         }
     }
 
-    fn insert(&mut self, code: u32, longitud: u8, valor: u8) {
+    fn insertar(&mut self, code: u32, longitud: u8, valor: u8) {
         let mut nodo = self;
         for i in (0..longitud).rev() {
             let bit = ((code >> (longitud - 1 - i)) & 1) as usize;
@@ -609,9 +609,9 @@ impl HuffmanNodo {
 
 fn construir_huffman_arbol() -> HuffmanNodo {
     let mut raiz = HuffmanNodo::nuevo();
-    for (i, &(code, longitud)) in HUFFMAN_TABLE.iter().enumerate() {
+    for (i, &(code, longitud)) in TABLA_HUFFMAN.iter().enumerate() {
         if longitud > 0 {
-            raiz.insert(code, longitud, i as u8);
+            raiz.insertar(code, longitud, i as u8);
         }
     }
     raiz

@@ -42,5 +42,5 @@ pub use forja_registry::{
 };
 pub use gc_intrinsics::*;
 pub use jit_tiered::*;
-pub use modulo::{ModuleId, ModuloCache, ModuloInformacion, ModuloResolver};
+pub use modulo::{IdModulo, ModuloCache, ModuloInformacion, ModuloResolver};
 pub use vm_fast::ForjaFast;

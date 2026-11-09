@@ -8,10 +8,10 @@ pub static PERFILADOR_ACTIVO: AtomicU64 = AtomicU64::new(0);
 /// Macro para incrementar contadores solo cuando profiling está activo
 #[macro_export]
 macro_rules! prof_count {
-    ($field:ident) => {
+    ($campo:ident) => {
         if $crate::fprofiler::PERFILADOR_ACTIVO.load(std::sync::atomic::Ordering::Relaxed) != 0 {
             $crate::fprofiler::PERFILADOR_DATOS
-                .$field
+                .$campo
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     };

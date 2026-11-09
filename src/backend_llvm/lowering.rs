@@ -30,6 +30,8 @@ enum T {
     Arreglo,
     Mapa,
     Enum(String),
+    Canal,
+    Closure,
     Clase(String),
     Funcion,
     Nulo,
@@ -40,9 +42,14 @@ impl T {
         match self {
             T::Int | T::Nulo => LlvmTipo::I64,
             T::Dec => LlvmTipo::Double,
-            T::Texto | T::Arreglo | T::Mapa | T::Enum(_) | T::Clase(_) | T::Funcion => {
-                LlvmTipo::Ptr
-            }
+            T::Texto
+            | T::Arreglo
+            | T::Mapa
+            | T::Enum(_)
+            | T::Canal
+            | T::Closure
+            | T::Clase(_)
+            | T::Funcion => LlvmTipo::Ptr,
         }
     }
 
@@ -67,6 +74,8 @@ impl T {
             T::Arreglo => "Arreglo",
             T::Mapa => "Mapa",
             T::Enum(n) => n,
+            T::Canal => "Canal",
+            T::Closure => "closure",
             T::Clase(n) => n,
             T::Funcion => "funcion",
             T::Nulo => "Nulo",
@@ -83,6 +92,8 @@ enum V {
     Arreglo(String),
     Mapa(String),
     Enum(String, String),
+    Canal(String),
+    Closure(String),
     Clase(String, String),
     Funcion(String),
     Nulo,
@@ -97,6 +108,8 @@ impl V {
             | V::Arreglo(r)
             | V::Mapa(r)
             | V::Enum(r, _)
+            | V::Canal(r)
+            | V::Closure(r)
             | V::Clase(r, _)
             | V::Funcion(r) => r,
             V::Nulo => "0",
@@ -110,6 +123,8 @@ impl V {
             V::Arreglo(_) => T::Arreglo,
             V::Mapa(_) => T::Mapa,
             V::Enum(_, c) => T::Enum(c.clone()),
+            V::Canal(_) => T::Canal,
+            V::Closure(_) => T::Closure,
             V::Clase(_, c) => T::Clase(c.clone()),
             V::Funcion(_) => T::Funcion,
             V::Nulo => T::Nulo,
@@ -141,6 +156,8 @@ pub struct Lowering {
     decls: String,
     globals: String,
     cuerpos: String,
+    /// funciones generadas fuera de banda (hilos): van al nivel de módulo.
+    extra: String,
     /// allocas de la función actual (van al inicio del bloque `entry`).
     prologo: String,
     vars: HashMap<String, Var>,
@@ -203,6 +220,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_mapa_obtener_i64", "i64 (ptr, i64)"),
     ("forja_mapa_fijar_texto", "void (ptr, ptr, i64)"),
     ("forja_mapa_obtener_texto", "i64 (ptr, ptr)"),
+    ("forja_canal_nuevo", "ptr ()"),
+    ("forja_canal_enviar", "void (ptr, i64)"),
+    ("forja_canal_recibir", "i64 (ptr)"),
+    ("forja_hilo_lanzar", "void (ptr, ptr)"),
     ("exit", "void (i32)"),
 ];
 
@@ -213,6 +234,7 @@ impl Lowering {
             decls: String::new(),
             globals: String::new(),
             cuerpos: String::new(),
+            extra: String::new(),
             prologo: String::new(),
             vars: HashMap::new(),
             firmas: HashMap::new(),
@@ -319,6 +341,8 @@ impl Lowering {
             T::Arreglo => V::Arreglo(r),
             T::Mapa => V::Mapa(r),
             T::Enum(c) => V::Enum(r, c.clone()),
+            T::Canal => V::Canal(r),
+            T::Closure => V::Closure(r),
             T::Clase(c) => V::Clase(r, c.clone()),
             T::Funcion => V::Funcion(r),
             T::Nulo | T::Int => V::Int(r),
@@ -404,6 +428,8 @@ impl Lowering {
             (v, T::Arreglo)
             | (v, T::Mapa)
             | (v, T::Enum(_))
+            | (v, T::Canal)
+            | (v, T::Closure)
             | (v, T::Clase(_))
             | (v, T::Funcion) => {
                 // Si ya es un puntero (arreglo→mapa, clase→clase) no hay nada que
@@ -437,6 +463,8 @@ impl Lowering {
             | V::Arreglo(r)
             | V::Mapa(r)
             | V::Enum(r, _)
+            | V::Canal(r)
+            | V::Closure(r)
             | V::Clase(r, _)
             | V::Funcion(r) => {
                 let c = self.r();
@@ -721,6 +749,7 @@ impl Lowering {
         }
         salida.push_str(&self.globals);
         salida.push_str(&self.decls);
+        salida.push_str(&self.extra);
         salida.push_str(&self.cuerpos);
         let _ = writeln!(salida, "define void @forja_init() {{");
         let _ = writeln!(salida, "entry:");
@@ -815,6 +844,8 @@ impl Lowering {
             Expresion::LiteralNumero(_) => T::Int,
             Expresion::Arreglo(_) => T::Arreglo,
             Expresion::Mapa(_) => T::Mapa,
+            Expresion::CanalNuevo(_) => T::Canal,
+            Expresion::Closure { .. } => T::Closure,
             Expresion::LlamadaFuncion { nombre, .. } if self.variantes.contains_key(nombre) => {
                 T::Enum(self.variantes[nombre].0.clone())
             }
@@ -868,7 +899,14 @@ impl Lowering {
 fn cero(t: &T) -> &'static str {
     match t {
         T::Dec => "0.000000e+00",
-        T::Texto | T::Arreglo | T::Mapa | T::Enum(_) | T::Clase(_) | T::Funcion => "null",
+        T::Texto
+        | T::Arreglo
+        | T::Mapa
+        | T::Enum(_)
+        | T::Canal
+        | T::Closure
+        | T::Clase(_)
+        | T::Funcion => "null",
         _ => "0",
     }
 }

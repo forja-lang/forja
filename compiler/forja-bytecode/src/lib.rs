@@ -41,10 +41,10 @@ mod tests {
     use std::sync::Arc;
 
     fn generar_bytecode(fuente: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse()?;
+        let programa = parser.parsear()?;
         let mut gen = GeneradorBytecode::nuevo();
         gen.generar(&programa)
     }
@@ -132,10 +132,10 @@ mod tests {
         use forja_syntax::parser::Parser;
         use forja_types::semantics::TipoChecker;
 
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+        let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
         let mut verificador = TipoChecker::nuevo();
         verificador
@@ -231,10 +231,10 @@ mod tests {
         use forja_syntax::parser::Parser;
         use forja_types::semantics;
 
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse()?;
+        let programa = parser.parsear()?;
 
         let mut verificador = semantics::TipoChecker::nuevo();
         verificador.analizar(&programa)?;
@@ -489,10 +489,10 @@ funcion mcd(a, b) {
 variable x = mcd(\"a\", \"b\")
 variable y = mcd(10, 20)
 ";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
 
         let mut verificador = TipoChecker::nuevo();
         // Debe analizar sin errores: ambas funciones deben coexistir
@@ -549,10 +549,10 @@ variable y = mcd(10, 20)
     variable texto = sumar(\"hola \", \"mundo\")
     variable entero = sumar(3, 4)
     ";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
 
         let mut verificador = TipoChecker::nuevo();
         verificador.analizar(&programa).unwrap();
@@ -599,10 +599,10 @@ variable y = mcd(10, 20)
     }
     saludar(\"Pepe\")
     ";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
 
         let mut verificador = TipoChecker::nuevo();
         verificador.analizar(&programa).unwrap();

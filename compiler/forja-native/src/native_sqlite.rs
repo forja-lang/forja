@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 
 /// Heap global de conexiones SQLite (envueltas en Arc<Mutex<>> para manejo de ciclos de vida).
-static SQLITE_HEAP: Mutex<Vec<Option<Arc<Mutex<Connection>>>>> = Mutex::new(Vec::new());
+static MONTICULO_SQLITE: Mutex<Vec<Option<Arc<Mutex<Connection>>>>> = Mutex::new(Vec::new());
 
 // ═══════════════════════════════════════════════════════════════════════
 // API interna (usada desde native_registry para registrar)
@@ -54,7 +54,7 @@ fn nativo_bd(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, Er
 
     match Connection::open(&ruta) {
         Ok(conn) => {
-            let mut monticulo = SQLITE_HEAP
+            let mut monticulo = MONTICULO_SQLITE
                 .lock()
                 .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
             let idx = monticulo.len() as u32;
@@ -76,7 +76,7 @@ fn nativo_bd(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, Er
 /// La conexión se clona (Arc) para que el llamador pueda usarla sin
 /// mantener el lock del monticulo.
 fn obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, ErrFast> {
-    let monticulo = SQLITE_HEAP
+    let monticulo = MONTICULO_SQLITE
         .lock()
         .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
     if idx >= monticulo.len() {
@@ -139,7 +139,7 @@ fn nativo_sqlite_abrir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Val
 
     match Connection::open(&ruta) {
         Ok(conn) => {
-            let mut monticulo = SQLITE_HEAP
+            let mut monticulo = MONTICULO_SQLITE
                 .lock()
                 .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
             let idx = monticulo.len() as u32;
@@ -159,7 +159,7 @@ fn nativo_sqlite_cerrar(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<V
     }
     let idx = obtener_entero(args[0])? as usize;
 
-    let mut monticulo = SQLITE_HEAP
+    let mut monticulo = MONTICULO_SQLITE
         .lock()
         .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
     if idx < monticulo.len() {
@@ -256,11 +256,11 @@ fn nativo_sqlite_consultar(
     // Convertir los datos extraídos a Forja (ahora sin el closure sobre vm)
     let mut resultados = Vec::with_capacity(rows_data.len());
     for row_data in rows_data {
-        let mut map = std::collections::HashMap::new();
+        let mut mapa = std::collections::HashMap::new();
         for (name, val) in row_data {
-            map.insert(name, sqlite_valor_a_forja(vm, val));
+            mapa.insert(name, sqlite_valor_a_forja(vm, val));
         }
-        let midx = vm.reservar_mapa(map);
+        let midx = vm.reservar_mapa(mapa);
         resultados.push(ValorFast::mapa(midx));
     }
 
@@ -398,11 +398,11 @@ fn nativo_sqlite_consultar_params(
     // Convertir datos a Forja (fuera del closure)
     let mut resultados = Vec::with_capacity(rows_data.len());
     for row_data in rows_data {
-        let mut map = std::collections::HashMap::new();
+        let mut mapa = std::collections::HashMap::new();
         for (name, val) in row_data {
-            map.insert(name, sqlite_valor_a_forja(vm, val));
+            mapa.insert(name, sqlite_valor_a_forja(vm, val));
         }
-        let midx = vm.reservar_mapa(map);
+        let midx = vm.reservar_mapa(mapa);
         resultados.push(ValorFast::mapa(midx));
     }
 
@@ -527,26 +527,26 @@ fn nativo_sqlite_columnas(
     // Convertir a Forja
     let mut resultados = Vec::with_capacity(cols.len());
     for c in cols {
-        let mut map = std::collections::HashMap::new();
-        map.insert("cid".to_string(), ValorFast::entero(c.cid));
-        map.insert(
+        let mut mapa = std::collections::HashMap::new();
+        mapa.insert("cid".to_string(), ValorFast::entero(c.cid));
+        mapa.insert(
             "nombre".to_string(),
             ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(c.nombre.as_str()))),
         );
-        map.insert(
+        mapa.insert(
             "tipo".to_string(),
             ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(c.tipo.as_str()))),
         );
-        map.insert("not_null".to_string(), ValorFast::booleano(c.not_null));
-        map.insert(
+        mapa.insert("not_null".to_string(), ValorFast::booleano(c.not_null));
+        mapa.insert(
             "default".to_string(),
             match c.default {
                 Some(d) => ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(d.as_str()))),
                 None => ValorFast::nulo(),
             },
         );
-        map.insert("pk".to_string(), ValorFast::entero(c.pk));
-        let midx = vm.reservar_mapa(map);
+        mapa.insert("pk".to_string(), ValorFast::entero(c.pk));
+        let midx = vm.reservar_mapa(mapa);
         resultados.push(ValorFast::mapa(midx));
     }
 

@@ -81,7 +81,7 @@ pub struct FuenteMapa {
 }
 
 impl FuenteMapa {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         Self::default()
     }
 
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn ubicacion_convierte_offsets() {
-        let mut mapa = FuenteMapa::new();
+        let mut mapa = FuenteMapa::nuevo();
         let archivo = mapa.agregar("a.fa", "uno\ndos\n");
         assert_eq!(
             mapa.ubicacion(Span::nuevo(archivo, 0, 3)).unwrap(),
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn texto_y_longitud() {
-        let mut mapa = FuenteMapa::new();
+        let mut mapa = FuenteMapa::nuevo();
         let archivo = mapa.agregar("a.fa", "hola mundo");
         let span = Span::nuevo(archivo, 5, 10);
         assert_eq!(mapa.texto(span), Some("mundo"));
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn archivos_distintos_no_se_unen() {
-        let mut mapa = FuenteMapa::new();
+        let mut mapa = FuenteMapa::nuevo();
         let archivo_a = mapa.agregar("a.fa", "aaa");
         let archivo_b = mapa.agregar("b.fa", "bbb");
         let span_a = Span::nuevo(archivo_a, 0, 1);

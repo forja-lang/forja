@@ -4,10 +4,10 @@ use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
 fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
     let mut gen = GeneradorBytecode::nuevo();
     let bytecode = gen
         .generar(&programa)

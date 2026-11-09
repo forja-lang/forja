@@ -5,9 +5,9 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 
 fn ir(fuente: &str) -> forja::ir::ProgramaIr {
-    let mut l = Lexer::new(fuente);
+    let mut l = Lexer::nuevo(fuente);
     let t = l.tokenize().unwrap();
-    let p = Parser::nuevo(t).parse().unwrap();
+    let p = Parser::nuevo(t).parsear().unwrap();
     ConstructorDesdeAst::nuevo().programa_a_ir(&p)
 }
 

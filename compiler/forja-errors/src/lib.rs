@@ -22,7 +22,7 @@ pub mod color {
     pub const MAGENTA: &str = "\x1b[35m";
     pub const CYAN: &str = "\x1b[36m";
     pub const GRIS: &str = "\x1b[90m";
-    pub const RESET: &str = "\x1b[0m";
+    pub const REINICIO: &str = "\x1b[0m";
     pub const NEGRITA: &str = "\x1b[1m";
     pub const NEGRO: &str = "\x1b[30m";
     pub const ROJO_FONDO: &str = "\x1b[41m";
@@ -32,43 +32,43 @@ pub mod color {
     pub const DIM: &str = "\x1b[2m";
 
     pub fn rojo(s: &str) -> String {
-        format!("{}{}{}", ROJO, s, RESET)
+        format!("{}{}{}", ROJO, s, REINICIO)
     }
     pub fn verde(s: &str) -> String {
-        format!("{}{}{}", VERDE, s, RESET)
+        format!("{}{}{}", VERDE, s, REINICIO)
     }
     pub fn amarillo(s: &str) -> String {
-        format!("{}{}{}", AMARILLO, s, RESET)
+        format!("{}{}{}", AMARILLO, s, REINICIO)
     }
     pub fn azul(s: &str) -> String {
-        format!("{}{}{}", AZUL, s, RESET)
+        format!("{}{}{}", AZUL, s, REINICIO)
     }
     pub fn magenta(s: &str) -> String {
-        format!("{}{}{}", MAGENTA, s, RESET)
+        format!("{}{}{}", MAGENTA, s, REINICIO)
     }
     pub fn cyan(s: &str) -> String {
-        format!("{}{}{}", CYAN, s, RESET)
+        format!("{}{}{}", CYAN, s, REINICIO)
     }
     pub fn gris(s: &str) -> String {
-        format!("{}{}{}", GRIS, s, RESET)
+        format!("{}{}{}", GRIS, s, REINICIO)
     }
     pub fn negrita(s: &str) -> String {
-        format!("{}{}{}", NEGRITA, s, RESET)
+        format!("{}{}{}", NEGRITA, s, REINICIO)
     }
     pub fn rojo_fondo(s: &str) -> String {
-        format!("{}{}{}", ROJO_FONDO, s, RESET)
+        format!("{}{}{}", ROJO_FONDO, s, REINICIO)
     }
     pub fn amarillo_fondo(s: &str) -> String {
-        format!("{}{}{}", AMARILLO_FONDO, s, RESET)
+        format!("{}{}{}", AMARILLO_FONDO, s, REINICIO)
     }
 
     /// Etiqueta decorativa para logs
     pub fn etiqueta(tipo: &str, texto: &str) -> String {
-        format!("{}{} {}{}", NEGRITA, envolver(tipo, texto), texto, RESET)
+        format!("{}{} {}{}", NEGRITA, envolver(tipo, texto), texto, REINICIO)
     }
     fn envolver(etiqueta: &str, texto: &str) -> String {
         let relleno = " ".repeat(if texto.len() > 6 { 0 } else { 6 - texto.len() });
-        format!("{}{}{}{} ", DIM, etiqueta, relleno, RESET)
+        format!("{}{}{}{} ", DIM, etiqueta, relleno, REINICIO)
     }
 }
 
@@ -80,7 +80,7 @@ fn distintivo(texto: &str, fondo: &str) -> String {
         color::NEGRO,
         fondo,
         texto,
-        color::RESET
+        color::REINICIO
     )
 }
 
@@ -102,7 +102,7 @@ pub fn informacion(mensaje: &str) -> String {
     ))
 }
 pub fn correcto(mensaje: &str) -> String {
-    con_color(format!("{}{}{}", color::VERDE, mensaje, color::RESET))
+    con_color(format!("{}{}{}", color::VERDE, mensaje, color::REINICIO))
 }
 pub fn exito(mensaje: &str) -> String {
     con_color(format!(
@@ -133,7 +133,7 @@ pub fn depuracion_mensaje(mensaje: &str) -> String {
     ))
 }
 pub fn resaltado(mensaje: &str) -> String {
-    con_color(format!("{}{}{}", color::NEGRITA, mensaje, color::RESET))
+    con_color(format!("{}{}{}", color::NEGRITA, mensaje, color::REINICIO))
 }
 pub fn archivo(mensaje: &str) -> String {
     con_color(format!(
@@ -143,7 +143,7 @@ pub fn archivo(mensaje: &str) -> String {
     ))
 }
 pub fn numero(mensaje: &str) -> String {
-    con_color(format!("{}{}{}", color::MAGENTA, mensaje, color::RESET))
+    con_color(format!("{}{}{}", color::MAGENTA, mensaje, color::REINICIO))
 }
 
 // ============================================================
@@ -292,10 +292,10 @@ impl fmt::Display for ErrorTipo {
             ErrorTipo::LimiteArchivo { .. } => "LimiteArchivo",
             ErrorTipo::DemasiadaAnidacion { max } => {
                 return write!(f, "{}Sugerencia: el programa tiene una anidación muy profunda (> {max} niveles). Considera refactorizar.{}",
-                    color::AMARILLO, color::RESET)
+                    color::AMARILLO, color::REINICIO)
             }
         };
-        write!(f, "{}{}{}", self.color_ansi(), nombre, color::RESET)
+        write!(f, "{}{}{}", self.color_ansi(), nombre, color::REINICIO)
     }
 }
 
@@ -447,18 +447,18 @@ impl ErrorForja {
             color::NEGRITA,
             color_flecha,
             codigo,
-            color::RESET,
+            color::REINICIO,
             self.mensaje
         ));
         // Ubicación: "  --> línea N, columna C"
         salida.push_str(&format!(
             "  {}-->{} {}línea {}, columna {}{}\n",
             color::AZUL,
-            color::RESET,
+            color::REINICIO,
             color::GRIS,
             self.linea,
             self.columna,
-            color::RESET
+            color::REINICIO
         ));
 
         // Línea de código: " <n> │ código"
@@ -468,7 +468,7 @@ impl ErrorForja {
                 color::DIM,
                 n,
                 color_linea,
-                color::RESET,
+                color::REINICIO,
                 ancho = ancho_numero
             )
         };
@@ -478,7 +478,7 @@ impl ErrorForja {
             color::DIM,
             "",
             color_linea,
-            color::RESET,
+            color::REINICIO,
             ancho = ancho_numero
         );
 
@@ -505,7 +505,7 @@ impl ErrorForja {
                 " ".repeat(sangria as usize),
                 color_flecha,
                 "^".repeat(largo),
-                color::RESET
+                color::REINICIO
             ));
         } else {
             salida.push_str(&format!(
@@ -513,7 +513,7 @@ impl ErrorForja {
                 color::DIM,
                 self.linea,
                 color_linea,
-                color::RESET,
+                color::REINICIO,
                 ancho = ancho_numero
             ));
         }
@@ -529,9 +529,9 @@ impl ErrorForja {
                 " {} {}={} {}ayuda:{} {}\n",
                 color::DIM,
                 color::GRIS,
-                color::RESET,
+                color::REINICIO,
                 color::CYAN,
-                color::RESET,
+                color::REINICIO,
                 self.sugerencia
             ));
         }
@@ -548,13 +548,13 @@ impl ErrorForja {
             "{}{}●{} {} {}—{} línea {}{}{}: {}",
             color::NEGRITA,
             self.tipo.color_ansi(),
-            color::RESET,
+            color::REINICIO,
             color::negrita(categoria_educativa(&self.tipo)),
             color::GRIS,
-            color::RESET,
+            color::REINICIO,
             color::AMARILLO,
             self.linea,
-            color::RESET,
+            color::REINICIO,
             self.mensaje,
         );
         if color_mode() {
@@ -646,12 +646,12 @@ impl fmt::Display for ErrorForja {
             "{}{}●{} {} — {}línea {}{}{} — {}",
             color::NEGRITA,
             self.tipo.color_ansi(),
-            color::RESET,
+            color::REINICIO,
             color::negrita(categoria_educativa(&self.tipo)),
             color::GRIS,
             color::AMARILLO,
             self.linea,
-            color::RESET,
+            color::REINICIO,
             self.mensaje,
         );
         let s = if self.sugerencia.is_empty() {
@@ -661,7 +661,7 @@ impl fmt::Display for ErrorForja {
                 "{}\n  {}Ayuda:{} {}",
                 s,
                 color::CYAN,
-                color::RESET,
+                color::REINICIO,
                 self.sugerencia
             )
         };

@@ -2,7 +2,7 @@ use forja::lexer::Lexer;
 use forja::token::TokenTipo;
 
 fn kinds(fuente: &str) -> Vec<TokenTipo> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     lexer
         .tokenize()
         .unwrap()
@@ -629,7 +629,7 @@ fn test_solo_comentario() {
 
 #[test]
 fn test_cadena_sin_cerrar_error() {
-    let mut lex = Lexer::new("\"hola");
+    let mut lex = Lexer::nuevo("\"hola");
     assert!(lex.tokenize().is_err());
 }
 
@@ -658,7 +658,7 @@ fn test_eof_al_final() {
 
 #[test]
 fn test_token_posiciones_linea() {
-    let mut lex = Lexer::new("variable x = 5\nx = x + 1");
+    let mut lex = Lexer::nuevo("variable x = 5\nx = x + 1");
     let tokens = lex.tokenize().unwrap();
     assert_eq!(tokens[0].linea, 1);
     assert_eq!(tokens[4].linea, 2);
@@ -666,7 +666,7 @@ fn test_token_posiciones_linea() {
 
 #[test]
 fn test_token_posiciones_columna() {
-    let mut lex = Lexer::new("  variable");
+    let mut lex = Lexer::nuevo("  variable");
     let tokens = lex.tokenize().unwrap();
     assert_eq!(tokens[0].columna, 3);
 }
@@ -723,7 +723,7 @@ fn test_texto_caracteres_especiales() {
 #[test]
 fn tokens_traen_span_de_bytes() {
     let fuente = "variable x = 42";
-    let tokens = Lexer::new(fuente).tokenize().unwrap();
+    let tokens = Lexer::nuevo(fuente).tokenize().unwrap();
     let variable = &tokens[0];
     let span = variable.span.expect("el token debe tener span");
     assert_eq!(&fuente[span.inicio as usize..span.fin as usize], "variable");

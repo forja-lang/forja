@@ -951,7 +951,7 @@ impl ForjaFast {
                             self.flush_pila();
                             let max_frames = self.frame_buffer.len();
                             if self.cantidad_marcos >= max_frames {
-                                return Err(ErrFast::StackUnder(
+                                return Err(ErrFast::PilaInsuficiente(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
@@ -1155,7 +1155,7 @@ impl ForjaFast {
                             self.flush_pila();
                             let max_frames = self.frame_buffer.len();
                             if self.cantidad_marcos >= max_frames {
-                                return Err(ErrFast::StackUnder(
+                                return Err(ErrFast::PilaInsuficiente(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }

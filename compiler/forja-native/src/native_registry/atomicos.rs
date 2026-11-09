@@ -21,14 +21,14 @@ use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::OnceLock;
 
 static ATOMICS: OnceLock<Mutex<Vec<AtomicI64>>> = OnceLock::new();
-static ATOMIC_BOOLS: OnceLock<Mutex<Vec<AtomicBool>>> = OnceLock::new();
+static ATOMICOS_BOOL: OnceLock<Mutex<Vec<AtomicBool>>> = OnceLock::new();
 
 fn atomicos_mutex() -> &'static Mutex<Vec<AtomicI64>> {
     ATOMICS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 fn atomico_bools_mutex() -> &'static Mutex<Vec<AtomicBool>> {
-    ATOMIC_BOOLS.get_or_init(|| Mutex::new(Vec::new()))
+    ATOMICOS_BOOL.get_or_init(|| Mutex::new(Vec::new()))
 }
 pub fn nativo_atomico_entero_nuevo(
     _vm: &mut dyn Anfitrion,

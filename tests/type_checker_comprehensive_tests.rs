@@ -3,10 +3,10 @@ use forja::parser::Parser;
 use forja::semantics::TipoChecker;
 
 fn verificar(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize()?;
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse()?;
+    let programa = parser.parsear()?;
     let mut tc = TipoChecker::nuevo();
     tc.analizar(&programa)
 }

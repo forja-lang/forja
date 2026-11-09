@@ -15,11 +15,11 @@ use std::path::Path;
 /// Analiza (type check + borrow check) un programa Forja y devuelve el error
 /// formateado si lo hay.
 fn analizar(fuente: &str) -> Result<(), String> {
-    let tokens = forja::lexer::Lexer::new(fuente)
+    let tokens = forja::lexer::Lexer::nuevo(fuente)
         .tokenize()
         .map_err(|e| format!("lexer: {e:?}"))?;
     let programa = forja::parser::Parser::nuevo(tokens)
-        .parse()
+        .parsear()
         .map_err(|e| format!("parser: {e:?}"))?;
 
     let mut tc = forja::semantics::TipoChecker::nuevo();

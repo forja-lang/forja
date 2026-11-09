@@ -38,7 +38,7 @@ pub use forja_vm::{
     descriptor_clase, ffi, gc_intrinsics, jit_tiered, modulo, native_h2_core, native_registry,
     paquete_resolver, pgo, registro, registry_remote, registry_server, stdlib_embedded, vm_fast,
 };
-pub use forja_vm::{ModuleId, ModuloCache, ModuloInformacion};
+pub use forja_vm::{IdModulo, ModuloCache, ModuloInformacion};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod incremental_cache;
 
@@ -294,10 +294,10 @@ fn compilar_pipeline_nucleo_emision(
 pub fn compilar_desde_ir(
     codigo_fuente: &str,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let mut lexer = lexer::Lexer::new(codigo_fuente);
+    let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let programa = parser::Parser::nuevo(tokens)
-        .parse()
+        .parsear()
         .map_err(|e| format!("{}", e[0]))?;
     compilar_pipeline_nucleo_emision(
         programa,
@@ -392,12 +392,12 @@ fn monomorphize_programa(programa: &mut ast::Programa) {
 /// PrestamoChecker: no optimiza ni genera bytecode.
 pub fn analizar(codigo_fuente: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(codigo_fuente);
+    let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = parser.parse()?;
+    let programa = parser.parsear()?;
 
     // FASE 4: Type Checker (inferencia de tipos + compatibilidad)
     let mut tipo_checker = semantics::TipoChecker::nuevo();
@@ -422,12 +422,12 @@ pub fn analizar(codigo_fuente: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
 /// [`compilar_pipeline_completa`] / [`compilar_pipeline_completa_desde`].
 pub fn transpilar_a_rust(codigo_fuente: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(codigo_fuente);
+    let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let mut programa = parser.parse()?;
+    let mut programa = parser.parsear()?;
 
     // FASE 4: Type Checker
     let mut tipo_checker = semantics::TipoChecker::nuevo();
@@ -461,12 +461,12 @@ pub fn transpilar_a_rust_con_ast(
     codigo_fuente: &str,
 ) -> Result<(Vec<ast::Declaracion>, String), Vec<ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(codigo_fuente);
+    let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let mut programa = parser.parse()?;
+    let mut programa = parser.parsear()?;
 
     // FASE 4: Type Checker
     let mut tipo_checker = semantics::TipoChecker::nuevo();
@@ -544,10 +544,10 @@ pub fn resolver_imports(
     use std::collections::{HashMap, HashSet};
 
     // 1. Lexer + Parser del código fuente principal
-    let mut lexer = lexer::Lexer::new(codigo_fuente);
+    let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = parser::Parser::nuevo(tokens);
-    let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let mut programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
     // 2. Resolver imports recursivamente con ModuloResolver
     let project_directorio = if directorio_raiz.is_file() {
@@ -758,7 +758,7 @@ fn reescribir_llamadas_de_modulo<A: AliasModulos>(declaracion: &mut ast::Declara
                 expr(objeto, alias);
                 expr(valor, alias);
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 expr(array, alias);
                 expr(valor, alias);
             }
@@ -911,10 +911,10 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
     use std::collections::{HashMap, HashSet};
 
     fn parsear(codigo_fuente: &str) -> Result<ast::Programa, String> {
-        let mut lexer = lexer::Lexer::new(codigo_fuente);
+        let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = parser::Parser::nuevo(tokens);
-        parser.parse().map_err(|e| format!("{}", e[0]))
+        parser.parsear().map_err(|e| format!("{}", e[0]))
     }
 
     fn registrar_alias(
@@ -1092,12 +1092,12 @@ fn compilar_pipeline_completa_con_estricto(
     #[cfg(not(target_arch = "wasm32"))]
     {
         // FASE 1: Lexer
-        let mut lexer = lexer::Lexer::new(codigo_fuente);
+        let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 2-3: Parser
         let mut parser = parser::Parser::nuevo(tokens);
-        let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+        let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 4+: núcleo único del pipeline a bytecode (sin lógica duplicada).
         compilar_pipeline_nucleo_emision(
@@ -1117,7 +1117,7 @@ fn compilar_pipeline_completa_con_estricto(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_modulo(
     codigo_fuente: &str,
-    modulo_id: ModuleId,
+    modulo_id: IdModulo,
 ) -> Result<bytecode::ModuloBytecode, String> {
     use bytecode::GeneradorBytecode;
 
@@ -1126,12 +1126,12 @@ pub fn compilar_modulo(
     // cambió antes de llamar a esta función. Aquí generamos bytecode nuevo siempre.
 
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(codigo_fuente);
+    let mut lexer = lexer::Lexer::nuevo(codigo_fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 2: Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let mut programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 3: Type Checker + Type Inference
     let mut tipo_checker = semantics::TipoChecker::nuevo();
@@ -1243,7 +1243,7 @@ pub fn ejecutar_con_cache(
 /// Los módulos deben ser independientes entre sí (sin dependencias mutuas).
 #[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
 pub fn compilar_modulos_paralelo(
-    modulos: Vec<(String, ModuleId)>,
+    modulos: Vec<(String, IdModulo)>,
 ) -> Result<Vec<bytecode::ModuloBytecode>, String> {
     use rayon::prelude::*;
 
@@ -1618,7 +1618,7 @@ fn ejecutar_con_pgo_impl(
 
     // 2. Cargar perfil previo si existe
     let mgr = pgo::ProfileManager::nuevo(directorio_raiz);
-    let perfil_previo = mgr.load();
+    let perfil_previo = mgr.cargar();
 
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
@@ -1673,12 +1673,12 @@ fn ejecutar_con_pgo_impl(
 /// Compila código Forja a LLVM IR usando el backend generador de texto LLVM
 pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(codigo);
+    let mut lexer = lexer::Lexer::nuevo(codigo);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let mut programa = parser.parse()?;
+    let mut programa = parser.parsear()?;
 
     // FASE 4: Type Checker
     let mut tipo_checker = semantics::TipoChecker::nuevo();
@@ -1806,14 +1806,14 @@ mod tests_ruta_para_toml {
 /// Formatea código Forja usando el formatter interno
 /// Devuelve el código formateado, o el original si hay errores de sintaxis
 pub fn formatear(codigo: &str) -> String {
-    let mut lexer = lexer::Lexer::new(codigo);
+    let mut lexer = lexer::Lexer::nuevo(codigo);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(_) => return codigo.to_string(),
     };
 
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = match parser.parse() {
+    let programa = match parser.parsear() {
         Ok(p) => p,
         Err(_) => return codigo.to_string(),
     };

@@ -29,14 +29,14 @@ fn dos_modulos_con_el_mismo_nombre_resuelven_por_separado_en_hir() {
 
     let mut hir = Hir::nuevo();
     let a = {
-        let mut l = forja::lexer::Lexer::new("funcion obtener() { retornar 1 }");
+        let mut l = forja::lexer::Lexer::nuevo("funcion obtener() { retornar 1 }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::nuevo(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parsear().unwrap()
     };
     let b = {
-        let mut l = forja::lexer::Lexer::new("funcion obtener() { retornar 2 }");
+        let mut l = forja::lexer::Lexer::nuevo("funcion obtener() { retornar 2 }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::nuevo(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parsear().unwrap()
     };
     let ma = hir.agregar_modulo("a", &a);
     let mb = hir.agregar_modulo("b", &b);
@@ -50,9 +50,9 @@ fn hir_interna_nombres_entre_modulos() {
 
     let mut hir = Hir::nuevo();
     let programa = {
-        let mut l = forja::lexer::Lexer::new("funcion obtener() { retornar 1 }");
+        let mut l = forja::lexer::Lexer::nuevo("funcion obtener() { retornar 1 }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::nuevo(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parsear().unwrap()
     };
     let a = hir.agregar_modulo("a", &programa);
     let b = hir.agregar_modulo("b", &programa);
@@ -69,9 +69,9 @@ fn typeck_consume_hir() {
 
     let mut hir = Hir::nuevo();
     let programa = {
-        let mut l = forja::lexer::Lexer::new("funcion f(x: Entero) -> Entero { retornar x }");
+        let mut l = forja::lexer::Lexer::nuevo("funcion f(x: Entero) -> Entero { retornar x }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::nuevo(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parsear().unwrap()
     };
     hir.agregar_modulo("a", &programa);
     let mut tc = TipoChecker::nuevo();
@@ -85,9 +85,9 @@ fn borrowck_consume_hir() {
 
     let mut hir = Hir::nuevo();
     let programa = {
-        let mut l = forja::lexer::Lexer::new("funcion f(x: Entero) -> Entero { retornar x }");
+        let mut l = forja::lexer::Lexer::nuevo("funcion f(x: Entero) -> Entero { retornar x }");
         let t = l.tokenize().unwrap();
-        forja::parser::Parser::nuevo(t).parse().unwrap()
+        forja::parser::Parser::nuevo(t).parsear().unwrap()
     };
     hir.agregar_modulo("a", &programa);
     let mut bc = PrestamoChecker::nuevo();

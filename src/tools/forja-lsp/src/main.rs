@@ -1098,7 +1098,7 @@ impl Backend {
         }
 
         // 2. Errores léxicos (tokenize)
-        let mut lexer = forja::lexer::Lexer::new(texto);
+        let mut lexer = forja::lexer::Lexer::nuevo(texto);
         if let Err(lex_errors) = lexer.tokenize() {
             for err in lex_errors {
                 diagnostics.push(Diagnostic {
@@ -1116,7 +1116,7 @@ impl Backend {
             for d in diags {
                 let severity = match d.severidad {
                     forja::linter::Severidad::Error => DiagnosticSeverity::ERROR,
-                    forja::linter::Severidad::Warn => DiagnosticSeverity::WARNING,
+                    forja::linter::Severidad::Aviso => DiagnosticSeverity::WARNING,
                     forja::linter::Severidad::Off => continue,
                 };
                 let mut mensaje = format!("[{}] {}", d.regla.nombre(), d.mensaje);
@@ -1372,7 +1372,7 @@ fn buscar_nombre_en_posicion(
 // ======================================================================
 
 fn tokenizar(fuente: &str) -> std::result::Result<Vec<Token>, ()> {
-    let mut lexer = forja::lexer::Lexer::new(fuente);
+    let mut lexer = forja::lexer::Lexer::nuevo(fuente);
     lexer.tokenize().map_err(|_| ())
 }
 

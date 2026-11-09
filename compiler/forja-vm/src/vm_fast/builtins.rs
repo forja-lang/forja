@@ -9,53 +9,53 @@ use forja_runtime::tipos::{obtener_small_entero_fast, ErrFast, ValorFast};
 use std::sync::Arc;
 
 pub enum BuiltinFast {
-    Len,
-    Upper,
-    Lower,
-    Contains,
-    Split,
-    Trim,
-    Reverse,
+    Longitud,
+    Mayusculas,
+    Minusculas,
+    Contiene,
+    Dividir,
+    Recortar,
+    Invertir,
     Obtener,
     Empujar,
     Remover,
     // Self-hosting string ops
-    StartsWith,
-    EndsWith,
-    CharAt,
-    IndexOf,
-    Substr,
-    Replace,
-    ParseEntero,
-    ParseFlotante,
+    EmpiezaCon,
+    TerminaCon,
+    CaracterEn,
+    IndiceDe,
+    Subcadena,
+    Reemplazar,
+    ParsearEntero,
+    ParsearFlotante,
     Repetir,
-    Join,
+    Unir,
     Esperar,
 }
 
 pub fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
     match m {
-        "longitud" => Some(BuiltinFast::Len),
-        "a_mayusculas" => Some(BuiltinFast::Upper),
-        "a_minusculas" => Some(BuiltinFast::Lower),
-        "contiene" => Some(BuiltinFast::Contains),
-        "dividir" => Some(BuiltinFast::Split),
-        "recortar" => Some(BuiltinFast::Trim),
-        "invertir" => Some(BuiltinFast::Reverse),
+        "longitud" => Some(BuiltinFast::Longitud),
+        "a_mayusculas" => Some(BuiltinFast::Mayusculas),
+        "a_minusculas" => Some(BuiltinFast::Minusculas),
+        "contiene" => Some(BuiltinFast::Contiene),
+        "dividir" => Some(BuiltinFast::Dividir),
+        "recortar" => Some(BuiltinFast::Recortar),
+        "invertir" => Some(BuiltinFast::Invertir),
         "obtener" => Some(BuiltinFast::Obtener),
         "empujar" => Some(BuiltinFast::Empujar),
         "remover" => Some(BuiltinFast::Remover),
         // Self-hosting string ops
-        "empieza_con" => Some(BuiltinFast::StartsWith),
-        "termina_con" => Some(BuiltinFast::EndsWith),
-        "caracter_en" => Some(BuiltinFast::CharAt),
-        "indice_de" => Some(BuiltinFast::IndexOf),
-        "subcadena" => Some(BuiltinFast::Substr),
-        "reemplazar" => Some(BuiltinFast::Replace),
-        "a_entero" => Some(BuiltinFast::ParseEntero),
-        "a_flotante" => Some(BuiltinFast::ParseFlotante),
+        "empieza_con" => Some(BuiltinFast::EmpiezaCon),
+        "termina_con" => Some(BuiltinFast::TerminaCon),
+        "caracter_en" => Some(BuiltinFast::CaracterEn),
+        "indice_de" => Some(BuiltinFast::IndiceDe),
+        "subcadena" => Some(BuiltinFast::Subcadena),
+        "reemplazar" => Some(BuiltinFast::Reemplazar),
+        "a_entero" => Some(BuiltinFast::ParsearEntero),
+        "a_flotante" => Some(BuiltinFast::ParsearFlotante),
         "repetir" => Some(BuiltinFast::Repetir),
-        "unir_elementos" => Some(BuiltinFast::Join),
+        "unir_elementos" => Some(BuiltinFast::Unir),
         "esperar" => Some(BuiltinFast::Esperar),
         _ => None,
     }
@@ -92,7 +92,7 @@ pub const NOMBRES_BUILTINS: &[&str] = &[
 impl ForjaFast {
     pub fn exec_builtin(&mut self, b: BuiltinFast, _nargs: usize) -> Result<(), ErrFast> {
         match b {
-            BuiltinFast::Len => {
+            BuiltinFast::Longitud => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     self.empujar_valor(obtener_small_entero_fast(
@@ -106,7 +106,7 @@ impl ForjaFast {
                     self.empujar_valor(obtener_small_entero_fast(0));
                 }
             }
-            BuiltinFast::Upper => {
+            BuiltinFast::Mayusculas => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.obtener_texto(v.indice_texto()).to_uppercase();
@@ -116,7 +116,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::nulo());
                 }
             }
-            BuiltinFast::Lower => {
+            BuiltinFast::Minusculas => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.obtener_texto(v.indice_texto()).to_lowercase();
@@ -126,7 +126,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::nulo());
                 }
             }
-            BuiltinFast::Contains => {
+            BuiltinFast::Contiene => {
                 let sub = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && sub.es_texto() {
@@ -138,7 +138,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::booleano(false));
                 }
             }
-            BuiltinFast::Split => {
+            BuiltinFast::Dividir => {
                 let sep = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && sep.es_texto() {
@@ -157,7 +157,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::nulo());
                 }
             }
-            BuiltinFast::Trim => {
+            BuiltinFast::Recortar => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.obtener_texto(v.indice_texto()).trim().to_string();
@@ -167,7 +167,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::nulo());
                 }
             }
-            BuiltinFast::Reverse => {
+            BuiltinFast::Invertir => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let r: String = self.obtener_texto(v.indice_texto()).chars().rev().collect();
@@ -220,7 +220,7 @@ impl ForjaFast {
             }
 
             // ── Self-hosting string builtins ────────────────────────────────
-            BuiltinFast::StartsWith => {
+            BuiltinFast::EmpiezaCon => {
                 let prefix = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && prefix.es_texto() {
@@ -233,7 +233,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::EndsWith => {
+            BuiltinFast::TerminaCon => {
                 let suffix = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && suffix.es_texto() {
@@ -246,7 +246,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::CharAt => {
+            BuiltinFast::CaracterEn => {
                 let idx_val = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && idx_val.es_entero() {
@@ -264,7 +264,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::IndexOf => {
+            BuiltinFast::IndiceDe => {
                 let sub = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
                 if v.es_texto() && sub.es_texto() {
@@ -280,7 +280,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::Substr => {
+            BuiltinFast::Subcadena => {
                 let longitud_arg = self.desapilar_valor()?;
                 let inicio_arg = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
@@ -302,7 +302,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::Replace => {
+            BuiltinFast::Reemplazar => {
                 let nuevo_s = self.desapilar_valor()?;
                 let old_s = self.desapilar_valor()?;
                 let v = self.desapilar_valor()?;
@@ -318,7 +318,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::ParseEntero => {
+            BuiltinFast::ParsearEntero => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.obtener_texto(v.indice_texto());
@@ -335,7 +335,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::ParseFlotante => {
+            BuiltinFast::ParsearFlotante => {
                 let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.obtener_texto(v.indice_texto());
@@ -366,7 +366,7 @@ impl ForjaFast {
                 }
             }
 
-            BuiltinFast::Join => {
+            BuiltinFast::Unir => {
                 // arr.join(sep) → join array elements with separator
                 let sep_val = self.desapilar_valor()?;
                 let arr_val = self.desapilar_valor()?;

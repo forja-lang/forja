@@ -28,7 +28,7 @@ pub use forja_runtime::tipos::*;
 pub use forja_runtime::Anfitrion;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::modulo::{ModuleId, ModuloInformacion, ModuloResolver};
+use crate::modulo::{IdModulo, ModuloInformacion, ModuloResolver};
 use crate::native_registry::{NativoRegistro, SocketState};
 use crate::tabla_simbolos::IdSimbolo;
 use crate::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
@@ -109,7 +109,7 @@ pub struct ForjaFast {
     // Inline Cache para CallMethod (Polymorphic)
     ic_callmethod: Vec<Pic>,
 
-    // Inline Caches para ArrayGet/ArraySet (Option<bool>: None=no-cache, Some(true)=array, Some(false)=map)
+    // Inline Caches para ArrayGet/ArregloFijar (Option<bool>: None=no-cache, Some(true)=array, Some(false)=map)
     ic_arrayget: Vec<Option<bool>>,
     ic_arrayset: Vec<Option<bool>>,
     ic_mapget: Vec<bool>,
@@ -165,10 +165,10 @@ pub struct ForjaFast {
     pub(crate) bytecode_pool: Vec<VersionedBytecode>,             // Pool de bytecode versionado
 
     // ─── Hot Reload: Module Registry ───────────────────────────────────────
-    /// Registro de módulos cargados (ModuleId → ModuloInformacion)
+    /// Registro de módulos cargados (IdModulo → ModuloInformacion)
     #[cfg(not(target_arch = "wasm32"))]
-    pub registro_modulos: HashMap<ModuleId, ModuloInformacion>,
-    /// Módulo propietario de cada función (IdSimbolo → ModuleId)
+    pub registro_modulos: HashMap<IdModulo, ModuloInformacion>,
+    /// Módulo propietario de cada función (IdSimbolo → IdModulo)
     #[cfg(not(target_arch = "wasm32"))]
     /// Resolver de módulos (para recargar)
     #[cfg(not(target_arch = "wasm32"))]
@@ -181,7 +181,7 @@ pub struct ForjaFast {
     pub global_var_inited: std::collections::HashSet<usize>,
     /// Rango de bytecode que ocupa cada módulo en self.bytecode (start, end)
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) modulo_bytecode_ranges: HashMap<ModuleId, (usize, usize)>,
+    pub(crate) modulo_bytecode_ranges: HashMap<IdModulo, (usize, usize)>,
 
     pub max_inst: usize,
     pub ejecutadas: usize,
@@ -199,7 +199,7 @@ pub struct ForjaFast {
 
     // ─── Design by Contract ────────────────────────────────────────────────
     pub contratos: Vec<ContratoBytecode>,
-    pub(crate) anterior_stack: HashMap<usize, ValorFast>,
+    pub(crate) pila_anterior: HashMap<usize, ValorFast>,
     pub verificar_contratos: bool,
 
     // ─── String Builders (concat optimizado) ────────────────────────────
@@ -328,7 +328,7 @@ impl ForjaFast {
             show_bytecode: false,
             errores_estrictos: false,
             contratos: Vec::new(),
-            anterior_stack: HashMap::new(),
+            pila_anterior: HashMap::new(),
             verificar_contratos: true,
             str_builders: HashMap::new(),
             op_forzado: None,
@@ -549,7 +549,7 @@ impl ForjaFast {
     /// Útil para REPL: entre líneas queremos mantener las variables.
     /// Ejecuta una secuencia de uops de condición de contrato.
     /// Maneja RESULTADO_IDX (sustituye por valor_retorno) y
-    /// busca en anterior_stack para variables guardadas.
+    /// busca en pila_anterior para variables guardadas.
     fn ejecutar_uops_contrato(
         &mut self,
         uops: &[Uop],
@@ -594,7 +594,7 @@ impl ForjaFast {
                     }
                 }
                 Uop::CargarAnterior(idx) => {
-                    let saved = self.anterior_stack.get(idx).copied();
+                    let saved = self.pila_anterior.get(idx).copied();
                     pila.push(saved.unwrap_or_else(|| self.cargar_local(*idx)));
                 }
                 Uop::CargarIndiceGlobal(idx) => {
@@ -1197,7 +1197,7 @@ impl ForjaFast {
         self.linea_actual = 0;
     }
 
-    pub fn reset(&mut self) {
+    pub fn reiniciar(&mut self) {
         self.ip = 0;
         self.pila.clear();
         self.cantidad_marcos = 0;

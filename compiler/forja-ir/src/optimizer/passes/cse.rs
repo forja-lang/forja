@@ -261,8 +261,8 @@ impl CsePasada {
                     Self::expresion_hash_clave(valor)
                 )
             }
-            // ArraySet — recursivo
-            Expresion::ArraySet { array, valor } => {
+            // ArregloFijar — recursivo
+            Expresion::ArregloFijar { array, valor } => {
                 format!(
                     "arrset:{}:{}",
                     Self::expresion_hash_clave(array),

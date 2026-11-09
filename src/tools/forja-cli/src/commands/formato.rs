@@ -18,7 +18,7 @@ pub(crate) fn fmt_un_archivo(
             return true;
         }
     };
-    let mut lexer = lexer::Lexer::new(&fuente);
+    let mut lexer = lexer::Lexer::nuevo(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errores) => {
@@ -34,7 +34,7 @@ pub(crate) fn fmt_un_archivo(
         }
     };
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = match parser.parse() {
+    let programa = match parser.parsear() {
         Ok(p) => p,
         Err(errores) => {
             let detalle = errores
@@ -246,7 +246,7 @@ pub(crate) fn lint_un_archivo(
     let mut errores = 0usize;
     for d in &diags {
         let es_error = d.severidad == linter::Severidad::Error
-            || (deny_warnings && d.severidad == linter::Severidad::Warn);
+            || (deny_warnings && d.severidad == linter::Severidad::Aviso);
         if es_error {
             errores += 1;
         }
@@ -307,7 +307,7 @@ pub(crate) fn cmd_doc(args: &[String]) {
             process::exit(1);
         }
     };
-    let mut lexer = lexer::Lexer::new(&fuente);
+    let mut lexer = lexer::Lexer::nuevo(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
@@ -318,7 +318,7 @@ pub(crate) fn cmd_doc(args: &[String]) {
         }
     };
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = match parser.parse() {
+    let programa = match parser.parsear() {
         Ok(p) => p,
         Err(errors) => {
             for err in errors {

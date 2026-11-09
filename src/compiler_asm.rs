@@ -3469,7 +3469,7 @@ impl CompilerAsm {
                 self.emitir_linea(a.texto_campo(temporal, co, ret));
                 String::new()
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 // No implementado completamente en ASM; compilar array y valor
                 self.compilar_expresion_asm(valor);
                 self.compilar_expresion_asm(array);
@@ -4666,10 +4666,10 @@ mod tests {
     use crate::parser::Parser;
 
     fn compilar_fuente(codigo_fuente: &str) -> Result<String, Vec<ErrorForja>> {
-        let mut lexer = Lexer::new(codigo_fuente);
+        let mut lexer = Lexer::nuevo(codigo_fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse()?;
+        let programa = parser.parsear()?;
         compilar_a_asm(&programa)
     }
 
@@ -4684,8 +4684,8 @@ mod tests {
     /// (clippy `new_without_default`); debe comportarse igual que `new()`.
     #[test]
     fn test_asm_predeterminado_equivale_a_nuevo() {
-        let tokens = Lexer::new("escribir(1)").tokenize().unwrap();
-        let programa = Parser::nuevo(tokens).parse().unwrap();
+        let tokens = Lexer::nuevo("escribir(1)").tokenize().unwrap();
+        let programa = Parser::nuevo(tokens).parsear().unwrap();
         let con_default = CompilerAsm::default().compilar(&programa).unwrap();
         let con_nuevo = CompilerAsm::nuevo().compilar(&programa).unwrap();
         assert_eq!(con_default, con_nuevo);
@@ -5420,9 +5420,9 @@ mod tests_destinos {
     #[test]
     fn compilador_programas_minimos_por_destino() {
         let fuente = "variable x = 1\nescribir(x)";
-        let mut lexer = crate::lexer::Lexer::new(fuente);
+        let mut lexer = crate::lexer::Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
-        let programa = crate::parser::Parser::nuevo(tokens).parse().unwrap();
+        let programa = crate::parser::Parser::nuevo(tokens).parsear().unwrap();
         for t in TARGETS {
             let mut c = CompilerAsm::con_destino(t);
             let asm = c.compilar(&programa).unwrap();

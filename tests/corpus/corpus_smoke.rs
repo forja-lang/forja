@@ -53,11 +53,11 @@ fn corpus_no_parseables_conocidos() {
     const NO_PARSEABLES: [&str; 0] = [];
     for nombre in NO_PARSEABLES {
         let fuente = std::fs::read_to_string(forja_test_support::ruta_ejemplo(nombre)).unwrap();
-        let mut lexer = forja::lexer::Lexer::new(&fuente);
+        let mut lexer = forja::lexer::Lexer::nuevo(&fuente);
         let tokens = lexer.tokenize().expect("debe tokenizar");
         let mut parser = forja::parser::Parser::nuevo(tokens);
         assert!(
-            parser.parse().is_err(),
+            parser.parsear().is_err(),
             "{} ahora parsea: actualizar la lista de no parseables",
             nombre
         );

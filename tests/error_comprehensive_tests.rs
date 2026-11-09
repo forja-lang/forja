@@ -128,7 +128,7 @@ fn test_error_con_linea_cero() {
 
 #[test]
 fn test_lexer_error_cadena_sin_cerrar() {
-    let mut lexer = Lexer::new("\"cadena sin cerrar");
+    let mut lexer = Lexer::nuevo("\"cadena sin cerrar");
     let resultado = lexer.tokenize();
     assert!(resultado.is_err());
     let errores = resultado.unwrap_err();
@@ -141,10 +141,10 @@ fn test_lexer_error_cadena_sin_cerrar() {
 
 #[test]
 fn test_parser_error_expression_invalida() {
-    let mut lexer = Lexer::new("variable x = +");
+    let mut lexer = Lexer::nuevo("variable x = +");
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let resultado = parser.parse();
+    let resultado = parser.parsear();
     assert!(resultado.is_err());
 }
 
@@ -154,10 +154,10 @@ fn test_parser_error_expression_invalida() {
 
 #[test]
 fn test_semantic_error_var_no_declarada() {
-    let mut lexer = Lexer::new("x = 5");
+    let mut lexer = Lexer::nuevo("x = 5");
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut checker = PrestamoChecker::nuevo();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
@@ -167,10 +167,10 @@ fn test_semantic_error_var_no_declarada() {
 
 #[test]
 fn test_semantic_error_asignacion_inmutable() {
-    let mut lexer = Lexer::new("constante x = 5\nx = 10");
+    let mut lexer = Lexer::nuevo("constante x = 5\nx = 10");
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut checker = PrestamoChecker::nuevo();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
@@ -243,7 +243,7 @@ fn test_error_depuracion() {
 
 #[test]
 fn test_multiples_errores_lexer() {
-    let mut lexer = Lexer::new("\"a\n\"b\n\"c\n");
+    let mut lexer = Lexer::nuevo("\"a\n\"b\n\"c\n");
     let resultado = lexer.tokenize();
     if let Err(errores) = resultado {
         assert!(!errores.is_empty());

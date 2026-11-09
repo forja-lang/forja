@@ -11,11 +11,11 @@ use forja::compiler_asm::{compilar_a_asm_con_destino, CompilerAsm, DestinoArch};
 
 /// Parsea un programa Forja (fallible).
 fn parsear(fuente: &str) -> Result<forja::ast::Programa, String> {
-    let tokens = forja::lexer::Lexer::new(fuente)
+    let tokens = forja::lexer::Lexer::nuevo(fuente)
         .tokenize()
         .map_err(|e| format!("{e:?}"))?;
     forja::parser::Parser::nuevo(tokens)
-        .parse()
+        .parsear()
         .map_err(|e| format!("{e:?}"))
 }
 

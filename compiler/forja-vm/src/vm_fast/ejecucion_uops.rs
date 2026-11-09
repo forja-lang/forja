@@ -627,7 +627,7 @@ impl ForjaFast {
                             self.flush_pila();
                             let max_frames = self.frame_buffer.len();
                             if self.cantidad_marcos >= max_frames {
-                                return Err(ErrFast::StackUnder(
+                                return Err(ErrFast::PilaInsuficiente(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
@@ -1103,7 +1103,7 @@ impl ForjaFast {
                             if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                                 let max_frames = self.frame_buffer.len();
                                 if self.cantidad_marcos >= max_frames {
-                                    return Err(ErrFast::StackUnder(
+                                    return Err(ErrFast::PilaInsuficiente(
                                         "Stack overflow: demasiadas llamadas anidadas".into(),
                                     ));
                                 }
@@ -1132,7 +1132,7 @@ impl ForjaFast {
                         if let Some(entrada) = self.lookup_funcion_entrada(fn_sym) {
                             let max_frames = self.frame_buffer.len();
                             if self.cantidad_marcos >= max_frames {
-                                return Err(ErrFast::StackUnder(
+                                return Err(ErrFast::PilaInsuficiente(
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
@@ -1189,10 +1189,10 @@ impl ForjaFast {
                         Some(false) => {
                             let k = self.desapilar_valor()?;
                             let m = self.desapilar_valor()?;
-                            let map = self.obtener_mapa(m.indice_mapa());
+                            let mapa = self.obtener_mapa(m.indice_mapa());
                             let ks = self.obtener_texto(k.indice_texto());
                             self.empujar_valor(
-                                map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
+                                mapa.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
                             );
                         }
                         None => {
@@ -1210,10 +1210,10 @@ impl ForjaFast {
                                 self.ic_arrayget[ip] = Some(true);
                                 self.ic_miss_cantidad[ip] = 0;
                             } else if a.es_mapa() && i.es_texto() {
-                                let map = self.obtener_mapa(a.indice_mapa());
+                                let mapa = self.obtener_mapa(a.indice_mapa());
                                 let ks = self.obtener_texto(i.indice_texto());
                                 self.empujar_valor(
-                                    map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
+                                    mapa.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
                                 );
                                 self.ic_arrayget[ip] = Some(false);
                                 self.ic_miss_cantidad[ip] = 0;
@@ -1318,19 +1318,19 @@ impl ForjaFast {
                     if self.ic_mapget[ip] {
                         let k = self.desapilar_valor()?;
                         let m = self.desapilar_valor()?;
-                        let map = self.obtener_mapa(m.indice_mapa());
+                        let mapa = self.obtener_mapa(m.indice_mapa());
                         let ks = self.obtener_texto(k.indice_texto());
                         self.empujar_valor(
-                            map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
+                            mapa.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
                         );
                     } else {
                         let k = self.desapilar_valor()?;
                         let m = self.desapilar_valor()?;
                         if m.es_mapa() && k.es_texto() {
-                            let map = self.obtener_mapa(m.indice_mapa());
+                            let mapa = self.obtener_mapa(m.indice_mapa());
                             let ks = self.obtener_texto(k.indice_texto());
                             self.empujar_valor(
-                                map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
+                                mapa.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
                             );
                             self.ic_mapget[ip] = true;
                             self.ic_miss_cantidad[ip] = 0;

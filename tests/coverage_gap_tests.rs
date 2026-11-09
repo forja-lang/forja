@@ -10,7 +10,7 @@ use std::sync::Arc;
 // ============================================================
 
 fn kinds(fuente: &str) -> Vec<TokenTipo> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     lexer
         .tokenize()
         .unwrap()
@@ -88,10 +88,10 @@ fn test_tk_doc_comment_exact() {
 // ============================================================
 
 fn parsear(fuente: &str) -> forja::ast::Programa {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    parser.parse().unwrap()
+    parser.parsear().unwrap()
 }
 
 #[test]
@@ -636,10 +636,10 @@ fn test_uop_expandir_fijar_linea() {
 
 #[test]
 fn test_extremo_a_extremo_bytecode_generacion_correcto() {
-    let mut lex = Lexer::new("variable x = 42\nescribir(x)");
+    let mut lex = Lexer::nuevo("variable x = 42\nescribir(x)");
     let tokens = lex.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let prog = parser.parse().unwrap();
+    let prog = parser.parsear().unwrap();
     let mut gen = GeneradorBytecode::nuevo();
     let bc = gen.generar(&prog).unwrap();
     assert!(bc.len() > 2);

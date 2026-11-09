@@ -8,7 +8,7 @@ impl NativoRegistro {
 }
 
 use std::fs::OpenOptions;
-static LOG_FILE: OnceLock<Mutex<String>> = OnceLock::new();
+static ARCHIVO_LOG: OnceLock<Mutex<String>> = OnceLock::new();
 static LOG_LEVEL: OnceLock<Mutex<String>> = OnceLock::new();
 pub fn log_nivel_min() -> i32 {
     let nivel = LOG_LEVEL
@@ -51,7 +51,7 @@ pub fn nativo_registrar_escribir(
         .unwrap_or_default()
         .as_millis();
     let linea = format!("[{}] [{}] {}\n", timestamp, nivel, mensaje);
-    let ruta = LOG_FILE
+    let ruta = ARCHIVO_LOG
         .get_or_init(|| Mutex::new(String::new()))
         .lock()
         .unwrap()
@@ -74,7 +74,7 @@ pub fn nativo_registrar_configurar(
         .get_or_init(|| Mutex::new("INFO".to_string()))
         .lock()
         .unwrap() = nivel;
-    *LOG_FILE
+    *ARCHIVO_LOG
         .get_or_init(|| Mutex::new(String::new()))
         .lock()
         .unwrap() = archivo;

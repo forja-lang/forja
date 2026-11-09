@@ -1372,7 +1372,7 @@ fn ejecutar_llamada_depuracion(
 
         let max_frames = dbg.vm.frame_buffer.len();
         if dbg.vm.cantidad_marcos >= max_frames {
-            return Err(ErrFast::StackUnder(
+            return Err(ErrFast::PilaInsuficiente(
                 "Stack overflow: demasiadas llamadas anidadas".into(),
             ));
         }
@@ -1422,7 +1422,7 @@ fn ejecutar_llamada_depuracion(
 /// - restaura ip desde el frame
 fn ejecutar_return_depuracion(dbg: &mut Debugger) -> Result<(), ErrFast> {
     if dbg.vm.cantidad_marcos == 0 {
-        return Err(ErrFast::StackUnder("Return sin frame activo".into()));
+        return Err(ErrFast::PilaInsuficiente("Return sin frame activo".into()));
     }
     dbg.vm.cantidad_marcos -= 1;
     let frame = dbg.vm.frame_buffer[dbg.vm.cantidad_marcos];

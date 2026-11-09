@@ -480,7 +480,7 @@ pub fn url_decodificar_simple(texto: &str) -> String {
 // ─── MIME Types ──────────────────────────────────────────────────
 
 /// Tabla MIME predeterminada (extension → Content-Type)
-static MIME_TABLE: &[(&str, &str)] = &[
+static TABLA_MIME: &[(&str, &str)] = &[
     ("html", "text/html; charset=utf-8"),
     ("htm", "text/html; charset=utf-8"),
     ("css", "text/css; charset=utf-8"),
@@ -539,7 +539,7 @@ pub fn nativo_mime_tipo_archivo(
     let ext = obtener_texto(_vm, args[0])?.to_lowercase();
     let ext = ext.trim_start_matches('.');
 
-    let mime = MIME_TABLE
+    let mime = TABLA_MIME
         .iter()
         .find(|(k, _)| *k == ext)
         .map(|(_, v)| *v)
@@ -561,7 +561,7 @@ pub fn nativo_mime_extension_por_tipo(
     }
     let tipo = obtener_texto(_vm, args[0])?.to_lowercase();
 
-    let ext = MIME_TABLE
+    let ext = TABLA_MIME
         .iter()
         .find(|(_, v)| v.starts_with(&tipo) || **v == tipo)
         .map(|(k, _)| *k)

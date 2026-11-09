@@ -46,12 +46,12 @@ pub(crate) fn cmd_highlight(args: &[String]) {
     };
 
     use error::color;
-    let kw = |s: &str| format!("{}{}{}", color::AMARILLO, s, color::RESET);
-    let ty = |s: &str| format!("{}{}{}", color::CYAN, s, color::RESET);
-    let fn_ = |s: &str| format!("{}{}{}", color::VERDE, s, color::RESET);
-    let st = |s: &str| format!("{}{}{}", "\x1b[93m", s, color::RESET); // bright yellow
-    let co = |s: &str| format!("{}{}{}", color::GRIS, s, color::RESET);
-    let nu = |s: &str| format!("{}{}{}", color::AZUL, s, color::RESET);
+    let kw = |s: &str| format!("{}{}{}", color::AMARILLO, s, color::REINICIO);
+    let ty = |s: &str| format!("{}{}{}", color::CYAN, s, color::REINICIO);
+    let fn_ = |s: &str| format!("{}{}{}", color::VERDE, s, color::REINICIO);
+    let st = |s: &str| format!("{}{}{}", "\x1b[93m", s, color::REINICIO); // bright yellow
+    let co = |s: &str| format!("{}{}{}", color::GRIS, s, color::REINICIO);
+    let nu = |s: &str| format!("{}{}{}", color::AZUL, s, color::REINICIO);
 
     let chars: Vec<char> = fuente.chars().collect();
     let mut pos = 0;

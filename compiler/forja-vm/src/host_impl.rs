@@ -115,10 +115,10 @@ impl forja_runtime::Anfitrion for ForjaFast {
 mod tests {
     use super::*;
 
-    fn exige_host<T: forja_runtime::Anfitrion>() {}
+    fn exige_anfitrion<T: forja_runtime::Anfitrion>() {}
 
     #[test]
     fn forja_fast_implementa_host() {
-        exige_host::<ForjaFast>();
+        exige_anfitrion::<ForjaFast>();
     }
 }

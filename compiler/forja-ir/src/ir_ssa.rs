@@ -311,7 +311,7 @@ impl ConstructorSsa {
     pub const BASE_VALOR: IdValor = IdValor(1 << 31);
 
     /// Crea un constructor de SSA sin definiciones ni φ registrados.
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         ConstructorSsa {
             variables_phi: HashSet::new(),
             definiciones: HashMap::new(),
@@ -444,7 +444,7 @@ impl ConstructorSsa {
 
 impl Default for ConstructorSsa {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
@@ -510,7 +510,7 @@ pub fn promover_funcion(funcion: &FuncionSsa) -> FuncionSsa {
 
     // 3. Dominadores y colocación de φ-nodes.
     let arbol_dominadores = ArbolDominadores::calcular(&funcion.bloques);
-    let mut sb = ConstructorSsa::new();
+    let mut sb = ConstructorSsa::nuevo();
     for m in &promovibles {
         sb.marcar_variable_phi(*m);
     }
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn test_ssa_builder_phi_placement() {
-        let mut builder = ConstructorSsa::new();
+        let mut builder = ConstructorSsa::nuevo();
         builder.marcar_variable_phi(IdxMemoria(0));
 
         // Diamante: 0 → {1, 2}, 1 → 3, 2 → 3. La variable se define en 1 y 2
@@ -962,7 +962,7 @@ mod tests {
 
     #[test]
     fn test_ssa_builder_no_phi_en_cadena_lineal() {
-        let mut builder = ConstructorSsa::new();
+        let mut builder = ConstructorSsa::nuevo();
         builder.marcar_variable_phi(IdxMemoria(0));
 
         // Cadena lineal 0 → 1 → 2: el def en 0 domina todo, no hace falta φ.
@@ -994,7 +994,7 @@ mod tests {
 
     #[test]
     fn test_ssa_builder_phi_en_header_de_bucle() {
-        let mut builder = ConstructorSsa::new();
+        let mut builder = ConstructorSsa::nuevo();
         builder.marcar_variable_phi(IdxMemoria(0));
 
         // Loop: 0 → 1 (cabecera) → {2, 3}, 2 → 1 (back edge). La variable se
@@ -1037,10 +1037,10 @@ mod tests {
 
     /// Compila un programa a IR y devuelve la función pedida (ya promovida).
     fn ir_de_fuente(fuente: &str) -> crate::ir::ProgramaIr {
-        let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
+        let mut lexer = forja_syntax::lexer::Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().expect("lexer");
         let programa = forja_syntax::parser::Parser::nuevo(tokens)
-            .parse()
+            .parsear()
             .expect("parser");
         let mut constructor_ir = crate::ir_constructor::ConstructorDesdeAst::nuevo();
         let ir = constructor_ir.programa_a_ir(&programa);

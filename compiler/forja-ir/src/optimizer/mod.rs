@@ -671,7 +671,7 @@ impl Optimizer {
                 campo: campo.clone(),
                 valor: Box::new(self.optimizar_expresion(valor)),
             },
-            Expresion::ArraySet { array, valor } => Expresion::ArraySet {
+            Expresion::ArregloFijar { array, valor } => Expresion::ArregloFijar {
                 array: Box::new(self.optimizar_expresion(array)),
                 valor: Box::new(self.optimizar_expresion(valor)),
             },
@@ -883,10 +883,10 @@ mod tests {
     use forja_syntax::parser::Parser;
 
     fn optimizar_fuente(fuente: &str) -> Programa {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut opt = Optimizer::nuevo();
         opt.optimizar(&programa)
     }
@@ -944,10 +944,10 @@ mod tests {
 
     // DCE tests
     fn dce_fuente(fuente: &str) -> Programa {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut dce = DeadCodeEliminator::nuevo();
         dce.eliminar(&programa)
     }
@@ -1105,10 +1105,10 @@ mod tests {
 
     // ─── ConstProp tests ─────────────────────────────────────────────────
     fn constprop_fuente(fuente: &str) -> Programa {
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut cp = ConstPropagator::nuevo();
         cp.propagar(&programa)
     }
@@ -1360,10 +1360,10 @@ mod tests {
     #[test]
     fn test_en_linea_funcion_trivial() {
         let fuente = "funcion doble(x) { retornar x + x }\nvariable y = doble(5)";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
         // La función doble debería haber sido eliminada (inlined)
@@ -1380,10 +1380,10 @@ mod tests {
     #[test]
     fn test_en_linea_no_principal() {
         let fuente = "funcion main() { escribir(\"hola\") }\nfuncion aux(x) { retornar x }\nvariable y = aux(1)";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
         // main no debería ser inlined, pero sí aux
@@ -1399,10 +1399,10 @@ mod tests {
     #[test]
     fn test_no_en_linea_too_large() {
         let fuente = "funcion grande(x) {\n  variable a = 1\n  variable b = 2\n  variable c = 3\n  variable d = 4\n  variable e = 5\n  variable f = 6\n  variable g = 7\n  variable h = 8\n  variable i = 9\n  variable j = 10\n  variable k = 11\n  retornar x + k\n}\nvariable y = grande(5)";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut inliner = FuncionInliner::nuevo();
         let prog = inliner.en_linea(&programa);
         // La función tiene 11 declaraciones (> tamano_maximo_en_linea=10), no se inlinea
@@ -1420,10 +1420,10 @@ mod tests {
     #[test]
     fn test_desanidar_simple() {
         let fuente = "mientras (i < 10) {\n  si (modo_rapido) {\n    variable x = 1\n  } sino {\n    variable x = 2\n  }\n}";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut unswitcher = BucleUnswitcher::nuevo();
         let prog = unswitcher.desanidar(&programa);
         // Debería haber un Si externo con dos Mientras adentro
@@ -1450,10 +1450,10 @@ mod tests {
     fn test_no_desanidar_variant() {
         // Si la condición del Si depende de i, no se puede unswitch
         let fuente = "mientras (i < 10) {\n  si (i > 5) {\n    variable x = 1\n  }\n}";
-        let mut lexer = Lexer::new(fuente);
+        let mut lexer = Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::nuevo(tokens);
-        let programa = parser.parse().unwrap();
+        let programa = parser.parsear().unwrap();
         let mut unswitcher = BucleUnswitcher::nuevo();
         let prog = unswitcher.desanidar(&programa);
         assert_eq!(unswitcher.unswitches_realizados, 0);

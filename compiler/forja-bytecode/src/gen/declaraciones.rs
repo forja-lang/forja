@@ -85,14 +85,14 @@ impl GeneradorBytecode {
                 valor,
                 ..
             } => {
-                // arr[i] = val → push val, push Load(arr), push indice, ArraySet, Store(arr)
+                // arr[i] = val → push val, push Load(arr), push indice, ArregloFijar, Store(arr)
                 // Si nombre contiene un punto (ej: "self.elementos"), es acceso a miembro
                 if let Some(dot_pos) = nombre.find('.') {
                     let obj_nombre = &nombre[..dot_pos];
                     let campo = &nombre[dot_pos + 1..];
-                    // Generar: val, Load(obj), GetField(campo), indice, ArraySet, Load(obj), SetField(campo)
+                    // Generar: val, Load(obj), GetField(campo), indice, ArregloFijar, Load(obj), SetField(campo)
                     // Stack: [..., val] → [..., val, obj] → [..., val, array] → [..., val, array, indice]
-                    // ArraySet: pops indice, array, val; set array[indice]=val; push modified_array
+                    // ArregloFijar: pops indice, array, val; set array[indice]=val; push modified_array
                     // → [..., modified_array] → [..., modified_array, obj] → SetField pops obj, modified_array
                     self.generar_expresion(valor);
                     self.emitir(Opcode::Cargar(Arc::from(obj_nombre)));

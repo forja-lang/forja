@@ -701,8 +701,8 @@ impl GeneradorBytecode {
                 self.generar_expresion(objeto);
                 self.emitir(Opcode::FijarCampo(Arc::from(campo.as_str())));
             }
-            Expresion::ArraySet { array, valor } => {
-                // arr[i] = val como expresión → push val, dup, push objeto, push índice, ArraySet, pop arr
+            Expresion::ArregloFijar { array, valor } => {
+                // arr[i] = val como expresión → push val, dup, push objeto, push índice, ArregloFijar, pop arr
                 self.generar_expresion(valor);
                 self.emitir(Opcode::Duplicar);
                 if let Expresion::Index { objeto, indice } = array.as_ref() {

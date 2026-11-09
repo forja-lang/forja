@@ -14,10 +14,10 @@ use super::*;
 fn compilar_programa(fuente: &str) -> Vec<bytecode::Opcode> {
     use bytecode::GeneradorBytecode;
 
-    let mut lexer = crate::lexer::Lexer::new(fuente);
+    let mut lexer = crate::lexer::Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().expect("el programa debe tokenizar");
     let mut parser = crate::parser::Parser::nuevo(tokens);
-    let programa = parser.parse().expect("el programa debe parsear");
+    let programa = parser.parsear().expect("el programa debe parsear");
 
     let mut tipo_checker = crate::semantics::TipoChecker::nuevo();
     tipo_checker
@@ -295,7 +295,7 @@ fn fast_math_override_manual_persiste_despues_de_reiniciar() {
     vm.fijar_fast_math(true);
     vm.cargar_bytecode(bytecode);
     assert!(vm.fast_math());
-    vm.reset();
+    vm.reiniciar();
     assert!(
         vm.fast_math(),
         "el override manual debe persistir tras reset()"

@@ -109,7 +109,7 @@ pub(crate) fn cmd_diagram(args: &[String]) {
     };
 
     // Lexer
-    let mut lexer = lexer::Lexer::new(&fuente);
+    let mut lexer = lexer::Lexer::nuevo(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errores) => {
@@ -122,7 +122,7 @@ pub(crate) fn cmd_diagram(args: &[String]) {
 
     // Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = match parser.parse() {
+    let programa = match parser.parsear() {
         Ok(p) => p,
         Err(errores) => {
             for err in errores {
@@ -181,7 +181,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(&fuente);
+    let mut lexer = lexer::Lexer::nuevo(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errores) => {
@@ -192,7 +192,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     let mut parser = parser::Parser::nuevo(tokens);
-    let programa = match parser.parse() {
+    let programa = match parser.parsear() {
         Ok(p) => p,
         Err(errores) => {
             eprintln!("{}", error::archivo(input_path));

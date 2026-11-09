@@ -3,10 +3,10 @@ use forja::parser::Parser;
 use forja::transpiler::Transpiler;
 
 fn transpilar(fuente: &str) -> String {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parse().unwrap();
+    let programa = parser.parsear().unwrap();
     let mut transpiler = Transpiler::nuevo();
     transpiler.transpilar(&programa).unwrap()
 }

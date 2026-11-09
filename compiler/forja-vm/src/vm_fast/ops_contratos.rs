@@ -67,7 +67,7 @@ impl ForjaFast {
                 // desactivados.
                 let valor = self.desapilar_valor()?;
                 if self.verificar_contratos {
-                    self.anterior_stack.insert(*slot, valor);
+                    self.pila_anterior.insert(*slot, valor);
                 }
                 self.ip += 1;
             }

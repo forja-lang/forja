@@ -144,7 +144,7 @@ pub const CALLEE_SAVED: &[PhysReg] = &[
 ];
 
 /// Registros temporales (caller-saved, preferidos para temporales)
-pub const TEMP_REGS: &[PhysReg] = &[
+pub const REGS_TEMPORALES: &[PhysReg] = &[
     PhysReg::RAX,
     PhysReg::RCX,
     PhysReg::RDX,
@@ -239,7 +239,7 @@ pub enum RegClase {
 #[derive(Debug, Clone)]
 pub enum Location {
     Reg(PhysReg),
-    Stack(usize), // offset desde RBP
+    Pila(usize), // offset desde RBP
 }
 
 /// Registro asignado con su ubicación
@@ -271,7 +271,7 @@ impl RegisterAllocator {
             spill_slots: 0,
             active_regs: {
                 let mut mapa: HashMap<PhysReg, VirtReg> =
-                    TEMP_REGS.iter().map(|&r| (r, 0)).collect();
+                    REGS_TEMPORALES.iter().map(|&r| (r, 0)).collect();
                 // Registrar registros extendidos (callee-saved) como disponibles
                 for &r in EXTENDED_REGS {
                     mapa.insert(r, 0);
@@ -329,7 +329,7 @@ impl RegisterAllocator {
                 let spill = self.spill_latest(interval.clase_registro);
                 let slot = self.reservar_spill_slot();
                 self.assignments
-                    .insert(interval.virt_reg, Location::Stack(slot));
+                    .insert(interval.virt_reg, Location::Pila(slot));
 
                 // Si el spilled era más corto que el nuevo, swap
                 if let Some(spilled_interval) = spill {
@@ -346,7 +346,7 @@ impl RegisterAllocator {
                                     .insert(interval.virt_reg, Location::Reg(phys));
                                 let slot2 = self.reservar_spill_slot();
                                 self.assignments
-                                    .insert(spilled_interval.virt_reg, Location::Stack(slot2));
+                                    .insert(spilled_interval.virt_reg, Location::Pila(slot2));
                             }
                         }
                     }
@@ -386,7 +386,7 @@ impl RegisterAllocator {
         match clase {
             RegClase::Integer => {
                 // Primero buscar en registros temporales (caller-saved, preferidos)
-                for &reg in TEMP_REGS {
+                for &reg in REGS_TEMPORALES {
                     if self.active_regs.get(&reg) == Some(&0) {
                         return Some(reg);
                     }
@@ -497,7 +497,7 @@ mod tests {
         // Al menos una debería estar en spill
         let spilled = results
             .iter()
-            .filter(|r| matches!(r.location, Location::Stack(_)))
+            .filter(|r| matches!(r.location, Location::Pila(_)))
             .count();
         assert!(spilled >= 1, "Expected at least one spill, got {}", spilled);
     }
@@ -582,7 +582,7 @@ mod tests {
         // Solo verificar que fue asignada
         assert!(matches!(
             float_loc.location,
-            Location::Reg(_) | Location::Stack(_)
+            Location::Reg(_) | Location::Pila(_)
         ));
     }
 }

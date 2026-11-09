@@ -92,7 +92,7 @@ impl ForjaFast {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn hot_swap_modulo(
         &mut self,
-        id_modulo: ModuleId,
+        id_modulo: IdModulo,
         nuevo_bc: &ModuloBytecode,
     ) -> Result<(), String> {
         // 1. Determinar la versión actual y calcular la nueva
@@ -140,7 +140,7 @@ impl ForjaFast {
 
             // Ajustar rangos de otros módulos que están después
             let shift = (nuevo_longitud as isize) - (old_longitud as isize);
-            let otros: Vec<(ModuleId, (usize, usize))> = self
+            let otros: Vec<(IdModulo, (usize, usize))> = self
                 .modulo_bytecode_ranges
                 .iter()
                 .filter(|(id, _)| **id != id_modulo)

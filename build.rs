@@ -4,15 +4,15 @@
 
 fn main() {
     // Incrustar ícono (solo cuando el TARGET es Windows)
-    let target = std::env::var("TARGET").unwrap_or_default();
-    if !target.contains("windows") {
+    let objetivo = std::env::var("TARGET").unwrap_or_default();
+    if !objetivo.contains("windows") {
         return;
     }
 
     #[cfg(target_os = "windows")]
     {
-        let ico_path = std::path::Path::new("../../forge.ico");
-        if ico_path.exists() {
+        let ruta_ico = std::path::Path::new("../../forge.ico");
+        if ruta_ico.exists() {
             let mut res = winresource::WindowsResource::new();
             res.set_icon("../../forge.ico");
             if let Err(e) = res.compile() {

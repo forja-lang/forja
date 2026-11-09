@@ -24,14 +24,14 @@ fn todos_los_ejemplos_parsean() {
                 continue;
             }
         };
-        let tokens = match Lexer::new(&fuente).tokenize() {
+        let tokens = match Lexer::nuevo(&fuente).tokenize() {
             Ok(t) => t,
             Err(e) => {
                 fallos.push(format!("{nombre}: léxico: {e:?}"));
                 continue;
             }
         };
-        if let Err(e) = Parser::nuevo(tokens).parse() {
+        if let Err(e) = Parser::nuevo(tokens).parsear() {
             fallos.push(format!("{nombre}: parseo: {:?}", e.first()));
         }
     }

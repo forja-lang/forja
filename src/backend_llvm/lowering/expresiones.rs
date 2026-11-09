@@ -144,6 +144,8 @@ impl Lowering {
                         T::Arreglo => Ok(V::Arreglo(r)),
                         T::Mapa => Ok(V::Mapa(r)),
                         T::Enum(c) => Ok(V::Enum(r, c)),
+                        T::Canal => Ok(V::Canal(r)),
+                        T::Closure => Ok(V::Closure(r)),
                         T::Clase(c) => Ok(V::Clase(r, c)),
                         T::Funcion => Ok(V::Funcion(r)),
                         T::Nulo => Ok(V::Nulo),
@@ -287,7 +289,7 @@ impl Lowering {
                 self.linea(&format!("store {} {}, ptr {}", t.llvm().to_llvm_ir(), r, p));
                 Ok(v)
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 let arr = self.expr(array)?;
                 let a = self.como(&arr, T::Arreglo);
                 let v = self.expr(valor)?;
@@ -357,15 +359,12 @@ impl Lowering {
                 }
                 Ok(V::Mapa(m))
             }
-            Expresion::Closure { .. } => Err(
-                "las closures (`func(x) { ... }`) no están soportadas por la ruta LLVM todavía"
-                    .into(),
-            ),
-            Expresion::Hilo { .. } => {
-                Err("los hilos (`hilo { ... }`) no están soportados por la ruta LLVM".into())
-            }
+            Expresion::Closure { parametros, cuerpo } => self.crear_closure(parametros, cuerpo),
+            Expresion::Hilo { cuerpo } => self.lanzar_hilo(cuerpo),
             Expresion::CanalNuevo(_) => {
-                Err("los canales (`canal()`) no están soportados por la ruta LLVM".into())
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_canal_nuevo()", r));
+                Ok(V::Canal(r))
             }
             Expresion::Coincidir { expr, brazos } => self.coincidir(expr, brazos),
             Expresion::Seleccionar { .. } => {
@@ -622,9 +621,88 @@ impl Lowering {
         if let Some(v) = self.builtin(nombre, argumentos)? {
             return Ok(v);
         }
+        // `obj.metodo(args)` puede llegar como `LlamadaFuncion` con nombre
+        // punteado. Se resuelve para canales y clases.
+        if let Some((objeto, metodo)) = nombre.split_once('.') {
+            if let Some(var) = self.vars.get(objeto).cloned() {
+                let recv = self.cargar(&var.slot, &var.t);
+                if var.t == T::Canal {
+                    if let V::Canal(c) = recv {
+                        match metodo {
+                            "enviar" => {
+                                let v = match argumentos.first() {
+                                    Some(a) => self.expr(a)?,
+                                    None => return Err("`enviar` necesita un argumento".into()),
+                                };
+                                let x = self.como(&v, T::Int);
+                                self.linea(&format!(
+                                    "call void @forja_canal_enviar(ptr {}, i64 {})",
+                                    c, x
+                                ));
+                                return Ok(V::Nulo);
+                            }
+                            "recibir" => {
+                                let r = self.r();
+                                self.linea(&format!(
+                                    "{} = call i64 @forja_canal_recibir(ptr {})",
+                                    r, c
+                                ));
+                                return Ok(V::Int(r));
+                            }
+                            _ => return Err(format!("el canal no tiene el método `{metodo}`")),
+                        }
+                    }
+                }
+                if let V::Clase(obj, clase) = recv {
+                    let e = Expresion::LlamadaMetodo {
+                        objeto: Box::new(Expresion::Identificador {
+                            nombre: objeto.to_string(),
+                            linea: 0,
+                            columna: 0,
+                        }),
+                        metodo: metodo.to_string(),
+                        argumentos: argumentos.to_vec(),
+                    };
+                    let _ = (obj, clase);
+                    return self.expr(&e);
+                }
+            }
+        }
         // Constructor de variante de un `tipo` (enum).
         if self.variantes.contains_key(nombre) {
             return self.construir_variante(nombre, argumentos);
+        }
+        // Llamada a una closure: `variable f = func(x) { ... }; f(1)`.
+        if let Some(var) = self.vars.get(nombre).cloned() {
+            if var.t == T::Closure {
+                let cargado = self.cargar(&var.slot, &T::Closure);
+                let obj = self.como(&cargado, T::Closure);
+                let pf = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds [2 x ptr], ptr {}, i64 0, i64 0",
+                    pf, obj
+                ));
+                let fp = self.r();
+                self.linea(&format!("{} = load ptr, ptr {}", fp, pf));
+                let pe = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds [2 x ptr], ptr {}, i64 0, i64 1",
+                    pe, obj
+                ));
+                let envp = self.r();
+                self.linea(&format!("{} = load ptr, ptr {}", envp, pe));
+                let mut lista = vec![format!("ptr {}", envp)];
+                for a in argumentos {
+                    let v = self.expr(a)?;
+                    let x = self.como(&v, T::Int);
+                    lista.push(format!("i64 {}", x));
+                }
+                let r = self.r();
+                // shortcut: se asume retorno i64 (las closures que devuelven
+                // texto requieren guardar la firma en el objeto).
+                self.linea(&format!("{} = call i64 {}({})", r, fp, lista.join(", ")));
+                return Ok(V::Int(r));
+            }
         }
         // Llamada indirecta: `variable op = sumador` o `ops[i]` con función.
         if let Some(var) = self.vars.get(nombre).cloned() {
@@ -688,6 +766,8 @@ impl Lowering {
                 T::Arreglo => V::Arreglo(r),
                 T::Mapa => V::Mapa(r),
                 T::Enum(c) => V::Enum(r, c.clone()),
+                T::Canal => V::Canal(r),
+                T::Closure => V::Closure(r),
                 T::Clase(c) => V::Clase(r, c.clone()),
                 T::Funcion => V::Funcion(r),
                 T::Nulo => V::Nulo,
@@ -848,6 +928,220 @@ impl Lowering {
         Ok(Some(v))
     }
 
+    /// `func(x) { ... }` → `@closure.N(ptr %entorno, params…)` + objeto de 2
+    /// slots `{ fn, entorno }`. Las variables visibles se capturan por valor.
+    fn crear_closure(
+        &mut self,
+        parametros: &[crate::ast::Parametro],
+        cuerpo: &[crate::ast::Declaracion],
+    ) -> Result<V, String> {
+        let capturas: Vec<(String, T)> = {
+            let mut v: Vec<(String, T)> = self
+                .vars
+                .iter()
+                .filter(|(n, _)| !n.starts_with('@'))
+                .map(|(n, var)| (n.clone(), var.t.clone()))
+                .collect();
+            v.sort_by(|a, b| a.0.cmp(&b.0));
+            v
+        };
+        let tipos: Vec<T> = parametros
+            .iter()
+            .map(|p| self.tipo_declarado(&p.tipo).unwrap_or(T::Int))
+            .collect();
+        let ret = super::primer_retorno(cuerpo).unwrap_or(T::Int);
+        let id = self.sc;
+        self.sc += 1;
+        let nombre_fn = format!("closure_{}", id);
+
+        // entorno
+        let n = capturas.len().max(1).to_string();
+        let env = self.r();
+        self.linea(&format!(
+            "{} = call ptr @forja_arreglo_nuevo(i64 {})",
+            env, n
+        ));
+        for (i, (nombre, _)) in capturas.iter().enumerate() {
+            let val = self.identificador(nombre)?;
+            let x = self.como(&val, T::Int);
+            self.linea(&format!(
+                "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
+                env, i, x
+            ));
+        }
+
+        // cuerpo en una función aparte
+        let cuerpo_previo = std::mem::take(&mut self.cuerpos);
+        let vars_previas = self.vars.clone();
+        let prologo_previo = std::mem::take(&mut self.prologo);
+        self.termina = false;
+        self.ret_actual = ret.clone();
+        let mut tipos_pre = std::mem::take(&mut self.tipos_pre);
+        self.preescanear_tipos(cuerpo, &mut tipos_pre);
+        self.tipos_pre = tipos_pre;
+        for (i, (nombre, t)) in capturas.iter().enumerate() {
+            let slot = self.alloca(t, nombre);
+            let p = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %ForjaArreglo, ptr %entorno, i32 0, i32 2",
+                p
+            ));
+            let base = self.r();
+            self.linea(&format!("{} = load ptr, ptr {}", base, p));
+            let ep = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds i64, ptr {}, i64 {}",
+                ep, base, i
+            ));
+            let crudo = self.r();
+            self.linea(&format!("{} = load i64, ptr {}", crudo, ep));
+            let val = self.como(&V::Int(crudo), t.clone());
+            self.guardar(&slot, valor_desde(&val, t), t);
+            self.vars.insert(nombre.clone(), Var { slot, t: t.clone() });
+        }
+        for (i, p) in parametros.iter().enumerate() {
+            let t = tipos.get(i).cloned().unwrap_or(T::Int);
+            let slot = self.alloca(&t, &p.nombre);
+            self.guardar(&slot, valor_desde(&format!("%p{}", i), &t), &t);
+            self.vars.insert(p.nombre.clone(), Var { slot, t });
+        }
+        for s in cuerpo {
+            self.sentencia(s)?;
+        }
+        if !self.termina {
+            self.linea(&format!("ret {} {}", ret.llvm().to_llvm_ir(), cero(&ret)));
+        }
+        let cuerpo_txt = std::mem::take(&mut self.cuerpos);
+        let prologo_txt = std::mem::take(&mut self.prologo);
+        self.cuerpos = cuerpo_previo;
+        self.vars = vars_previas;
+        self.prologo = prologo_previo;
+
+        let mut f = String::new();
+        use std::fmt::Write as _;
+        let mut ps = vec!["ptr %entorno".to_string()];
+        for (i, t) in tipos.iter().enumerate() {
+            ps.push(format!("{} %p{}", t.llvm().to_llvm_ir(), i));
+        }
+        let _ = writeln!(
+            f,
+            "define {} @{}({}) {{",
+            ret.llvm().to_llvm_ir(),
+            nombre_fn,
+            ps.join(", ")
+        );
+        let _ = writeln!(f, "entry:");
+        f.push_str(&prologo_txt);
+        f.push_str(&cuerpo_txt);
+        let _ = writeln!(f, "}}");
+        self.extra.push_str(&f);
+
+        // objeto { fn, env }
+        let obj = self.r();
+        self.linea(&format!("{} = call ptr @forja_alloc(i64 16)", obj));
+        let pf = self.r();
+        self.linea(&format!(
+            "{} = getelementptr inbounds [2 x ptr], ptr {}, i64 0, i64 0",
+            pf, obj
+        ));
+        self.linea(&format!("store ptr @{}, ptr {}", nombre_fn, pf));
+        let pe = self.r();
+        self.linea(&format!(
+            "{} = getelementptr inbounds [2 x ptr], ptr {}, i64 0, i64 1",
+            pe, obj
+        ));
+        self.linea(&format!("store ptr {}, ptr {}", env, pe));
+        Ok(V::Closure(obj))
+    }
+
+    /// `hilo { ... }`: genera `@hilo.N(ptr %entorno)`, copia las variables
+    /// visibles al entorno (i64 por valor) y lo lanza con el runtime.
+    fn lanzar_hilo(&mut self, cuerpo: &[crate::ast::Declaracion]) -> Result<V, String> {
+        let capturas: Vec<(String, T)> = {
+            let mut v: Vec<(String, T)> = self
+                .vars
+                .iter()
+                .filter(|(n, _)| !n.starts_with('@'))
+                .map(|(n, var)| (n.clone(), var.t.clone()))
+                .collect();
+            v.sort_by(|a, b| a.0.cmp(&b.0));
+            v
+        };
+        let id = self.sc;
+        self.sc += 1;
+        let nombre_fn = format!("hilo_{}", id);
+
+        // Entorno: un arreglo de i64 con el valor de cada captura.
+        let n = capturas.len().max(1).to_string();
+        let env = self.r();
+        self.linea(&format!(
+            "{} = call ptr @forja_arreglo_nuevo(i64 {})",
+            env, n
+        ));
+        for (i, (nombre, t)) in capturas.iter().enumerate() {
+            let val = self.identificador(nombre)?;
+            let x = self.como(&val, T::Int);
+            self.linea(&format!(
+                "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
+                env, i, x
+            ));
+            let _ = t;
+        }
+
+        // Cuerpo del hilo en una función aparte.
+        let cuerpo_previo = std::mem::take(&mut self.cuerpos);
+        let vars_previas = self.vars.clone();
+        let prologo_previo = std::mem::take(&mut self.prologo);
+        self.termina = false;
+        self.ret_actual = T::Nulo;
+        for (i, (nombre, t)) in capturas.iter().enumerate() {
+            let slot = self.alloca(t, nombre);
+            let p = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %ForjaArreglo, ptr %entorno, i32 0, i32 2",
+                p
+            ));
+            let base = self.r();
+            self.linea(&format!("{} = load ptr, ptr {}", base, p));
+            let ep = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds i64, ptr {}, i64 {}",
+                ep, base, i
+            ));
+            let crudo = self.r();
+            self.linea(&format!("{} = load i64, ptr {}", crudo, ep));
+            let val = self.como(&V::Int(crudo), t.clone());
+            self.guardar(&slot, valor_desde(&val, t), t);
+            self.vars.insert(nombre.clone(), Var { slot, t: t.clone() });
+        }
+        for s in cuerpo {
+            self.sentencia(s)?;
+        }
+        if !self.termina {
+            self.linea("ret void");
+        }
+        let cuerpo_txt = std::mem::take(&mut self.cuerpos);
+        let prologo_txt = std::mem::take(&mut self.prologo);
+        self.cuerpos = cuerpo_previo;
+        self.vars = vars_previas;
+        self.prologo = prologo_previo;
+
+        let mut f = String::new();
+        use std::fmt::Write as _;
+        let _ = writeln!(f, "define void @{}(ptr %entorno) {{", nombre_fn);
+        let _ = writeln!(f, "entry:");
+        f.push_str(&prologo_txt);
+        f.push_str(&cuerpo_txt);
+        let _ = writeln!(f, "}}");
+        self.extra.push_str(&f);
+
+        self.linea(&format!(
+            "call void @forja_hilo_lanzar(ptr @{}, ptr {})",
+            nombre_fn, env
+        ));
+        Ok(V::Nulo)
+    }
+
     /// `Variante(a, b)` → objeto `%Enum.X` con tag en el slot 0 y payloads en i64.
     fn construir_variante(&mut self, nombre: &str, args: &[Expresion]) -> Result<V, String> {
         let (en, idx, aridad) = self
@@ -1000,10 +1294,12 @@ impl Lowering {
                         .into(),
                 )
             }
-            T::Arreglo | T::Mapa | T::Clase(_) | T::Funcion => return Err(
-                "`escribir` de arreglos/mapas/objetos/funciones no está soportado en la ruta LLVM"
-                    .into(),
-            ),
+            T::Arreglo | T::Mapa | T::Canal | T::Closure | T::Clase(_) | T::Funcion => {
+                return Err(
+                    "`escribir` de arreglos/mapas/canales/closures/objetos/funciones no está                      soportado en la ruta LLVM"
+                        .into(),
+                )
+            }
             T::Int => {
                 let r = self.como(&v, T::Int);
                 self.linea(&format!("call void @forja_imprimir_entero(i64 {})", r));
@@ -1103,6 +1399,33 @@ impl Lowering {
         metodo: &str,
         argumentos: &[Expresion],
     ) -> Result<V, String> {
+        // Canal: `e.enviar(v)` / `r.recibir()`.
+        if let V::Canal(c) = self.expr(objeto)? {
+            match metodo {
+                "enviar" => {
+                    let v = match argumentos.first() {
+                        Some(a) => self.expr(a)?,
+                        None => return Err("`enviar` necesita un argumento".into()),
+                    };
+                    let x = self.como(&v, T::Int);
+                    self.linea(&format!(
+                        "call void @forja_canal_enviar(ptr {}, i64 {})",
+                        c, x
+                    ));
+                    return Ok(V::Nulo);
+                }
+                "recibir" => {
+                    let r = self.r();
+                    self.linea(&format!("{} = call i64 @forja_canal_recibir(ptr {})", r, c));
+                    return Ok(V::Int(r));
+                }
+                otro => {
+                    return Err(format!(
+                        "el canal no tiene el método `{otro}` (sólo enviar/recibir)"
+                    ))
+                }
+            }
+        }
         let (obj, clase) = self.receptor_clase(objeto)?;
         let firmas = self
             .clases
@@ -1146,5 +1469,22 @@ impl Lowering {
             T::Nulo => V::Nulo,
             _ => V::Int(r),
         })
+    }
+}
+
+/// Reconstruye un `V` a partir del valor ya convertido a `t`.
+fn valor_desde(r: &str, t: &T) -> V {
+    match t {
+        T::Dec => V::Dec(r.to_string()),
+        T::Texto => V::Texto(r.to_string()),
+        T::Arreglo => V::Arreglo(r.to_string()),
+        T::Mapa => V::Mapa(r.to_string()),
+        T::Enum(c) => V::Enum(r.to_string(), c.clone()),
+        T::Canal => V::Canal(r.to_string()),
+        T::Closure => V::Closure(r.to_string()),
+        T::Clase(c) => V::Clase(r.to_string(), c.clone()),
+        T::Funcion => V::Funcion(r.to_string()),
+        T::Nulo => V::Nulo,
+        T::Int => V::Int(r.to_string()),
     }
 }

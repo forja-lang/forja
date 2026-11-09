@@ -78,10 +78,10 @@ impl ForjaFast {
                     Some(false) => {
                         let k = self.desapilar_valor()?;
                         let m = self.desapilar_valor()?;
-                        let map = self.obtener_mapa(m.indice_mapa());
+                        let mapa = self.obtener_mapa(m.indice_mapa());
                         let ks = self.obtener_texto(k.indice_texto());
                         self.empujar_valor(
-                            map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
+                            mapa.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
                         );
                     }
                     None => {
@@ -107,14 +107,14 @@ impl ForjaFast {
                             self.ic_arrayget[ip] = Some(true);
                             self.ic_miss_cantidad[ip] = 0;
                         } else if a.es_mapa() {
-                            let map = self.obtener_mapa(a.indice_mapa());
+                            let mapa = self.obtener_mapa(a.indice_mapa());
                             let ks = if i.es_texto() {
                                 self.obtener_texto(i.indice_texto()).to_string()
                             } else {
                                 self.mostrar_valor(&i)
                             };
                             self.empujar_valor(
-                                map.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()),
+                                mapa.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()),
                             );
                             if i.es_texto() {
                                 self.ic_arrayget[ip] = Some(false);
@@ -248,21 +248,21 @@ impl ForjaFast {
                 if self.ic_mapget[ip] {
                     let k = self.desapilar_valor()?;
                     let m = self.desapilar_valor()?;
-                    let map = self.obtener_mapa(m.indice_mapa());
+                    let mapa = self.obtener_mapa(m.indice_mapa());
                     let ks = self.obtener_texto(k.indice_texto());
-                    self.empujar_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                    self.empujar_valor(mapa.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                 } else {
                     let k = self.desapilar_valor()?;
                     let m = self.desapilar_valor()?;
                     if m.es_mapa() {
-                        let map = self.obtener_mapa(m.indice_mapa());
+                        let mapa = self.obtener_mapa(m.indice_mapa());
                         let ks = if k.es_texto() {
                             self.obtener_texto(k.indice_texto()).to_string()
                         } else {
                             self.mostrar_valor(&k)
                         };
                         self.empujar_valor(
-                            map.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()),
+                            mapa.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()),
                         );
                         if k.es_texto() {
                             self.ic_mapget[ip] = true;

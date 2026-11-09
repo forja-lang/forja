@@ -322,7 +322,7 @@ impl GeneradorBytecode {
                 Self::extraer_ids_expr(objeto, usadas);
                 Self::extraer_ids_expr(valor, usadas);
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 Self::extraer_ids_expr(array, usadas);
                 Self::extraer_ids_expr(valor, usadas);
             }

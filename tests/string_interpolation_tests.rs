@@ -2,7 +2,7 @@ use forja::lexer::Lexer;
 use forja::token::TokenTipo;
 
 fn kinds(fuente: &str) -> Vec<TokenTipo> {
-    let mut lexer = Lexer::new(fuente);
+    let mut lexer = Lexer::nuevo(fuente);
     lexer
         .tokenize()
         .unwrap()
@@ -132,14 +132,14 @@ fn test_interp_vacia_dentro() {
 
 #[test]
 fn test_interp_sin_cierre_error() {
-    let mut lexer = Lexer::new(r#"escribir("${nombre")"#);
+    let mut lexer = Lexer::nuevo(r#"escribir("${nombre")"#);
     let resultado = lexer.tokenize();
     assert!(resultado.is_err());
 }
 
 #[test]
 fn test_interp_anidada_no_soportada() {
-    let mut lexer = Lexer::new(r#"escribir("${ ${x} }")"#);
+    let mut lexer = Lexer::nuevo(r#"escribir("${ ${x} }")"#);
     let resultado = lexer.tokenize();
     // May error or produce partial tokens
     if let Err(e) = &resultado {
@@ -182,7 +182,7 @@ funcion main() {
     escribir(msg)
 }
 "#;
-    let mut lexer = Lexer::new(src);
+    let mut lexer = Lexer::nuevo(src);
     let resultado = lexer.tokenize();
     assert!(resultado.is_ok());
 }

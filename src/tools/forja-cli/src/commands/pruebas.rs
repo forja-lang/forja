@@ -44,7 +44,7 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         let codigo = forja::leer_archivo_con_limite(archivo, forja::MAX_ARCHIVO_DEFAULT_MB)?;
 
         // FASE 1: Lexer (inline como los demás cmd_*)
-        let mut lexer = lexer::Lexer::new(&codigo);
+        let mut lexer = lexer::Lexer::nuevo(&codigo);
         let tokens = match lexer.tokenize() {
             Ok(t) => t,
             Err(errores) => {
@@ -58,7 +58,7 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
 
         // FASE 2-3: Parser
         let mut parser = parser::Parser::nuevo(tokens);
-        let programa = match parser.parse() {
+        let programa = match parser.parsear() {
             Ok(p) => p,
             Err(errores) => {
                 for err in &errores {
@@ -132,11 +132,11 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
 
                 match ejecutar_test(test, &rust_code) {
                     Ok(()) => {
-                        println!("{}✅ ok{}", color::VERDE, color::RESET);
+                        println!("{}✅ ok{}", color::VERDE, color::REINICIO);
                         total_pasados += 1;
                     }
                     Err(mensaje) => {
-                        println!("{}❌ FAILED{}", color::ROJO, color::RESET);
+                        println!("{}❌ FAILED{}", color::ROJO, color::REINICIO);
                         println!("    {}", mensaje);
                         total_fallidos += 1;
                     }

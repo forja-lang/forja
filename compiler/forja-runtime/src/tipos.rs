@@ -527,7 +527,7 @@ pub struct FrmFast {
 
 #[derive(Debug, Clone)]
 pub enum ErrFast {
-    StackUnder(String),
+    PilaInsuficiente(String),
     VarNoDecl(String),
     TipoInv(String),
     DivCero,
@@ -546,7 +546,7 @@ impl std::fmt::Display for ErrFast {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // mensajes claros en español para principiantes.
         match self {
-            ErrFast::StackUnder(m) => write!(f, "pila insuficiente: {}", m),
+            ErrFast::PilaInsuficiente(m) => write!(f, "pila insuficiente: {}", m),
             ErrFast::VarNoDecl(v) => {
                 write!(f, "variable no declarada: '{}' (¿olvidaste declararla?)", v)
             }

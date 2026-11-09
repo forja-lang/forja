@@ -111,7 +111,7 @@ pub fn nativo_entero_a_hex(
 /// Ej: hex "313233" (que representa "123") → entero 123
 /// args[0]: hex_texto (Texto) — string hex completo
 /// args[1]: pos (Entero) — posición inicial en hex chars (0-based)
-/// args[2]: length (Entero) — longitud en hex chars (debe ser par)
+/// args[2]: longitud (Entero) — longitud en hex chars (debe ser par)
 /// Retorna: entero convertido, o 0 si error
 pub fn nativo_hex_decimal_a_entero(
     vm: &mut dyn Anfitrion,
@@ -119,22 +119,22 @@ pub fn nativo_hex_decimal_a_entero(
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
-            "_hex_decimal_a_entero requiere 3 argumentos: hex_str, pos, length".into(),
+            "_hex_decimal_a_entero requiere 3 argumentos: hex_str, pos, longitud".into(),
         ));
     }
 
     let hex_texto = obtener_texto(vm, args[0])?;
     let posicion = obtener_entero(args[1])? as usize;
-    let length = obtener_entero(args[2])? as usize;
+    let longitud = obtener_entero(args[2])? as usize;
 
-    if posicion + length > hex_texto.len() || length == 0 || !length.is_multiple_of(2) {
+    if posicion + longitud > hex_texto.len() || longitud == 0 || !longitud.is_multiple_of(2) {
         return Ok(ValorFast::entero(0));
     }
 
     let caracteres = hex_texto.as_bytes();
     let mut resultado: i64 = 0;
     let mut i = posicion;
-    while i < posicion + length {
+    while i < posicion + longitud {
         let high = hex_digit_val(caracteres[i]);
         let low = hex_digit_val(caracteres[i + 1]);
         if high < 0 || low < 0 {
@@ -214,10 +214,10 @@ pub fn parsear_bencode_texto(
         None => return Ok(ValorFast::nulo()),
     };
     let longitud_texto = std::str::from_utf8(&data[*posicion..colon])
-        .map_err(|_| ErrFast::TipoInv("bencode: length no UTF-8".into()))?;
+        .map_err(|_| ErrFast::TipoInv("bencode: longitud no UTF-8".into()))?;
     let longitud: usize = longitud_texto
         .parse()
-        .map_err(|_| ErrFast::TipoInv("bencode: length inválido".into()))?;
+        .map_err(|_| ErrFast::TipoInv("bencode: longitud inválido".into()))?;
     let inicio = colon + 1;
     *posicion = inicio + longitud;
 
@@ -304,10 +304,10 @@ pub fn parsear_bencode_valor(
                     None => return Ok(ValorFast::nulo()),
                 };
                 let klen_str = std::str::from_utf8(&data[*posicion..colon])
-                    .map_err(|_| ErrFast::TipoInv("bencode: key length no UTF-8".into()))?;
+                    .map_err(|_| ErrFast::TipoInv("bencode: key longitud no UTF-8".into()))?;
                 let klen: usize = klen_str
                     .parse()
-                    .map_err(|_| ErrFast::TipoInv("bencode: key length inválido".into()))?;
+                    .map_err(|_| ErrFast::TipoInv("bencode: key longitud inválido".into()))?;
                 let kstart = colon + 1;
                 let kend = kstart + klen;
                 let clave_raw = &data[kstart..kend];

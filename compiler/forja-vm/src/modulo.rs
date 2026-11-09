@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 /// Identificador único de módulo = IdSimbolo de su ruta canónica
-pub type ModuleId = IdSimbolo;
+pub type IdModulo = IdSimbolo;
 
 /// Metadatos de un módulo cargado
 #[derive(Debug, Clone)]
@@ -22,8 +22,8 @@ pub struct ModuloInformacion {
     pub fuente_hash: u64,
     pub funciones: Vec<IdSimbolo>,
     pub variables_globales: Vec<(String, bool)>, // (nombre, mutable)
-    pub imports: Vec<ModuleId>,
-    pub dependents: Vec<ModuleId>,
+    pub imports: Vec<IdModulo>,
+    pub dependents: Vec<IdModulo>,
     pub bytecode: Vec<Opcode>,
     pub version: u32,
 }
@@ -31,10 +31,10 @@ pub struct ModuloInformacion {
 /// Caché central de módulos
 #[derive(Debug, Clone)]
 pub struct ModuloCache {
-    pub por_ruta: HashMap<String, ModuleId>,
-    pub por_id: HashMap<ModuleId, ModuloInformacion>,
-    pub grafo_importaciones: HashMap<ModuleId, Vec<ModuleId>>,
-    pub grafo_dependientes: HashMap<ModuleId, Vec<ModuleId>>,
+    pub por_ruta: HashMap<String, IdModulo>,
+    pub por_id: HashMap<IdModulo, ModuloInformacion>,
+    pub grafo_importaciones: HashMap<IdModulo, Vec<IdModulo>>,
+    pub grafo_dependientes: HashMap<IdModulo, Vec<IdModulo>>,
 }
 
 impl Default for ModuloCache {
@@ -84,8 +84,8 @@ impl ModuloResolver {
         }
     }
 
-    /// Resuelve un módulo y retorna su ModuleId junto con el Programa
-    pub fn resolver_con_id(&mut self, ruta: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
+    /// Resuelve un módulo y retorna su IdModulo junto con el Programa
+    pub fn resolver_con_id(&mut self, ruta: &str) -> Result<(Programa, IdModulo), Vec<ErrorForja>> {
         let ruta_limpia = ruta.replace('\\', "/");
         if ruta_limpia.contains("..") {
             return Err(vec![ErrorForja::nuevo(
@@ -172,10 +172,10 @@ impl ModuloResolver {
                         "Verificá que el archivo exista.",
                     )]
                 })?;
-                let mut lexer = Lexer::new(&fuente);
+                let mut lexer = Lexer::nuevo(&fuente);
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::nuevo(tokens);
-                let mut programa = parser.parse()?;
+                let mut programa = parser.parsear()?;
 
                 // Resolver imports anidados
                 let mut final_decls = Vec::new();
@@ -263,10 +263,10 @@ impl ModuloResolver {
                         "Verificá que el paquete esté instalado.",
                     )]
                 })?;
-                let mut lexer = Lexer::new(&fuente);
+                let mut lexer = Lexer::nuevo(&fuente);
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::nuevo(tokens);
-                let mut programa = parser.parse()?;
+                let mut programa = parser.parsear()?;
 
                 let modulo_id = IdSimbolo(
                     ruta_str
@@ -321,8 +321,8 @@ impl ModuloResolver {
     }
 
     /// Recompila un módulo desde disco y retorna el nuevo Programa
-    pub fn recargar(&mut self, modulo_id: ModuleId) -> Result<Programa, Vec<ErrorForja>> {
-        // Buscar la ruta del módulo por su ModuleId
+    pub fn recargar(&mut self, modulo_id: IdModulo) -> Result<Programa, Vec<ErrorForja>> {
+        // Buscar la ruta del módulo por su IdModulo
         let ruta = self
             .cache_modulos
             .por_id
@@ -364,7 +364,7 @@ impl ModuloResolver {
 
     /// Verifica si un módulo cambió en disco comparando hashes
     pub fn modulo_cambio(&mut self, ruta: &str) -> bool {
-        // Obtener ModuleId
+        // Obtener IdModulo
         let modulo_id = match self.cache_modulos.por_ruta.get(ruta) {
             Some(&id) => id,
             None => return false, // No registrado → no hay cambio detectable
@@ -382,7 +382,7 @@ impl ModuloResolver {
     }
 
     /// Lista los módulos cuyo hash cambió en disco
-    pub fn modulos_cambiados(&self) -> Vec<(ModuleId, String)> {
+    pub fn modulos_cambiados(&self) -> Vec<(IdModulo, String)> {
         let mut cambiados = Vec::new();
         for (modulo_id, informacion) in &self.cache_modulos.por_id {
             let ruta_archivo = self
@@ -398,7 +398,7 @@ impl ModuloResolver {
     }
 
     /// Agrega un módulo al cache con su información completa
-    pub fn registrar_modulo(&mut self, modulo_id: ModuleId, informacion: ModuloInformacion) {
+    pub fn registrar_modulo(&mut self, modulo_id: IdModulo, informacion: ModuloInformacion) {
         self.cache_modulos
             .por_ruta
             .insert(informacion.ruta_fuente.clone(), modulo_id);
@@ -420,7 +420,7 @@ impl ModuloResolver {
     }
 
     /// Retorna los dependientes directos de un módulo
-    pub fn dependientes_de(&self, modulo_id: ModuleId) -> Option<&[ModuleId]> {
+    pub fn dependientes_de(&self, modulo_id: IdModulo) -> Option<&[IdModulo]> {
         self.cache_modulos
             .grafo_dependientes
             .get(&modulo_id)
@@ -428,7 +428,7 @@ impl ModuloResolver {
     }
 
     /// Retorna las importaciones directas de un módulo
-    pub fn importaciones_de(&self, modulo_id: ModuleId) -> Option<&[ModuleId]> {
+    pub fn importaciones_de(&self, modulo_id: IdModulo) -> Option<&[IdModulo]> {
         self.cache_modulos
             .grafo_importaciones
             .get(&modulo_id)
@@ -439,7 +439,7 @@ impl ModuloResolver {
     fn resolver_con_id_embebido(
         &mut self,
         ruta_embedded: &str,
-    ) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
+    ) -> Result<(Programa, IdModulo), Vec<ErrorForja>> {
         // Extraer el nombre real del módulo: "embedded://std/io" → "std/io"
         let nombre_modulo = ruta_embedded
             .strip_prefix("embedded://")
@@ -465,7 +465,7 @@ impl ModuloResolver {
                 "Esto es un error interno del compilador. Reportalo en https://github.com/forja-lang/forja",
             )])?;
 
-        // Generar ModuleId a partir del nombre
+        // Generar IdModulo a partir del nombre
         let modulo_id = IdSimbolo(
             nombre_modulo
                 .bytes()
@@ -473,10 +473,10 @@ impl ModuloResolver {
         );
 
         // Parsear el código fuente
-        let mut lexer = crate::lexer::Lexer::new(fuente);
+        let mut lexer = crate::lexer::Lexer::nuevo(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = crate::parser::Parser::nuevo(tokens);
-        let mut programa = parser.parse()?;
+        let mut programa = parser.parsear()?;
 
         // Resolver imports anidados (una stdlib puede importar otra)
         let mut final_decls = Vec::new();

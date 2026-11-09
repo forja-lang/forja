@@ -321,7 +321,7 @@ impl DeadCodeEliminator {
                 self.recolectar_en_expresion(objeto);
                 self.recolectar_en_expresion(valor);
             }
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 self.recolectar_en_expresion(array);
                 self.recolectar_en_expresion(valor);
             }
@@ -423,7 +423,7 @@ pub(crate) fn tiene_efectos_secundarios(expr: &Expresion) -> bool {
         | Expresion::Try(_)
         | Expresion::Asignacion { .. }
         | Expresion::AsignacionCampo { .. }
-        | Expresion::ArraySet { .. }
+        | Expresion::ArregloFijar { .. }
         | Expresion::AsignacionCompuesta { .. }
         | Expresion::Closure { .. } => true,
         Expresion::Binaria {

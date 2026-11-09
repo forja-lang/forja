@@ -49,7 +49,7 @@ PRESTAMOS = set(
     """
     bytecode opcode uop token hash buffer socket byte bit ptr mut id idx vm jit gc ast hir
     ir ffi json http tls sql sandbox arena mutex crate span runtime vec std dce cse
-    struct trait enum descriptor
+    struct trait enum descriptor ref prop handle
     config lint lexer parser cache enum version str
     """.split()
 )
@@ -64,7 +64,7 @@ TRAITS_STD = set(
 
 # Nombres que son de otro dominio y no se traducen.
 EXENTAS_GLOBALES = set(
-    """main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
+    """Output Target close munmap msync main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
     WriteProcessMemory ReadProcessMemory VirtualAlloc VirtualFree CreateProcessW
     GetProcAddress CreateToolhelp32Snapshot GetLastError GetStdHandle GetConsoleMode
     GetConsoleWindow GetConsoleScreenBufferInfo GetAsyncKeyState SetConsoleMode
@@ -187,6 +187,9 @@ def revisar(ruta: Path) -> list[tuple[int, str]]:
     )
     for numero, linea in enumerate(codigo.splitlines(), 1):
         if linea.lstrip().startswith("//"):
+            continue
+        # los nombres de módulo son nombres de archivo/directorio (§8.7): no se renombran
+        if re.match(r"\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+[a-z_]", linea):
             continue
         nombres = []
         if m := RE_DECL.search(linea):

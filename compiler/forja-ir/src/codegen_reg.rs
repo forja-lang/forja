@@ -14,13 +14,13 @@ enum Operand {
     /// Registro físico
     Reg(PhysReg),
     /// Slot de spill en el stack (offset desde RBP: accedido como [RBP - (off+8)])
-    Stack(usize),
+    Pila(usize),
 }
 
 /// Tabla de llamadas vacía (para codegen sin resolución de funciones)
-static EMPTY_CALL_TABLE: std::sync::OnceLock<HashMap<String, u64>> = std::sync::OnceLock::new();
+static TABLA_LLAMADAS_VACIA: std::sync::OnceLock<HashMap<String, u64>> = std::sync::OnceLock::new();
 fn empty_llamada_tabla() -> &'static HashMap<String, u64> {
-    EMPTY_CALL_TABLE.get_or_init(HashMap::new)
+    TABLA_LLAMADAS_VACIA.get_or_init(HashMap::new)
 }
 
 /// Stub para `Call` sin dirección resuelta: retorna 0 sin efectos.
@@ -87,7 +87,7 @@ impl<'a> CodegenReg<'a> {
     fn resolve(&self, vreg: VirtReg) -> Operand {
         match self.assignments.get(&vreg) {
             Some(Location::Reg(phys)) => Operand::Reg(*phys),
-            Some(Location::Stack(slot)) => Operand::Stack(*slot),
+            Some(Location::Pila(slot)) => Operand::Pila(*slot),
             None => {
                 // VirtReg no asignada (puede ocurrir para dead code)
                 // Retornar RAX como fallback
@@ -135,7 +135,7 @@ impl<'a> CodegenReg<'a> {
     /// Emit una única instrucción
     fn emitir_instruction(&mut self, inst: &RegInstruction) {
         match inst {
-            RegInstruction::LoadImm { dst, valor } => {
+            RegInstruction::CargarInmediato { dst, valor } => {
                 let d = self.resolve(*dst);
                 match d {
                     Operand::Reg(r) => {
@@ -148,27 +148,27 @@ impl<'a> CodegenReg<'a> {
                             self.emitir_mov_reg_imm64(r, *valor);
                         }
                     }
-                    Operand::Stack(off) => {
+                    Operand::Pila(off) => {
                         self.emitir_mov_rax_imm64(*valor);
                         self.emitir_almacen_rax_pila(off);
                     }
                 }
             }
 
-            RegInstruction::LoadFloat { dst, valor } => {
+            RegInstruction::CargarFlotante { dst, valor } => {
                 let d = self.resolve(*dst);
                 let bits = valor.to_bits() as i64;
                 self.emitir_mov_rax_imm64(bits);
                 match d {
                     Operand::Reg(r) => self.emitir_movq_xmm_rax(r),
-                    Operand::Stack(off) => {
+                    Operand::Pila(off) => {
                         self.emitir_movq_xmm_rax(PhysReg::XMM0);
                         self.emitir_almacen_xmm0_pila(off);
                     }
                 }
             }
 
-            RegInstruction::Move { dst, src, .. } => {
+            RegInstruction::Mover { dst, src, .. } => {
                 let d = self.resolve(*dst);
                 let s = self.resolve(*src);
                 self.emitir_mov_operands(&d, &s);
@@ -265,7 +265,7 @@ impl<'a> CodegenReg<'a> {
                 self.emitir_movzx_al_to(&d);
             }
 
-            RegInstruction::LoadVar { dst, var_idx, .. } => {
+            RegInstruction::CargarVariable { dst, var_idx, .. } => {
                 let d = self.resolve(*dst);
                 let offset = (*var_idx as i32) * 8;
                 match d {
@@ -273,14 +273,14 @@ impl<'a> CodegenReg<'a> {
                         // mov reg, [vars_ptr + idx*8]
                         self.emitir_cargar_from_vars(r, offset);
                     }
-                    Operand::Stack(off) => {
+                    Operand::Pila(off) => {
                         self.emitir_cargar_from_vars(PhysReg::RAX, offset);
                         self.emitir_almacen_rax_pila(off);
                     }
                 }
             }
 
-            RegInstruction::StoreVar { src, var_idx, .. } => {
+            RegInstruction::FijarVariable { src, var_idx, .. } => {
                 let s = self.resolve(*src);
                 let offset = (*var_idx as i32) * 8;
                 match s {
@@ -288,7 +288,7 @@ impl<'a> CodegenReg<'a> {
                         // mov [vars_ptr + idx*8], reg
                         self.emitir_almacen_to_vars(r, offset);
                     }
-                    Operand::Stack(off) => {
+                    Operand::Pila(off) => {
                         self.emitir_cargar_rax_pila(off);
                         self.emitir_almacen_to_vars(PhysReg::RAX, offset);
                     }
@@ -307,7 +307,7 @@ impl<'a> CodegenReg<'a> {
                 self.emitir_jcc_rel32(0x84, *etiqueta); // 0x84 = jz
             }
 
-            RegInstruction::Label(etiqueta) => {
+            RegInstruction::Etiqueta(etiqueta) => {
                 self.desplazamientos_etiquetas
                     .insert(*etiqueta, self.bytes.len());
             }
@@ -378,7 +378,7 @@ impl<'a> CodegenReg<'a> {
                     match a {
                         Operand::Reg(PhysReg::RAX) => {}
                         Operand::Reg(r) => self.emitir_mov_reg_reg(PhysReg::RAX, r),
-                        Operand::Stack(off) => self.emitir_cargar_rax_pila(off),
+                        Operand::Pila(off) => self.emitir_cargar_rax_pila(off),
                     }
                     self.emitir_almacen_to_vars(PhysReg::RAX, (i as i32) * 8);
                 }
@@ -534,13 +534,13 @@ impl<'a> CodegenReg<'a> {
             (Operand::Reg(d), Operand::Reg(s)) => {
                 self.emitir_mov_reg_reg(*d, *s);
             }
-            (Operand::Reg(r), Operand::Stack(off)) => {
+            (Operand::Reg(r), Operand::Pila(off)) => {
                 self.emitir_cargar_reg_pila(*r, *off);
             }
-            (Operand::Stack(off), Operand::Reg(r)) => {
+            (Operand::Pila(off), Operand::Reg(r)) => {
                 self.emitir_almacen_reg_pila(*r, *off);
             }
-            (Operand::Stack(d), Operand::Stack(s)) => {
+            (Operand::Pila(d), Operand::Pila(s)) => {
                 self.emitir_cargar_rax_pila(*s);
                 self.emitir_almacen_rax_pila(*d);
             }
@@ -709,7 +709,7 @@ impl<'a> CodegenReg<'a> {
             (Operand::Reg(d), Operand::Reg(s)) => {
                 self.emitir_sumar_reg_reg(*d, *s);
             }
-            (Operand::Reg(r), Operand::Stack(off)) => {
+            (Operand::Reg(r), Operand::Pila(off)) => {
                 // mov tmp, [rsp+off]; add reg, tmp
                 self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 self.emitir_sumar_reg_reg(*r, PhysReg::R10);
@@ -725,7 +725,7 @@ impl<'a> CodegenReg<'a> {
     fn dst_phys_or_rax(&self, d: &Operand) -> PhysReg {
         match d {
             Operand::Reg(r) => *r,
-            Operand::Stack(_) => PhysReg::RAX,
+            Operand::Pila(_) => PhysReg::RAX,
         }
     }
 
@@ -750,7 +750,7 @@ impl<'a> CodegenReg<'a> {
             (Operand::Reg(d), Operand::Reg(s)) => {
                 self.emitir_sub_reg_reg(*d, *s);
             }
-            (Operand::Reg(r), Operand::Stack(off)) => {
+            (Operand::Reg(r), Operand::Pila(off)) => {
                 self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 self.emitir_sub_reg_reg(*r, PhysReg::R10);
             }
@@ -782,7 +782,7 @@ impl<'a> CodegenReg<'a> {
             (Operand::Reg(d), Operand::Reg(s)) => {
                 self.emitir_imul_reg_reg(*d, *s);
             }
-            (Operand::Reg(r), Operand::Stack(off)) => {
+            (Operand::Reg(r), Operand::Pila(off)) => {
                 self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 self.emitir_imul_reg_reg(*r, PhysReg::R10);
             }
@@ -811,7 +811,7 @@ impl<'a> CodegenReg<'a> {
                 self.bytes.push(0xF7);
                 self.bytes.push(0xF8 | (r.rex_index() & 7));
             }
-            Operand::Stack(off) => {
+            Operand::Pila(off) => {
                 self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 let rex = 0x48
                     | if PhysReg::R10.rex_index() >= 8 {
@@ -832,15 +832,15 @@ impl<'a> CodegenReg<'a> {
             (Operand::Reg(a_r), Operand::Reg(b_r)) => {
                 self.emitir_cmp_reg_reg(*a_r, *b_r);
             }
-            (Operand::Reg(r), Operand::Stack(off)) => {
+            (Operand::Reg(r), Operand::Pila(off)) => {
                 self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 self.emitir_cmp_reg_reg(*r, PhysReg::R10);
             }
-            (Operand::Stack(off), Operand::Reg(r)) => {
+            (Operand::Pila(off), Operand::Reg(r)) => {
                 self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 self.emitir_cmp_reg_reg(PhysReg::R10, *r);
             }
-            (Operand::Stack(a_off), Operand::Stack(b_off)) => {
+            (Operand::Pila(a_off), Operand::Pila(b_off)) => {
                 self.emitir_cargar_reg_pila(PhysReg::RAX, *a_off);
                 self.emitir_cargar_reg_pila(PhysReg::R10, *b_off);
                 self.emitir_cmp_reg_reg(PhysReg::RAX, PhysReg::R10);
@@ -867,7 +867,7 @@ impl<'a> CodegenReg<'a> {
                 self.bytes
                     .push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
             }
-            Operand::Stack(off) => {
+            Operand::Pila(off) => {
                 self.emitir_cargar_rax_pila(*off);
                 self.bytes.extend_from_slice(&[0x48, 0x85, 0xC0]);
             }
@@ -932,7 +932,7 @@ impl<'a> CodegenReg<'a> {
                         .extend_from_slice(&[rex, 0x0F, 0xB6, 0xC0 | r_code]);
                 }
             }
-            Operand::Stack(off) => {
+            Operand::Pila(off) => {
                 self.bytes.extend_from_slice(&[0x48, 0x0F, 0xB6, 0xC0]); // movzx rax, al
                 self.emitir_almacen_rax_pila(*off);
             }
@@ -946,7 +946,7 @@ impl<'a> CodegenReg<'a> {
             Operand::Reg(r) => {
                 self.emitir_mov_reg_reg(PhysReg::RAX, *r);
             }
-            Operand::Stack(off) => {
+            Operand::Pila(off) => {
                 self.emitir_cargar_rax_pila(*off);
             }
         }
@@ -959,7 +959,7 @@ impl<'a> CodegenReg<'a> {
             Operand::Reg(r) => {
                 self.emitir_mov_reg_reg(*r, PhysReg::RAX);
             }
-            Operand::Stack(off) => {
+            Operand::Pila(off) => {
                 self.emitir_almacen_rax_pila(*off);
             }
         }
@@ -1019,7 +1019,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// Retorna los bytes generados
-    pub fn finish(self) -> Vec<u8> {
+    pub fn finalizar(self) -> Vec<u8> {
         self.bytes
     }
 }
@@ -1052,7 +1052,7 @@ pub fn emitir_program_con_calls(
     let spill_frame = (cantidad_derrames * 8) as i32;
     let mut codegen = CodegenReg::con_direcciones_llamada(assignments, direcciones_llamada);
     codegen.emitir_program(prog, PhysReg::RBX, spill_frame);
-    codegen.finish()
+    codegen.finalizar()
 }
 
 #[cfg(test)]
@@ -1070,8 +1070,8 @@ mod tests {
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: v0, valor: 5 },
-                RegInstruction::LoadImm { dst: v1, valor: 3 },
+                RegInstruction::CargarInmediato { dst: v0, valor: 5 },
+                RegInstruction::CargarInmediato { dst: v1, valor: 3 },
                 RegInstruction::RegAdd {
                     dst: v2,
                     a: v0,
@@ -1097,14 +1097,14 @@ mod tests {
         let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
-            instructions: vec![RegInstruction::LoadImm { dst: v0, valor: 42 }],
+            instructions: vec![RegInstruction::CargarInmediato { dst: v0, valor: 42 }],
             terminator: RegInstruction::Return { src: v0 },
         };
         prog.blocks.push(block);
 
         let mut assignments = HashMap::new();
         // v0 en un slot de spill → exige frame (sub rsp) y epílogo
-        assignments.insert(v0, Location::Stack(0));
+        assignments.insert(v0, Location::Pila(0));
 
         let code = emitir_program(&prog, &assignments, 1);
         assert!(!code.is_empty());
@@ -1135,7 +1135,7 @@ mod tests {
         let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
-            instructions: vec![RegInstruction::LoadImm { dst: v0, valor: 7 }],
+            instructions: vec![RegInstruction::CargarInmediato { dst: v0, valor: 7 }],
             terminator: RegInstruction::Return { src: v0 },
         };
         prog.blocks.push(block);

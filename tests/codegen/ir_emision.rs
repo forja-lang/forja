@@ -452,9 +452,9 @@ fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
     use forja::ir_ssa;
 
     let fuente = "funcion suma(n: Entero) -> Entero {\n    variable s = 0\n    variable i = 0\n    mientras (i < n) {\n        s = s + i\n        i = i + 1\n    }\n    retornar s\n}\nescribir(suma(4))";
-    let mut lexer = forja::lexer::Lexer::new(fuente);
+    let mut lexer = forja::lexer::Lexer::nuevo(fuente);
     let tokens = lexer.tokenize().unwrap();
-    let programa = forja::parser::Parser::nuevo(tokens).parse().unwrap();
+    let programa = forja::parser::Parser::nuevo(tokens).parsear().unwrap();
     let mut ctor = ConstructorDesdeAst::nuevo();
     let ir = ctor.programa_a_ir(&programa);
     assert!(ctor.soportado);

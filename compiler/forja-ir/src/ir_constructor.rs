@@ -712,7 +712,7 @@ impl ConstructorDesdeAst {
 
             // `arr[i] = v` / `mapa[k] = v` como expresión evalúa al
             // valor asignado (el backend AST lo deja en la pila).
-            Expresion::ArraySet { array, valor } => {
+            Expresion::ArregloFijar { array, valor } => {
                 let val = self.expresion_a_ir(constructor_ir, valor);
                 if let Expresion::Index { objeto, indice } = array.as_ref() {
                     let obj = self.expresion_a_ir(constructor_ir, objeto);
@@ -784,8 +784,8 @@ impl ConstructorDesdeAst {
         }
     }
 
-    /// emite `coleccion[clave] = valor` eligiendo `ArraySet`/`MapSet`
-    /// según el tipo estático (o `ArraySet`, que discrimina en runtime).
+    /// emite `coleccion[clave] = valor` eligiendo `ArregloFijar`/`MapSet`
+    /// según el tipo estático (o `ArregloFijar`, que discrimina en runtime).
     fn emitir_asignacion_coleccion(
         &mut self,
         constructor_ir: &mut ConstructorIr,
@@ -1047,7 +1047,7 @@ impl ConstructorDesdeAst {
                         let res = constructor_ir.emitir_fijar_valor_de_mapa(arr, idx, val);
                         constructor_ir.emitir_guardado(mem, res);
                     }
-                    // Arreglo o tipo desconocido: `ArraySet` discrimina en runtime.
+                    // Arreglo o tipo desconocido: `ArregloFijar` discrimina en runtime.
                     _ => {
                         let res = constructor_ir.emitir_fijar_elemento(arr, idx, val);
                         constructor_ir.emitir_guardado(mem, res);
@@ -1102,7 +1102,7 @@ impl ConstructorDesdeAst {
                     return;
                 }
                 // etapa 3: `arr[i] = v` / `mapa[k] = v` llega como
-                // Expresion::ArraySet; la expresión genérica ya lo resuelve y el
+                // Expresion::ArregloFijar; la expresión genérica ya lo resuelve y el
                 // valor descartado queda en la pila sin consumidores.
                 // Expresión usada como sentencia: se evalúa y el valor se
                 // descarta. Cubre llamadas, métodos, `hilo { ... }`, `canal()` y
@@ -1747,10 +1747,10 @@ mod tests {
     use super::*;
 
     fn parsear_fuente(fuente: &str) -> Programa {
-        let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
+        let mut lexer = forja_syntax::lexer::Lexer::nuevo(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = forja_syntax::parser::Parser::nuevo(tokens);
-        parser.parse().unwrap()
+        parser.parsear().unwrap()
     }
 
     #[test]

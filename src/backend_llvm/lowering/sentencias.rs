@@ -444,8 +444,23 @@ impl Lowering {
             Declaracion::Cuando { .. } => {
                 return Err("`cuando` (bloque reactivo) no está soportado por la ruta LLVM".into())
             }
-            Declaracion::AsignacionMultiple { .. } => {
-                return Err("`variable a, b = ...` no está soportado por la ruta LLVM".into())
+            Declaracion::AsignacionMultiple {
+                variables, valor, ..
+            } => {
+                // `variable e, r = canal()`: el canal nativo es simétrico, así que
+                // ambos nombres apuntan al mismo handle.
+                let v = self.expr(valor)?;
+                if v.t() != T::Canal {
+                    return Err(
+                        "`variable a, b = ...` sólo se soporta para `canal()` en la ruta LLVM"
+                            .into(),
+                    );
+                }
+                for nombre in variables {
+                    let slot = self.alloca(&T::Canal, nombre);
+                    self.guardar(&slot, V::Canal(v.r().to_string()), &T::Canal);
+                    self.vars.insert(nombre.clone(), Var { slot, t: T::Canal });
+                }
             }
         }
         Ok(())
@@ -459,6 +474,8 @@ fn valor_param(t: &T, i: usize) -> V {
         T::Arreglo => V::Arreglo(format!("%p{}", i)),
         T::Mapa => V::Mapa(format!("%p{}", i)),
         T::Enum(c) => V::Enum(format!("%p{}", i), c.clone()),
+        T::Canal => V::Canal(format!("%p{}", i)),
+        T::Closure => V::Closure(format!("%p{}", i)),
         T::Clase(c) => V::Clase(format!("%p{}", i), c.clone()),
         T::Funcion => V::Funcion(format!("%p{}", i)),
         T::Nulo => V::Nulo,

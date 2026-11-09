@@ -10,16 +10,16 @@ use crate::register_alloc::{RegClase, VirtReg};
 #[derive(Debug, Clone)]
 pub enum RegInstruction {
     // Movimiento de datos
-    Move {
+    Mover {
         dst: VirtReg,
         src: VirtReg,
         clase: RegClase,
     },
-    LoadImm {
+    CargarInmediato {
         dst: VirtReg,
         valor: i64,
     },
-    LoadFloat {
+    CargarFlotante {
         dst: VirtReg,
         valor: f64,
     },
@@ -71,12 +71,12 @@ pub enum RegInstruction {
     },
 
     // Load/Store desde memoria (variables)
-    LoadVar {
+    CargarVariable {
         dst: VirtReg,
         var_idx: usize,
         clase: RegClase,
     },
-    StoreVar {
+    FijarVariable {
         src: VirtReg,
         var_idx: usize,
         clase: RegClase,
@@ -90,7 +90,7 @@ pub enum RegInstruction {
         cond: VirtReg,
         etiqueta: usize,
     },
-    Label(usize),
+    Etiqueta(usize),
 
     // Función
     Call {
@@ -165,9 +165,9 @@ impl Default for RegProgram {
 pub fn obtener_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClase)>, Vec<VirtReg>) {
     use crate::register_alloc::RegClase as RClass;
     match instr {
-        RegInstruction::LoadImm { dst, .. } => (vec![], vec![*dst]),
-        RegInstruction::LoadFloat { dst, .. } => (vec![], vec![*dst]),
-        RegInstruction::Move { dst, src, clase } => (vec![(*src, *clase)], vec![*dst]),
+        RegInstruction::CargarInmediato { dst, .. } => (vec![], vec![*dst]),
+        RegInstruction::CargarFlotante { dst, .. } => (vec![], vec![*dst]),
+        RegInstruction::Mover { dst, src, clase } => (vec![(*src, *clase)], vec![*dst]),
         RegInstruction::RegAdd { dst, a, b }
         | RegInstruction::RegSub { dst, a, b }
         | RegInstruction::RegMul { dst, a, b }
@@ -182,10 +182,10 @@ pub fn obtener_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClase)>, V
             vec![*dst],
         ),
         RegInstruction::RegNot { dst, src } => (vec![(*src, RClass::Integer)], vec![*dst]),
-        RegInstruction::LoadVar { dst, .. } => (vec![], vec![*dst]),
-        RegInstruction::StoreVar { src, clase, .. } => (vec![(*src, *clase)], vec![]),
+        RegInstruction::CargarVariable { dst, .. } => (vec![], vec![*dst]),
+        RegInstruction::FijarVariable { src, clase, .. } => (vec![(*src, *clase)], vec![]),
         RegInstruction::JumpIfFalse { cond, .. } => (vec![(*cond, RClass::Integer)], vec![]),
-        RegInstruction::Jump { .. } | RegInstruction::Label(_) | RegInstruction::Nop => {
+        RegInstruction::Jump { .. } | RegInstruction::Etiqueta(_) | RegInstruction::Nop => {
             (vec![], vec![])
         }
         RegInstruction::Return { src } => (vec![(*src, RClass::Integer)], vec![]),
@@ -206,10 +206,10 @@ fn clase_de_def(
 ) -> Option<RegClase> {
     use crate::register_alloc::RegClase as RClass;
     match instr {
-        RegInstruction::LoadImm { .. } => Some(RClass::Integer),
-        RegInstruction::LoadFloat { .. } => Some(RClass::Float),
-        RegInstruction::Move { clase, .. } => Some(*clase),
-        RegInstruction::LoadVar { clase, .. } => Some(*clase),
+        RegInstruction::CargarInmediato { .. } => Some(RClass::Integer),
+        RegInstruction::CargarFlotante { .. } => Some(RClass::Float),
+        RegInstruction::Mover { clase, .. } => Some(*clase),
+        RegInstruction::CargarVariable { clase, .. } => Some(*clase),
         RegInstruction::RegAdd { a, b, .. }
         | RegInstruction::RegSub { a, b, .. }
         | RegInstruction::RegMul { a, b, .. }
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_obtener_uses_defs_cargar_imm() {
-        let instr = RegInstruction::LoadImm { dst: 5, valor: 42 };
+        let instr = RegInstruction::CargarInmediato { dst: 5, valor: 42 };
         let (uses, defs) = obtener_uses_defs(&instr);
         assert!(uses.is_empty());
         assert_eq!(defs, vec![5]);
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_obtener_uses_defs_almacen_variable() {
-        let instr = RegInstruction::StoreVar {
+        let instr = RegInstruction::FijarVariable {
             src: 0,
             var_idx: 3,
             clase: RegClase::Integer,
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_obtener_uses_defs_cargar_variable() {
-        let instr = RegInstruction::LoadVar {
+        let instr = RegInstruction::CargarVariable {
             dst: 2,
             var_idx: 1,
             clase: RegClase::Float,
@@ -398,9 +398,9 @@ mod tests {
         let block = BloqueBasico {
             etiqueta: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: 0, valor: 5 }, // idx 0: def v0
-                RegInstruction::LoadImm { dst: 1, valor: 3 }, // idx 1: def v1
-                RegInstruction::RegAdd { dst: 2, a: 0, b: 1 }, // idx 2: use v0, v1; def v2
+                RegInstruction::CargarInmediato { dst: 0, valor: 5 }, // idx 0: def v0
+                RegInstruction::CargarInmediato { dst: 1, valor: 3 }, // idx 1: def v1
+                RegInstruction::RegAdd { dst: 2, a: 0, b: 1 },        // idx 2: use v0, v1; def v2
             ],
             terminator: RegInstruction::Return { src: 2 },
         };
@@ -431,13 +431,13 @@ mod tests {
         let block = BloqueBasico {
             etiqueta: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: 0, valor: 1 }, // idx 0
-                RegInstruction::LoadVar {
+                RegInstruction::CargarInmediato { dst: 0, valor: 1 }, // idx 0
+                RegInstruction::CargarVariable {
                     dst: 1,
                     var_idx: 0,
                     clase: RegClase::Integer,
                 }, // idx 1, v0 dead after idx 0
-                RegInstruction::LoadImm { dst: 2, valor: 2 }, // idx 2, v1 dead after idx 1
+                RegInstruction::CargarInmediato { dst: 2, valor: 2 }, // idx 2, v1 dead after idx 1
             ],
             terminator: RegInstruction::Return { src: 2 },
         };

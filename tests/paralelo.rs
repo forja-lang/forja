@@ -2,11 +2,11 @@
 #![cfg(feature = "parallel")]
 
 use forja::bytecode::tabla_simbolos::IdSimbolo;
-use forja::ModuleId;
+use forja::IdModulo;
 
 #[test]
 fn modulos_paralelos_coinciden_con_secuencial() {
-    let modulos: Vec<(String, ModuleId)> = (0..10)
+    let modulos: Vec<(String, IdModulo)> = (0..10)
         .map(|i| {
             (
                 format!("variable x{i} = {i}\nescribir(x{i})\n"),
@@ -27,7 +27,7 @@ fn modulos_paralelos_coinciden_con_secuencial() {
 
 #[test]
 fn umbral_pequeno_usa_ruta_secuencial() {
-    let modulos: Vec<(String, ModuleId)> = (0..2)
+    let modulos: Vec<(String, IdModulo)> = (0..2)
         .map(|i| (format!("variable y{i} = {i}\n"), IdSimbolo(100 + i)))
         .collect();
     let salida = forja::compilar_modulos_paralelo(modulos).expect("2 módulos");

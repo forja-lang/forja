@@ -409,7 +409,7 @@ impl Sesion {
     pub fn nueva(config: Config) -> Self {
         Sesion {
             config,
-            mapa_fuente: forja_span::FuenteMapa::new(),
+            mapa_fuente: forja_span::FuenteMapa::nuevo(),
             diagnosticos: Vec::new(),
         }
     }
@@ -417,7 +417,7 @@ impl Sesion {
     pub fn por_defecto() -> Self {
         Sesion {
             config: Config::default(),
-            mapa_fuente: forja_span::FuenteMapa::new(),
+            mapa_fuente: forja_span::FuenteMapa::nuevo(),
             diagnosticos: Vec::new(),
         }
     }

@@ -284,9 +284,9 @@ fn asignaciones_como_expresion() {
             valor: Box::new(num(6)),
         });
 
-        // ArraySet: no implementado, pero compila valor y arreglo.
+        // ArregloFijar: no implementado, pero compila valor y arreglo.
         let antes = c.salida.len();
-        let _ = c.compilar_expresion_asm(&Expresion::ArraySet {
+        let _ = c.compilar_expresion_asm(&Expresion::ArregloFijar {
             array: Box::new(id("ent")),
             valor: Box::new(num(7)),
         });

@@ -23,13 +23,13 @@ pub fn random_bytes(n: usize) -> Result<Vec<u8>, &'static str> {
 #[cfg(target_os = "windows")]
 fn getrandom(buf: &mut [u8]) -> Result<(), &'static str> {
     use std::ptr;
-    type BcryptAlgHandle = *mut std::ffi::c_void;
+    type HandleAlgoritmoBcrypt = *mut std::ffi::c_void;
     const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x00000002;
 
     #[link(name = "bcrypt")]
     extern "system" {
         fn BCryptGenRandom(
-            hAlgorithm: BcryptAlgHandle,
+            hAlgorithm: HandleAlgoritmoBcrypt,
             pbBuffer: *mut u8,
             cbBuffer: u32,
             dwFlags: u32,
