@@ -21,12 +21,12 @@ pub fn native_env_todos(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorF
     let pairs: Vec<ValorFast> = std::env::vars()
         .map(|(k, v)| {
             let k_val = {
-                let idx = vm.alloc_str(Arc::from(k.as_str()));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(k.as_str()));
+                ValorFast::texto(indice)
             };
             let v_val = {
-                let idx = vm.alloc_str(Arc::from(v.as_str()));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(v.as_str()));
+                ValorFast::texto(indice)
             };
             let arr = vm.alloc_arr(vec![k_val, v_val]);
             ValorFast::arreglo(arr)
@@ -40,14 +40,14 @@ pub fn native_env_cargar_desde_texto(
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
-    for line in texto.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+    for linea in texto.lines() {
+        let linea = linea.trim();
+        if linea.is_empty() || linea.starts_with('#') {
             continue;
         }
-        if let Some(eq) = line.find('=') {
-            let k = line[..eq].trim();
-            let v = line[eq + 1..].trim();
+        if let Some(eq) = linea.find('=') {
+            let k = linea[..eq].trim();
+            let v = linea[eq + 1..].trim();
             if !k.is_empty() {
                 std::env::set_var(k, v);
             }
@@ -57,46 +57,46 @@ pub fn native_env_cargar_desde_texto(
 }
 
 pub fn simple_env_expand(texto: &str) -> String {
-    let mut out = String::new();
-    let mut chars = texto.chars().peekable();
-    while let Some(c) = chars.next() {
+    let mut salida = String::new();
+    let mut caracteres = texto.chars().peekable();
+    while let Some(c) = caracteres.next() {
         if c == '$' {
             let mut var = String::new();
-            if chars.peek() == Some(&'{') {
-                chars.next();
-                while let Some(&ch) = chars.peek() {
+            if caracteres.peek() == Some(&'{') {
+                caracteres.next();
+                while let Some(&ch) = caracteres.peek() {
                     if ch == '}' {
-                        chars.next();
+                        caracteres.next();
                         break;
                     }
                     var.push(ch);
-                    chars.next();
+                    caracteres.next();
                 }
             } else {
-                while let Some(&ch) = chars.peek() {
+                while let Some(&ch) = caracteres.peek() {
                     if ch.is_alphanumeric() || ch == '_' {
                         var.push(ch);
-                        chars.next();
+                        caracteres.next();
                     } else {
                         break;
                     }
                 }
             }
             let val = std::env::var(&var).unwrap_or_default();
-            out.push_str(&val);
+            salida.push_str(&val);
         } else {
-            out.push(c);
+            salida.push(c);
         }
     }
-    out
+    salida
 }
 
 pub fn native_env_expandir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
     let expanded = simple_env_expand(&texto);
     Ok({
-        let idx = vm.alloc_str(Arc::from(expanded.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(expanded.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
