@@ -153,7 +153,7 @@ fn quitar_anotaciones_retorno(fuente: &str) -> String {
 
 #[test]
 fn dod_sin_anotaciones_de_retorno_el_corpus_sigue_compilando() {
-    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("ejemplos");
+    let raiz = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("ejemplos");
     let entradas = forja_test_support::ejemplos_fa();
 
     let mut con_anotaciones = 0usize;
@@ -166,7 +166,7 @@ fn dod_sin_anotaciones_de_retorno_el_corpus_sigue_compilando() {
             Err(_) => continue,
         };
         // Solo medimos ejemplos que ya compilan y que tienen anotaciones.
-        if forja::compilar_pipeline_completa_desde(&fuente, &root).is_err() {
+        if forja::compilar_pipeline_completa_desde(&fuente, &raiz).is_err() {
             continue;
         }
         let tiene_anotacion = fuente
@@ -178,7 +178,7 @@ fn dod_sin_anotaciones_de_retorno_el_corpus_sigue_compilando() {
         con_anotaciones += 1;
 
         let sin_anotaciones = quitar_anotaciones_retorno(&fuente);
-        match forja::compilar_pipeline_completa_desde(&sin_anotaciones, &root) {
+        match forja::compilar_pipeline_completa_desde(&sin_anotaciones, &raiz) {
             Ok(_) => siguen_compilando += 1,
             Err(e) => fallos.push(format!(
                 "{}: {}",
