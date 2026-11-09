@@ -1,6 +1,6 @@
 // native_sqlite.rs — Wrapper SQLite para Forja
 // Usa rusqlite para acceso a bases de datos SQLite.
-// Almacena conexiones en un heap global con bloqueo Mutex.
+// Almacena conexiones en un monticulo global con bloqueo Mutex.
 // La VM Forja es single-threaded para ejecución de scripts,
 // por lo que el Mutex nunca tiene contención real.
 
@@ -54,11 +54,11 @@ fn native_bd(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast
 
     match Connection::open(&ruta) {
         Ok(conn) => {
-            let mut heap = SQLITE_HEAP
+            let mut monticulo = SQLITE_HEAP
                 .lock()
                 .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
-            let idx = heap.len() as u32;
-            heap.push(Some(Arc::new(Mutex::new(conn))));
+            let idx = monticulo.len() as u32;
+            monticulo.push(Some(Arc::new(Mutex::new(conn))));
             Ok(ValorFast::entero(idx as i64))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
@@ -72,19 +72,19 @@ fn native_bd(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast
 // Helpers internos
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Obtiene un Arc<Mutex<Connection>> del heap por índice.
+/// Obtiene un Arc<Mutex<Connection>> del monticulo por índice.
 /// La conexión se clona (Arc) para que el llamador pueda usarla sin
-/// mantener el lock del heap.
+/// mantener el lock del monticulo.
 fn obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, ErrFast> {
-    let heap = SQLITE_HEAP
+    let monticulo = SQLITE_HEAP
         .lock()
         .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
-    if idx >= heap.len() {
+    if idx >= monticulo.len() {
         return Err(ErrFast::TipoInv(
             "sqlite_error: índice de conexión inválido".into(),
         ));
     }
-    match &heap[idx] {
+    match &monticulo[idx] {
         Some(conn) => Ok(Arc::clone(conn)),
         None => Err(ErrFast::TipoInv(
             "sqlite_error: conexión cerrada o inexistente".into(),
@@ -139,11 +139,11 @@ fn native_sqlite_abrir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 
     match Connection::open(&ruta) {
         Ok(conn) => {
-            let mut heap = SQLITE_HEAP
+            let mut monticulo = SQLITE_HEAP
                 .lock()
                 .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
-            let idx = heap.len() as u32;
-            heap.push(Some(Arc::new(Mutex::new(conn))));
+            let idx = monticulo.len() as u32;
+            monticulo.push(Some(Arc::new(Mutex::new(conn))));
             Ok(ValorFast::entero(idx as i64))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("sqlite_error_apertura: {}", e))),
@@ -159,11 +159,11 @@ fn native_sqlite_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     }
     let idx = obtener_entero(args[0])? as usize;
 
-    let mut heap = SQLITE_HEAP
+    let mut monticulo = SQLITE_HEAP
         .lock()
         .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
-    if idx < heap.len() {
-        heap[idx] = None;
+    if idx < monticulo.len() {
+        monticulo[idx] = None;
         Ok(ValorFast::entero(0))
     } else {
         Err(ErrFast::TipoInv(
