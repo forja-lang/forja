@@ -1,5 +1,5 @@
-fn compilar(source: &str) {
-    forja_test_support::compilar(source).expect("el pipeline debe compilar");
+fn compilar(fuente: &str) {
+    forja_test_support::compilar(fuente).expect("el pipeline debe compilar");
 }
 
 #[test]
@@ -62,28 +62,28 @@ aplicar(&incrementar)
 
 #[test]
 fn test_llamada_cualificada_por_modulo() {
-    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let source = r#"
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let fuente = r#"
 importar std/colecciones
 funcion duplicar(x) { retornar x * 2 }
 variable dobles = colecciones.mapa([1, 2, 3], duplicar)
 escribir(longitud(dobles))
 escribir(dobles[2])
 "#;
-    forja::compilar_pipeline_completa_desde(source, root)
+    forja::compilar_pipeline_completa_desde(fuente, raiz)
         .expect("debe compilar con imports y llamadas cualificadas");
 }
 
 #[test]
 fn test_simple_output() {
-    let out = forja::ejecutar_vm("escribir(\"hola\")").expect("ejecuta");
-    assert_eq!(out, vec!["hola".to_string()]);
+    let salida = forja::ejecutar_vm("escribir(\"hola\")").expect("ejecuta");
+    assert_eq!(salida, vec!["hola".to_string()]);
 }
 
 #[test]
 fn test_enum_se_ejecuta_sin_mover_la_variable() {
     // pasar un enum a una función no debe moverlo (es Copy).
-    let out = forja::ejecutar_vm(
+    let salida = forja::ejecutar_vm(
         r#"
 tipo Direccion = Norte | Sur
 funcion describir(d) { retornar 1 }
@@ -94,5 +94,5 @@ escribir("ok")
 "#,
     )
     .expect("el enum no debe moverse al pasarlo");
-    assert!(out.iter().any(|l| l == "ok"), "{out:?}");
+    assert!(salida.iter().any(|l| l == "ok"), "{salida:?}");
 }
