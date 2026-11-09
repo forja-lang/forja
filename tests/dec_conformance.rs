@@ -77,7 +77,7 @@ struct Vector {
 /// Soporta los operandos entre comillas (`'-0'`) y descarta directivas
 /// (`precision:`, `rounding:`) y líneas de comentario (`--`).
 fn parsear(texto: &str) -> Vec<Vector> {
-    let mut out = Vec::new();
+    let mut salida = Vec::new();
     for linea in texto.lines() {
         let linea = linea.trim();
         if linea.is_empty() || linea.starts_with("--") || linea.contains(':') {
@@ -92,7 +92,7 @@ fn parsear(texto: &str) -> Vec<Vector> {
         let (id, op_texto, a, b) = match campos.len() {
             4 => (campos[0].to_string(), campos[1], campos[2], campos[3]),
             3 => (
-                format!("vec{:04}", out.len() + 1),
+                format!("vec{:04}", salida.len() + 1),
                 campos[0],
                 campos[1],
                 campos[2],
@@ -106,7 +106,7 @@ fn parsear(texto: &str) -> Vec<Vector> {
         if esperado.is_empty() {
             continue;
         }
-        out.push(Vector {
+        salida.push(Vector {
             id,
             op,
             a: sin_comillas(a),
@@ -114,7 +114,7 @@ fn parsear(texto: &str) -> Vec<Vector> {
             esperado: sin_comillas(esperado),
         });
     }
-    out
+    salida
 }
 
 fn sin_comillas(s: &str) -> String {
@@ -265,8 +265,9 @@ fn evaluar(vectores: &[Vector]) -> Resumen {
 }
 
 fn corpus() -> (String, Vec<Vector>) {
-    let dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("tests/golden/dec");
-    let mut archivos: Vec<PathBuf> = match std::fs::read_dir(&dir) {
+    let directorio =
+        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("tests/golden/dec");
+    let mut archivos: Vec<PathBuf> = match std::fs::read_dir(&directorio) {
         Ok(entradas) => entradas
             .filter_map(|e| e.ok())
             .map(|e| e.path())
