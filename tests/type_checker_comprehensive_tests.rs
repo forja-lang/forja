@@ -2,7 +2,7 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::semantics::TypeChecker;
 
-fn check(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
+fn verificar(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
     let mut parser = Parser::new(tokens);
@@ -17,62 +17,62 @@ fn check(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
 
 #[test]
 fn test_tc_literal_entero_positivo() {
-    assert!(check("variable x = 42").is_ok());
+    assert!(verificar("variable x = 42").is_ok());
 }
 
 #[test]
 fn test_tc_literal_entero_negativo() {
-    assert!(check("variable x = -10").is_ok());
+    assert!(verificar("variable x = -10").is_ok());
 }
 
 #[test]
 fn test_tc_literal_entero_grande() {
-    assert!(check("variable x = 999999999").is_ok());
+    assert!(verificar("variable x = 999999999").is_ok());
 }
 
 #[test]
 fn test_tc_literal_entero_cero() {
-    assert!(check("variable x = 0").is_ok());
+    assert!(verificar("variable x = 0").is_ok());
 }
 
 #[test]
 fn test_tc_literal_decimal() {
-    assert!(check("variable x = 3.14").is_ok());
+    assert!(verificar("variable x = 3.14").is_ok());
 }
 
 #[test]
 fn test_tc_literal_decimal_cero() {
-    assert!(check("variable x = 0.0").is_ok());
+    assert!(verificar("variable x = 0.0").is_ok());
 }
 
 #[test]
 fn test_tc_literal_decimal_negativo() {
-    assert!(check("variable x = -2.5").is_ok());
+    assert!(verificar("variable x = -2.5").is_ok());
 }
 
 #[test]
 fn test_tc_literal_texto() {
-    assert!(check("variable x = \"hola\"").is_ok());
+    assert!(verificar("variable x = \"hola\"").is_ok());
 }
 
 #[test]
 fn test_tc_literal_texto_vacio() {
-    assert!(check("variable x = \"\"").is_ok());
+    assert!(verificar("variable x = \"\"").is_ok());
 }
 
 #[test]
 fn test_tc_literal_booleano_verdadero() {
-    assert!(check("variable x = verdadero").is_ok());
+    assert!(verificar("variable x = verdadero").is_ok());
 }
 
 #[test]
 fn test_tc_literal_booleano_falso() {
-    assert!(check("variable x = falso").is_ok());
+    assert!(verificar("variable x = falso").is_ok());
 }
 
 #[test]
 fn test_tc_literal_nulo() {
-    assert!(check("variable x = nulo").is_ok());
+    assert!(verificar("variable x = nulo").is_ok());
 }
 
 // ============================================================
@@ -81,57 +81,57 @@ fn test_tc_literal_nulo() {
 
 #[test]
 fn test_tc_suma_enteros() {
-    assert!(check("variable x = 2 + 3").is_ok());
+    assert!(verificar("variable x = 2 + 3").is_ok());
 }
 
 #[test]
 fn test_tc_suma_decimales() {
-    assert!(check("variable x = 2.5 + 3.7").is_ok());
+    assert!(verificar("variable x = 2.5 + 3.7").is_ok());
 }
 
 #[test]
 fn test_tc_suma_mixta_entero_decimal() {
-    assert!(check("variable x = 3 + 2.5").is_ok());
+    assert!(verificar("variable x = 3 + 2.5").is_ok());
 }
 
 #[test]
 fn test_tc_resta_enteros() {
-    assert!(check("variable x = 10 - 3").is_ok());
+    assert!(verificar("variable x = 10 - 3").is_ok());
 }
 
 #[test]
 fn test_tc_multiplicacion_enteros() {
-    assert!(check("variable x = 4 * 2").is_ok());
+    assert!(verificar("variable x = 4 * 2").is_ok());
 }
 
 #[test]
 fn test_tc_division_enteros() {
-    assert!(check("variable x = 10 / 2").is_ok());
+    assert!(verificar("variable x = 10 / 2").is_ok());
 }
 
 #[test]
 fn test_tc_modulo_enteros() {
-    assert!(check("variable x = 10 % 3").is_ok());
+    assert!(verificar("variable x = 10 % 3").is_ok());
 }
 
 #[test]
 fn test_tc_aritmetica_compleja() {
-    assert!(check("variable x = (2 + 3) * 4 - 1").is_ok());
+    assert!(verificar("variable x = (2 + 3) * 4 - 1").is_ok());
 }
 
 #[test]
 fn test_tc_concatenacion_texto() {
-    assert!(check("variable x = \"Hola\" + \" Mundo\"").is_ok());
+    assert!(verificar("variable x = \"Hola\" + \" Mundo\"").is_ok());
 }
 
 #[test]
 fn test_tc_texto_mas_entero() {
-    assert!(check("variable x = \"Edad: \" + 25").is_ok());
+    assert!(verificar("variable x = \"Edad: \" + 25").is_ok());
 }
 
 #[test]
 fn test_tc_texto_mas_decimal() {
-    assert!(check("variable x = \"Pi: \" + 3.14").is_ok());
+    assert!(verificar("variable x = \"Pi: \" + 3.14").is_ok());
 }
 
 // ============================================================
@@ -140,47 +140,47 @@ fn test_tc_texto_mas_decimal() {
 
 #[test]
 fn test_tc_comparacion_entero_mayor() {
-    assert!(check("variable x = 5 > 3").is_ok());
+    assert!(verificar("variable x = 5 > 3").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_entero_menor() {
-    assert!(check("variable x = 3 < 5").is_ok());
+    assert!(verificar("variable x = 3 < 5").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_entero_igual() {
-    assert!(check("variable x = 5 == 5").is_ok());
+    assert!(verificar("variable x = 5 == 5").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_entero_diferente() {
-    assert!(check("variable x = 5 != 3").is_ok());
+    assert!(verificar("variable x = 5 != 3").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_entero_mayor_igual() {
-    assert!(check("variable x = 5 >= 3").is_ok());
+    assert!(verificar("variable x = 5 >= 3").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_entero_menor_igual() {
-    assert!(check("variable x = 3 <= 5").is_ok());
+    assert!(verificar("variable x = 3 <= 5").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_decimal() {
-    assert!(check("variable x = 3.14 > 2.0").is_ok());
+    assert!(verificar("variable x = 3.14 > 2.0").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_mixta() {
-    assert!(check("variable x = 5 > 2.5").is_ok());
+    assert!(verificar("variable x = 5 > 2.5").is_ok());
 }
 
 #[test]
 fn test_tc_comparacion_encadenada() {
-    assert!(check("variable x = 5 > 3 && 2 < 4").is_ok());
+    assert!(verificar("variable x = 5 > 3 && 2 < 4").is_ok());
 }
 
 // ============================================================
@@ -189,27 +189,27 @@ fn test_tc_comparacion_encadenada() {
 
 #[test]
 fn test_tc_y_logico_booleanos() {
-    assert!(check("variable x = verdadero && falso").is_ok());
+    assert!(verificar("variable x = verdadero && falso").is_ok());
 }
 
 #[test]
 fn test_tc_o_logico_booleanos() {
-    assert!(check("variable x = verdadero || falso").is_ok());
+    assert!(verificar("variable x = verdadero || falso").is_ok());
 }
 
 #[test]
 fn test_tc_no_logico() {
-    assert!(check("variable x = !verdadero").is_ok());
+    assert!(verificar("variable x = !verdadero").is_ok());
 }
 
 #[test]
 fn test_tc_y_con_enteros() {
-    assert!(check("variable x = 5 && 3").is_ok());
+    assert!(verificar("variable x = 5 && 3").is_ok());
 }
 
 #[test]
 fn test_tc_no_con_entero() {
-    assert!(check("variable x = !5").is_ok());
+    assert!(verificar("variable x = !5").is_ok());
 }
 
 // ============================================================
@@ -218,17 +218,17 @@ fn test_tc_no_con_entero() {
 
 #[test]
 fn test_tc_si_con_booleano() {
-    assert!(check("si (verdadero) { escribir(1) }").is_ok());
+    assert!(verificar("si (verdadero) { escribir(1) }").is_ok());
 }
 
 #[test]
 fn test_tc_si_con_entero() {
-    assert!(check("si (5) { escribir(1) }").is_ok());
+    assert!(verificar("si (5) { escribir(1) }").is_ok());
 }
 
 #[test]
 fn test_tc_si_con_expresion_comparacion() {
-    assert!(check("si (x > 0) { escribir(x) }").is_ok());
+    assert!(verificar("si (x > 0) { escribir(x) }").is_ok());
 }
 
 // ============================================================
@@ -237,32 +237,32 @@ fn test_tc_si_con_expresion_comparacion() {
 
 #[test]
 fn test_tc_var_sin_tipo() {
-    assert!(check("variable x = 42").is_ok());
+    assert!(verificar("variable x = 42").is_ok());
 }
 
 #[test]
 fn test_tc_var_con_tipo_entero() {
-    assert!(check("variable x: Entero = 42").is_ok());
+    assert!(verificar("variable x: Entero = 42").is_ok());
 }
 
 #[test]
 fn test_tc_var_con_tipo_texto() {
-    assert!(check("variable x: Texto = \"hola\"").is_ok());
+    assert!(verificar("variable x: Texto = \"hola\"").is_ok());
 }
 
 #[test]
 fn test_tc_var_con_tipo_booleano() {
-    assert!(check("variable x: Booleano = verdadero").is_ok());
+    assert!(verificar("variable x: Booleano = verdadero").is_ok());
 }
 
 #[test]
 fn test_tc_var_con_tipo_decimal() {
-    assert!(check("variable x: Decimal = 3.14").is_ok());
+    assert!(verificar("variable x: Decimal = 3.14").is_ok());
 }
 
 #[test]
 fn test_tc_constante_con_tipo() {
-    assert!(check("constante MAX: Entero = 100").is_ok());
+    assert!(verificar("constante MAX: Entero = 100").is_ok());
 }
 
 // ============================================================
@@ -271,47 +271,47 @@ fn test_tc_constante_con_tipo() {
 
 #[test]
 fn test_tc_funcion_sin_retorno() {
-    assert!(check("funcion f() { }").is_ok());
+    assert!(verificar("funcion f() { }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_con_retorno_entero() {
-    assert!(check("funcion f() -> Entero { retornar 42 }").is_ok());
+    assert!(verificar("funcion f() -> Entero { retornar 42 }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_con_retorno_texto() {
-    assert!(check("funcion f() -> Texto { retornar \"hola\" }").is_ok());
+    assert!(verificar("funcion f() -> Texto { retornar \"hola\" }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_con_retorno_booleano() {
-    assert!(check("funcion f() -> Booleano { retornar verdadero }").is_ok());
+    assert!(verificar("funcion f() -> Booleano { retornar verdadero }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_con_retorno_decimal() {
-    assert!(check("funcion f() -> Decimal { retornar 3.14 }").is_ok());
+    assert!(verificar("funcion f() -> Decimal { retornar 3.14 }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_parametros_tipados() {
-    assert!(check("funcion suma(a: Entero, b: Entero) -> Entero { retornar a + b }").is_ok());
+    assert!(verificar("funcion suma(a: Entero, b: Entero) -> Entero { retornar a + b }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_parametro_texto() {
-    assert!(check("funcion saludar(nombre: Texto) { escribir(nombre) }").is_ok());
+    assert!(verificar("funcion saludar(nombre: Texto) { escribir(nombre) }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_parametro_decimal() {
-    assert!(check("funcion calc(x: Decimal) -> Decimal { retornar x * 2.0 }").is_ok());
+    assert!(verificar("funcion calc(x: Decimal) -> Decimal { retornar x * 2.0 }").is_ok());
 }
 
 #[test]
 fn test_tc_funcion_sin_parametros() {
-    assert!(check("funcion hola() -> Texto { retornar \"hola\" }").is_ok());
+    assert!(verificar("funcion hola() -> Texto { retornar \"hola\" }").is_ok());
 }
 
 // ============================================================
@@ -320,37 +320,37 @@ fn test_tc_funcion_sin_parametros() {
 
 #[test]
 fn test_tc_arreglo_enteros() {
-    assert!(check("variable arr = [1, 2, 3]").is_ok());
+    assert!(verificar("variable arr = [1, 2, 3]").is_ok());
 }
 
 #[test]
 fn test_tc_arreglo_textos() {
-    assert!(check("variable arr = [\"a\", \"b\", \"c\"]").is_ok());
+    assert!(verificar("variable arr = [\"a\", \"b\", \"c\"]").is_ok());
 }
 
 #[test]
 fn test_tc_arreglo_decimales() {
-    assert!(check("variable arr = [1.5, 2.5, 3.5]").is_ok());
+    assert!(verificar("variable arr = [1.5, 2.5, 3.5]").is_ok());
 }
 
 #[test]
 fn test_tc_arreglo_vacio() {
-    assert!(check("variable arr = []").is_ok());
+    assert!(verificar("variable arr = []").is_ok());
 }
 
 #[test]
 fn test_tc_arreglo_heterogeneo() {
-    assert!(check("variable arr = [1, \"hola\", 3]").is_ok());
+    assert!(verificar("variable arr = [1, \"hola\", 3]").is_ok());
 }
 
 #[test]
-fn test_tc_arreglo_index_get() {
-    assert!(check("variable arr = [10, 20]\nvariable v = arr[0]").is_ok());
+fn test_verificador_arreglo_indice_obtener() {
+    assert!(verificar("variable arr = [10, 20]\nvariable v = arr[0]").is_ok());
 }
 
 #[test]
-fn test_tc_arreglo_index_set() {
-    assert!(check("variable arr = [1, 2]\narr[0] = 99").is_ok());
+fn test_verificador_arreglo_indice_fijar() {
+    assert!(verificar("variable arr = [1, 2]\narr[0] = 99").is_ok());
 }
 
 // ============================================================
@@ -359,17 +359,17 @@ fn test_tc_arreglo_index_set() {
 
 #[test]
 fn test_tc_mapa_simple() {
-    assert!(check("variable m = {\"a\": 1, \"b\": 2}").is_ok());
+    assert!(verificar("variable m = {\"a\": 1, \"b\": 2}").is_ok());
 }
 
 #[test]
-fn test_tc_mapa_get() {
-    assert!(check("variable m = {\"x\": 10}\nvariable v = m[\"x\"]").is_ok());
+fn test_verificador_mapa_obtener() {
+    assert!(verificar("variable m = {\"x\": 10}\nvariable v = m[\"x\"]").is_ok());
 }
 
 #[test]
-fn test_tc_mapa_set() {
-    assert!(check("variable m = {\"a\": 1}\nm[\"b\"] = 2").is_ok());
+fn test_verificador_mapa_fijar() {
+    assert!(verificar("variable m = {\"a\": 1}\nm[\"b\"] = 2").is_ok());
 }
 
 // ============================================================
@@ -378,17 +378,17 @@ fn test_tc_mapa_set() {
 
 #[test]
 fn test_tc_expresion_grupo() {
-    assert!(check("variable x = (2 + 3) * 4").is_ok());
+    assert!(verificar("variable x = (2 + 3) * 4").is_ok());
 }
 
 #[test]
 fn test_tc_expresion_unaria_neg() {
-    assert!(check("variable x = -42").is_ok());
+    assert!(verificar("variable x = -42").is_ok());
 }
 
 #[test]
 fn test_tc_expresion_unaria_not() {
-    assert!(check("variable x = !verdadero").is_ok());
+    assert!(verificar("variable x = !verdadero").is_ok());
 }
 
 // ============================================================
@@ -396,33 +396,33 @@ fn test_tc_expresion_unaria_not() {
 // ============================================================
 
 #[test]
-fn test_tc_string_length() {
-    assert!(check("variable n = \"hola\".length()").is_ok());
+fn test_verificador_texto_longitud() {
+    assert!(verificar("variable n = \"hola\".length()").is_ok());
 }
 
 #[test]
-fn test_tc_string_trim() {
-    assert!(check("variable s = \" hola \".trim()").is_ok());
+fn test_verificador_texto_recortar() {
+    assert!(verificar("variable s = \" hola \".trim()").is_ok());
 }
 
 #[test]
-fn test_tc_string_to_upper() {
-    assert!(check("variable s = \"hola\".to_upper()").is_ok());
+fn test_verificador_texto_to_mayusculas() {
+    assert!(verificar("variable s = \"hola\".to_upper()").is_ok());
 }
 
 #[test]
-fn test_tc_string_to_lower() {
-    assert!(check("variable s = \"HOLA\".to_lower()").is_ok());
+fn test_verificador_texto_to_minusculas() {
+    assert!(verificar("variable s = \"HOLA\".to_lower()").is_ok());
 }
 
 #[test]
-fn test_tc_string_contains() {
-    assert!(check("variable b = \"hello\".contains(\"el\")").is_ok());
+fn test_verificador_texto_contiene() {
+    assert!(verificar("variable b = \"hello\".contains(\"el\")").is_ok());
 }
 
 #[test]
-fn test_tc_string_replace() {
-    assert!(check("variable s = \"a b c\".replace(\" \", \",\")").is_ok());
+fn test_verificador_texto_reemplazar() {
+    assert!(verificar("variable s = \"a b c\".replace(\" \", \",\")").is_ok());
 }
 
 // ============================================================
@@ -431,27 +431,27 @@ fn test_tc_string_replace() {
 
 #[test]
 fn test_tc_clase_simple() {
-    assert!(check("clase Punto { x y }").is_ok());
+    assert!(verificar("clase Punto { x y }").is_ok());
 }
 
 #[test]
 fn test_tc_clase_instanciacion() {
-    assert!(check("clase Punto { x }\nvariable p = nuevo Punto()").is_ok());
+    assert!(verificar("clase Punto { x }\nvariable p = nuevo Punto()").is_ok());
 }
 
 #[test]
 fn test_tc_clase_acceso_campo() {
-    assert!(check("clase Punto { x }\nvariable p = nuevo Punto()\nvariable v = p.x").is_ok());
+    assert!(verificar("clase Punto { x }\nvariable p = nuevo Punto()\nvariable v = p.x").is_ok());
 }
 
 #[test]
 fn test_tc_clase_constructor() {
-    assert!(check("clase Punto { x constructor(nx) { este.x = nx } }").is_ok());
+    assert!(verificar("clase Punto { x constructor(nx) { este.x = nx } }").is_ok());
 }
 
 #[test]
 fn test_tc_clase_metodo() {
-    assert!(check("clase Saludador { funcion hola() { escribir(\"hi\") } }").is_ok());
+    assert!(verificar("clase Saludador { funcion hola() { escribir(\"hi\") } }").is_ok());
 }
 
 // ============================================================
@@ -460,17 +460,17 @@ fn test_tc_clase_metodo() {
 
 #[test]
 fn test_tc_enum_simple() {
-    assert!(check("tipo Color = Rojo | Verde | Azul").is_ok());
+    assert!(verificar("tipo Color = Rojo | Verde | Azul").is_ok());
 }
 
 #[test]
 fn test_tc_enum_con_datos() {
-    assert!(check("tipo Resultado = Ok(Entero) | Error(Texto)").is_ok());
+    assert!(verificar("tipo Resultado = Ok(Entero) | Error(Texto)").is_ok());
 }
 
 #[test]
 fn test_tc_enum_una_variante() {
-    assert!(check("tipo Singleton = Unico").is_ok());
+    assert!(verificar("tipo Singleton = Unico").is_ok());
 }
 
 // ============================================================
@@ -479,7 +479,7 @@ fn test_tc_enum_una_variante() {
 
 #[test]
 fn test_tc_coincidir_simple() {
-    assert!(check("coincidir (x) { caso 1 -> { escribir(\"uno\") } caso _ -> { } }").is_ok());
+    assert!(verificar("coincidir (x) { caso 1 -> { escribir(\"uno\") } caso _ -> { } }").is_ok());
 }
 
 // ============================================================
@@ -488,12 +488,12 @@ fn test_tc_coincidir_simple() {
 
 #[test]
 fn test_tc_hilo() {
-    assert!(check("hilo { escribir(\"test\") }").is_ok());
+    assert!(verificar("hilo { escribir(\"test\") }").is_ok());
 }
 
 #[test]
 fn test_tc_canal() {
-    assert!(check("variable tx, rx = canal()").is_ok());
+    assert!(verificar("variable tx, rx = canal()").is_ok());
 }
 
 // ============================================================
@@ -501,18 +501,18 @@ fn test_tc_canal() {
 // ============================================================
 
 #[test]
-fn test_tc_ok() {
-    assert!(check("variable r = Ok(42)").is_ok());
+fn test_verificador_correcto() {
+    assert!(verificar("variable r = Ok(42)").is_ok());
 }
 
 #[test]
 fn test_tc_error() {
-    assert!(check("variable e = Error(\"fail\")").is_ok());
+    assert!(verificar("variable e = Error(\"fail\")").is_ok());
 }
 
 #[test]
 fn test_tc_algo() {
-    assert!(check("variable a = Algo(42)").is_ok());
+    assert!(verificar("variable a = Algo(42)").is_ok());
 }
 
 // ============================================================
@@ -521,12 +521,12 @@ fn test_tc_algo() {
 
 #[test]
 fn test_tc_rasgo() {
-    assert!(check("rasgo Volador { funcion volar() }").is_ok());
+    assert!(verificar("rasgo Volador { funcion volar() }").is_ok());
 }
 
 #[test]
 fn test_tc_implementa() {
-    assert!(check("rasgo Volador { funcion volar() }\nclase Ave { }\nimplementa Volador para Ave { funcion volar() { escribir(\"volando\") } }").is_ok());
+    assert!(verificar("rasgo Volador { funcion volar() }\nclase Ave { }\nimplementa Volador para Ave { funcion volar() { escribir(\"volando\") } }").is_ok());
 }
 
 // ============================================================
@@ -535,12 +535,12 @@ fn test_tc_implementa() {
 
 #[test]
 fn test_tc_doc_comment() {
-    assert!(check("/// Documentacion\nfuncion f() { }").is_ok());
+    assert!(verificar("/// Documentacion\nfuncion f() { }").is_ok());
 }
 
 #[test]
 fn test_tc_atributo() {
-    assert!(check("@test\nfuncion f() { }").is_ok());
+    assert!(verificar("@test\nfuncion f() { }").is_ok());
 }
 
 // ============================================================
@@ -560,7 +560,7 @@ funcion suma(a, b) {
 variable r = suma(x, y)
 escribir(r)
 "#;
-    assert!(check(src).is_ok());
+    assert!(verificar(src).is_ok());
 }
 
 #[test]
@@ -573,5 +573,5 @@ mientras (i < 3) {
     i = i + 1
 }
 "#;
-    assert!(check(src).is_ok());
+    assert!(verificar(src).is_ok());
 }

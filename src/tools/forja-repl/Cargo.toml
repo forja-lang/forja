@@ -1,6 +1,6 @@
 [package]
 name = "forja-repl"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2021"
 description = "REPL y modo aprender de Forja"
 license = "GPL-3.0-or-later"

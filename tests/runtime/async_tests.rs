@@ -4,7 +4,7 @@ use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
 /// Helper: ejecuta código Forja usando ForjaFast y retorna el output
-fn output_fast(fuente: &str) -> Vec<String> {
+fn salida_fast(fuente: &str) -> Vec<String> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
@@ -27,7 +27,7 @@ fn output_fast(fuente: &str) -> Vec<String> {
 
 #[test]
 fn test_async_funcion_simple() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion asincrona foo() -> Entero {
             retornar 42
@@ -45,7 +45,7 @@ fn test_async_funcion_simple() {
 
 #[test]
 fn test_async_con_parametros() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion asincrona suma(a: Entero, b: Entero) -> Entero {
             retornar a + b
@@ -62,7 +62,7 @@ fn test_async_con_parametros() {
 
 #[test]
 fn test_async_multiples_llamadas() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion asincrona suma(a: Entero, b: Entero) -> Entero {
             retornar a + b
@@ -81,7 +81,7 @@ fn test_async_multiples_llamadas() {
 
 #[test]
 fn test_async_hilo_con_retorno() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable h = hilo {
@@ -108,7 +108,7 @@ fn test_async_hilo_con_retorno() {
 
 #[test]
 fn test_canal_basico() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -125,8 +125,8 @@ fn test_canal_basico() {
 }
 
 #[test]
-fn test_canal_string() {
-    let salida = output_fast(
+fn test_canal_texto() {
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -144,7 +144,7 @@ fn test_canal_string() {
 
 #[test]
 fn test_canal_multiple_mensajes() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -169,7 +169,7 @@ fn test_canal_multiple_mensajes() {
 /// comprobar nada).
 #[test]
 fn test_canal_try_recibir_entrega_mensaje() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -188,7 +188,7 @@ fn test_canal_try_recibir_entrega_mensaje() {
 
 #[test]
 fn test_canal_try_recibir() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -209,7 +209,7 @@ fn test_canal_try_recibir() {
 
 #[test]
 fn test_async_hilo_y_canal() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -228,7 +228,7 @@ fn test_async_hilo_y_canal() {
 
 #[test]
 fn test_async_funcion_dentro_de_hilo() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion cuadrado(x: Entero) -> Entero {
             retornar x * x
@@ -252,7 +252,7 @@ fn test_async_funcion_dentro_de_hilo() {
 
 #[test]
 fn test_async_hilo_sin_retorno() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion main() {
             hilo {
@@ -269,7 +269,7 @@ fn test_async_hilo_sin_retorno() {
 
 #[test]
 fn test_async_funcion_asincrona_sin_retorno_explicito() {
-    let salida = output_fast(
+    let salida = salida_fast(
         r#"
         funcion asincrona foo() -> Entero {
             retornar 99

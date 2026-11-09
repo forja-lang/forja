@@ -18,7 +18,7 @@ pub struct REPL {
     /// Código fuente acumulado de todas las líneas que ya se
     /// compilaron exitosamente. Se recompila completo en cada
     /// ejecución para que variables, funciones y clases persistan.
-    source_acumulado: String,
+    fuente_acumulado: String,
     rl: Editor<(), FileHistory>,
     /// VM persistente para hot-reload.
     /// Se crea en la primera ejecución y se reusa en /reload.
@@ -31,7 +31,7 @@ pub struct REPL {
     matematica_rapida: bool,
     /// Líneas de salida ya impresas. El source acumulado se re-ejecuta en cada
     /// entrada, así que sólo se muestran las líneas nuevas.
-    output_mostrado: usize,
+    salida_mostrado: usize,
 }
 
 impl REPL {
@@ -125,13 +125,13 @@ impl REPL {
             vm_mode: modo.to_string(),
             buffer: String::new(),
             show_bytecode: false,
-            source_acumulado: String::new(),
+            fuente_acumulado: String::new(),
             rl,
             vm_fast: None,
             historial,
             verificar_contratos: cfg.contratos,
             matematica_rapida: cfg.matematica_rapida,
-            output_mostrado: 0,
+            salida_mostrado: 0,
         }
     }
 
@@ -199,8 +199,8 @@ impl REPL {
                             }
                             "limpiar" | "reset" => {
                                 self.buffer.clear();
-                                self.source_acumulado.clear();
-                                self.output_mostrado = 0;
+                                self.fuente_acumulado.clear();
+                                self.salida_mostrado = 0;
                                 println!("{}", error::ok("Todo reiniciado"));
                                 continue;
                             }
@@ -222,8 +222,8 @@ impl REPL {
                                 match canonico {
                                     Some(modo) => {
                                         self.vm_mode = modo.to_string();
-                                        self.source_acumulado.clear();
-                                        self.output_mostrado = 0;
+                                        self.fuente_acumulado.clear();
+                                        self.salida_mostrado = 0;
                                         println!("Motor: {}", color::verde(modo));
                                     }
                                     None => println!(
@@ -247,8 +247,8 @@ impl REPL {
                                 if arg.is_empty() {
                                     // ── Legacy: recargar código acumulado completo ──────────
                                     if let Some(ref mut vm) = self.vm_fast {
-                                        let full_source = self.source_acumulado.clone();
-                                        if full_source.is_empty() {
+                                        let full_fuente = self.fuente_acumulado.clone();
+                                        if full_fuente.is_empty() {
                                             eprintln!(
                                                 "{}",
                                                 error::warning(
@@ -256,7 +256,7 @@ impl REPL {
                                                 )
                                             );
                                         } else {
-                                            let mut lexer = Lexer::new(&full_source);
+                                            let mut lexer = Lexer::new(&full_fuente);
                                             let tokens = match lexer.tokenize() {
                                                 Ok(t) => t,
                                                 Err(e) => {
@@ -322,12 +322,12 @@ impl REPL {
                                     let nombre_modulo = arg.to_string();
                                     if let Some(ref mut vm) = self.vm_fast {
                                         // Construir IdSimbolo con el mismo hash que module.rs
-                                        let module_sym = IdSimbolo(
+                                        let modulo_sym = IdSimbolo(
                                             nombre_modulo.bytes().fold(0u32, |acc, b| {
                                                 acc.wrapping_mul(31).wrapping_add(b as u32)
                                             }),
                                         );
-                                        if !vm.module_registry.contains_key(&module_sym) {
+                                        if !vm.module_registry.contains_key(&modulo_sym) {
                                             eprintln!(
                                                 "{}",
                                                 error::error(&format!(
@@ -337,7 +337,7 @@ impl REPL {
                                             );
                                             continue;
                                         }
-                                        let programa = match vm.module_resolver.recargar(module_sym)
+                                        let programa = match vm.module_resolver.recargar(modulo_sym)
                                         {
                                             Ok(p) => p,
                                             Err(e) => {
@@ -352,8 +352,8 @@ impl REPL {
                                             }
                                         };
                                         let mut gen = GeneradorBytecode::new();
-                                        let module_bc =
-                                            match gen.generar_para_modulo(&programa, module_sym) {
+                                        let modulo_bytecode =
+                                            match gen.generar_para_modulo(&programa, modulo_sym) {
                                                 Ok(mbc) => mbc,
                                                 Err(_) => {
                                                     eprintln!(
@@ -368,11 +368,11 @@ impl REPL {
                                         // Obtener versión desde el registro
                                         let version = vm
                                             .module_registry
-                                            .get(&module_sym)
+                                            .get(&modulo_sym)
                                             .map(|info| info.version)
                                             .unwrap_or(0);
                                         // Hacer hot-swap en la VM
-                                        match vm.hot_swap_module(module_sym, &module_bc) {
+                                        match vm.hot_swap_module(modulo_sym, &modulo_bytecode) {
                                             Ok(()) => {
                                                 println!(
                                                     "{} Módulo '{}' recargado (v{})",
@@ -427,7 +427,7 @@ impl REPL {
 
                     match self.compilar_y_ejecutar(&fuente) {
                         Ok(nuevo_source) => {
-                            self.source_acumulado.push_str(&nuevo_source);
+                            self.fuente_acumulado.push_str(&nuevo_source);
                             self.buffer.clear();
                         }
                         Err(err) => {
@@ -452,8 +452,8 @@ impl REPL {
         // Compilar TODO: acumulado + nuevo con el pipeline de la CLI.
         // Antes se hacía lexer→parser→bytecode a mano: sin el type checker, el
         // REPL aceptaba `hola` o `hola = 1` sin `variable` (el lenguaje no).
-        let full_source = format!("{}{}", self.source_acumulado, fuente);
-        let (bytecode, contratos_vm) = forja::compilar_pipeline_completa(&full_source)?;
+        let full_fuente = format!("{}{}", self.fuente_acumulado, fuente);
+        let (bytecode, contratos_vm) = forja::compilar_pipeline_completa(&full_fuente)?;
 
         // VM nueva por entrada: la persistencia de variables la da recompilar
         // el source acumulado. Reusar la VM dejaba índices del heap apuntando a
@@ -479,9 +479,9 @@ impl REPL {
 
     /// Devuelve sólo las líneas de salida que todavía no se mostraron.
     fn salida_nueva(&mut self, salida: Vec<String>) -> Vec<String> {
-        let desde = self.output_mostrado.min(salida.len());
+        let desde = self.salida_mostrado.min(salida.len());
         let nuevas = salida[desde..].to_vec();
-        self.output_mostrado = salida.len();
+        self.salida_mostrado = salida.len();
         nuevas
     }
 
@@ -546,13 +546,13 @@ impl REPL {
     /// línea de sondeo por variable en una VM aparte, y quedándose sólo con las
     /// líneas de sondeo (la VM del REPL no se toca).
     fn mostrar_variables(&self) {
-        let nombres = variables_declaradas(&self.source_acumulado);
+        let nombres = variables_declaradas(&self.fuente_acumulado);
         if nombres.is_empty() {
             println!("{}", error::info("No hay variables declaradas todavía"));
             return;
         }
 
-        let mut sonda = self.source_acumulado.clone();
+        let mut sonda = self.fuente_acumulado.clone();
         for nombre in &nombres {
             sonda.push_str(&format!(
                 "escribir(\"__VAR__ {nombre} = \" + {nombre})
@@ -858,8 +858,8 @@ impl REPL {
             _ => "vm".to_string(),
         };
         self.vm_fast = None;
-        self.source_acumulado.clear();
-        self.output_mostrado = 0;
+        self.fuente_acumulado.clear();
+        self.salida_mostrado = 0;
 
         let bytecode = preguntar(
             "Mostrar bytecode",
@@ -947,14 +947,14 @@ mod tests {
     #[test]
     fn lista_las_variables_declaradas() {
         let mut repl = REPL::nuevo("vm", None);
-        repl.source_acumulado = "variable hola = \"adios\"
+        repl.fuente_acumulado = "variable hola = \"adios\"
 variable n = 7
 "
         .to_string();
         // El sondeo tiene que poder ejecutarse: mismas reglas que el REPL.
         let sondeo = format!(
             "{}{}",
-            repl.source_acumulado,
+            repl.fuente_acumulado,
             "escribir(\"__VAR__ hola = \" + hola)
 "
         );
@@ -968,7 +968,7 @@ variable n = 7
             .iter()
             .any(|l| l == "__VAR__ hola = adios"));
 
-        let nombres = variables_declaradas(&repl.source_acumulado);
+        let nombres = variables_declaradas(&repl.fuente_acumulado);
         assert_eq!(nombres, vec!["hola".to_string(), "n".to_string()]);
     }
 
@@ -982,11 +982,11 @@ variable n = 7
 ",
         ] {
             match repl.compilar_y_ejecutar(linea) {
-                Ok(fuente) => repl.source_acumulado.push_str(&fuente),
+                Ok(fuente) => repl.fuente_acumulado.push_str(&fuente),
                 Err(e) => panic!("error en {linea:?}: {e}"),
             }
         }
-        assert!(repl.source_acumulado.contains("var mut hola"));
+        assert!(repl.fuente_acumulado.contains("var mut hola"));
     }
 
     #[test]
@@ -1001,7 +1001,7 @@ variable n = 7
 ",
         ] {
             let fuente = repl.compilar_y_ejecutar(linea).unwrap();
-            repl.source_acumulado.push_str(&fuente);
+            repl.fuente_acumulado.push_str(&fuente);
         }
     }
 
@@ -1022,7 +1022,7 @@ variable n = 7
             .salida_nueva(vec![linea("hola"), linea("adios")])
             .is_empty());
         // /limpiar vuelve a empezar (output_mostrado = 0).
-        repl.output_mostrado = 0;
+        repl.salida_mostrado = 0;
         assert_eq!(repl.salida_nueva(vec![linea("otra")]), vec![linea("otra")]);
     }
 
@@ -1074,7 +1074,7 @@ variable n = 7
 ",
             )
             .expect("la declaración debe compilar");
-        repl.source_acumulado.push_str(&declaracion);
+        repl.fuente_acumulado.push_str(&declaracion);
         assert!(repl
             .compilar_y_ejecutar(
                 "escribir(hola)

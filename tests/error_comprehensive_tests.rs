@@ -131,8 +131,8 @@ fn test_lexer_error_cadena_sin_cerrar() {
     let mut lexer = Lexer::new("\"cadena sin cerrar");
     let resultado = lexer.tokenize();
     assert!(resultado.is_err());
-    let errors = resultado.unwrap_err();
-    assert_eq!(errors[0].tipo, ErrorTipo::ErrorLexico);
+    let errores = resultado.unwrap_err();
+    assert_eq!(errores[0].tipo, ErrorTipo::ErrorLexico);
 }
 
 // ============================================================
@@ -161,8 +161,8 @@ fn test_semantic_error_var_no_declarada() {
     let mut checker = BorrowChecker::new();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
-    let errors = resultado.unwrap_err();
-    assert_eq!(errors[0].tipo, ErrorTipo::ErrorSemantico);
+    let errores = resultado.unwrap_err();
+    assert_eq!(errores[0].tipo, ErrorTipo::ErrorSemantico);
 }
 
 #[test]
@@ -231,10 +231,10 @@ fn test_error_clone() {
 }
 
 #[test]
-fn test_error_debug() {
+fn test_error_depuracion() {
     let err = ErrorForja::new(ErrorTipo::ErrorInterno, 0, 0, "debug", "");
-    let debug = format!("{:?}", err);
-    assert!(!debug.is_empty());
+    let depuracion = format!("{:?}", err);
+    assert!(!depuracion.is_empty());
 }
 
 // ============================================================
@@ -245,7 +245,7 @@ fn test_error_debug() {
 fn test_multiples_errores_lexer() {
     let mut lexer = Lexer::new("\"a\n\"b\n\"c\n");
     let resultado = lexer.tokenize();
-    if let Err(errors) = resultado {
-        assert!(!errors.is_empty());
+    if let Err(errores) = resultado {
+        assert!(!errores.is_empty());
     }
 }

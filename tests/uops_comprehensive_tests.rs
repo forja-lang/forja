@@ -11,31 +11,31 @@ fn expandir(codigos: Vec<Opcode>) -> Vec<Uop> {
 // ============================================================
 
 #[test]
-fn test_uops_expand_push_entero() {
+fn test_uops_expandir_empujar_entero() {
     let uops = expandir(vec![Opcode::PushEntero(42)]);
     assert_eq!(uops[0], Uop::PushEntero(42));
 }
 
 #[test]
-fn test_uops_expand_push_decimal() {
+fn test_uops_expandir_empujar_decimal() {
     let uops = expandir(vec![Opcode::PushDecimal(2.5)]);
     assert_eq!(uops[0], Uop::PushDecimal(2.5));
 }
 
 #[test]
-fn test_uops_expand_push_texto() {
+fn test_uops_expandir_empujar_texto() {
     let uops = expandir(vec![Opcode::PushTexto(Arc::from("hi"))]);
     assert_eq!(uops[0], Uop::PushTexto(Arc::from("hi")));
 }
 
 #[test]
-fn test_uops_expand_push_booleano_true() {
+fn test_uops_expandir_empujar_booleano_true() {
     let uops = expandir(vec![Opcode::PushBooleano(true)]);
     assert_eq!(uops[0], Uop::PushBooleano(true));
 }
 
 #[test]
-fn test_uops_expand_push_nulo() {
+fn test_uops_expandir_empujar_nulo() {
     let uops = expandir(vec![Opcode::PushNulo]);
     assert_eq!(uops[0], Uop::PushNulo);
 }
@@ -107,37 +107,37 @@ fn test_uops_expand_return() {
 }
 
 #[test]
-fn test_uops_expand_array_new() {
+fn test_uops_expandir_arreglo_nuevo() {
     let uops = expandir(vec![Opcode::NuevoArreglo(3)]);
     assert_eq!(uops[0], Uop::ArrayNew(3));
 }
 
 #[test]
-fn test_uops_expand_array_get() {
+fn test_uops_expandir_arreglo_obtener() {
     let uops = expandir(vec![Opcode::ObtenerElemento]);
     assert_eq!(uops[0], Uop::ArrayGet);
 }
 
 #[test]
-fn test_uops_expand_array_set() {
+fn test_uops_expandir_arreglo_fijar() {
     let uops = expandir(vec![Opcode::FijarElemento]);
     assert_eq!(uops[0], Uop::ArraySet);
 }
 
 #[test]
-fn test_uops_expand_map_new() {
+fn test_uops_expandir_mapa_nuevo() {
     let uops = expandir(vec![Opcode::NuevoMapa(2)]);
     assert_eq!(uops[0], Uop::MapNew(2));
 }
 
 #[test]
-fn test_uops_expand_map_get() {
+fn test_uops_expandir_mapa_obtener() {
     let uops = expandir(vec![Opcode::ObtenerValorDeMapa]);
     assert_eq!(uops[0], Uop::MapGet);
 }
 
 #[test]
-fn test_uops_expand_map_set() {
+fn test_uops_expandir_mapa_fijar() {
     let uops = expandir(vec![Opcode::FijarValorDeMapa]);
     assert_eq!(uops[0], Uop::MapSet);
 }
@@ -149,7 +149,7 @@ fn test_uops_expand_dup() {
 }
 
 #[test]
-fn test_uops_expand_pop() {
+fn test_uops_expandir_desapilar() {
     let uops = expandir(vec![Opcode::Descartar]);
     assert_eq!(uops[0], Uop::Pop);
 }
@@ -210,14 +210,14 @@ fn test_uops_expand_add_float() {
 // ============================================================
 
 #[test]
-fn test_uops_optimize_no_change() {
+fn test_uops_optimizar_no_cambio() {
     let uops = vec![Uop::PushEntero(1), Uop::Print, Uop::Halt];
     let optimized = optimizar_uops(&uops);
     assert_eq!(optimized.len(), 3);
 }
 
 #[test]
-fn test_uops_optimize_push_pop_elimination() {
+fn test_uops_optimizar_empujar_desapilar_eliminacion() {
     let uops = vec![Uop::PushEntero(5), Uop::Pop, Uop::Halt];
     let optimized = optimizar_uops(&uops);
     assert_eq!(optimized.len(), 1);

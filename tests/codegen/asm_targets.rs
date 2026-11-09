@@ -224,7 +224,7 @@ const TARGETS: &[TargetArch] = &[
 ];
 
 #[test]
-fn target_syntax_directives() {
+fn destino_sintaxis_directivas() {
     assert_eq!(
         TargetArch::X86_64Windows.syntax_directive(),
         ".intel_syntax noprefix"
@@ -242,7 +242,7 @@ fn target_syntax_directives() {
 }
 
 #[test]
-fn target_from_str_aliases() {
+fn destino_from_texto_alias() {
     let casos = [
         ("windows", TargetArch::X86_64Windows),
         ("win64", TargetArch::X86_64Windows),
@@ -277,7 +277,7 @@ fn detect_no_paniquea() {
 /// `CompilerAsm::default()` existe para que el tipo no quede sin `Default`
 /// (clippy `new_without_default`); debe producir el mismo ASM que `new()`.
 #[test]
-fn default_equivale_a_new() {
+fn predeterminado_equivale_a_nuevo() {
     let programa = parsear("variable x = 1\nescribir(x)").expect("parse");
     let mut por_defecto = CompilerAsm::default();
     let mut explicito = CompilerAsm::new();
@@ -290,7 +290,7 @@ fn default_equivale_a_new() {
 
 /// Compila toda la batería para cada target y valida invariantes de arquitectura.
 #[test]
-fn bateria_por_target() {
+fn bateria_por_destino() {
     let mut fallos: Vec<String> = Vec::new();
 
     for destino in TARGETS {
@@ -437,7 +437,7 @@ fn constructos_no_soportados_fallan_en_compilacion() {
 
 /// Etiquetas de función por target: cada función de usuario debe generar label.
 #[test]
-fn funciones_generan_label_por_target() {
+fn funciones_generan_etiqueta_por_destino() {
     let programa =
         parsear("funcion suma(a, b) -> Entero {\n    retornar a + b\n}\nescribir(suma(2, 3))")
             .expect("parse");
@@ -460,7 +460,7 @@ fn funciones_generan_label_por_target() {
 /// inlining (`es_candidata_inline`, `tiene_auto_llamada`,
 /// `tiene_constructos_complejos`, ...). No debe paniquear en ningún target.
 #[test]
-fn analisis_de_inlining_por_target() {
+fn analisis_de_en_linea_por_destino() {
     let fuentes = [
         "funcion inc(x) -> Entero {\n    retornar x + 1\n}\nescribir(inc(1))",
         "funcion fib(n) -> Entero {\n    si (n < 2) { retornar n }\n    retornar fib(n - 1) + fib(n - 2)\n}\nescribir(fib(5))",

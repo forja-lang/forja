@@ -38,7 +38,7 @@ pub(crate) fn rechazar_flags(args: &[String]) {
 /// forja compilar <archivo.fa> [salida]
 /// Compila un archivo .fa a un ejecutable autónomo.
 /// Con `consola: true` en `forja.yaml` se conserva la ventana de consola.
-pub(crate) fn cmd_build(args: &[String]) {
+pub(crate) fn cmd_construir(args: &[String]) {
     rechazar_flags(args);
     let Some(entrada) = args.first() else {
         eprintln!("Uso: forja compilar <archivo.fa> [salida]");
@@ -168,7 +168,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
         .unwrap_or("proyecto");
 
     // Directorio de salida (segundo argumento, o <nombre>_rs)
-    let project_dir = args
+    let project_directorio = args
         .get(1)
         .cloned()
         .unwrap_or_else(|| format!("{}_rs", tallo_entrada));
@@ -204,20 +204,20 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     // Resolver imports para el JSON del runtime (AST completo con módulos)
     // Usar el directorio actual como raíz para resolver imports (modulos/, stdlib/)
     let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-    let input_parent = std::path::Path::new(input_path)
+    let entrada_padre = std::path::Path::new(input_path)
         .parent()
         .unwrap_or(std::path::Path::new("."));
     // Si input_path es relativo, combinar con CWD. Si es absoluto, usar su parent.
-    let root_for_imports = if std::path::Path::new(input_path).is_absolute() {
-        input_parent.to_path_buf()
+    let raiz_for_imports = if std::path::Path::new(input_path).is_absolute() {
+        entrada_padre.to_path_buf()
     } else {
-        cwd.join(input_parent)
+        cwd.join(entrada_padre)
     };
     eprintln!(
         "📂 Directorio raíz para imports: {}",
-        root_for_imports.display()
+        raiz_for_imports.display()
     );
-    let programa_resuelto = match forja::resolver_imports(&fuente, &root_for_imports) {
+    let programa_resuelto = match forja::resolver_imports(&fuente, &raiz_for_imports) {
         Ok(p) => {
             eprintln!(
                 "📦 Imports resueltos correctamente ({} declaraciones)",
@@ -239,9 +239,9 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     let _ = verificador.analizar(&programa);
     // FASE 4b: Borrow Checker — verifica ownership y préstamos
     // (con los nuevos fixes de scope tracking ya no hay falsos positivos)
-    let mut borrow_checker =
+    let mut prestamo_checker =
         semantics::BorrowChecker::con_estricto(forja::config::actual().estricto);
-    let _ = borrow_checker.analizar(&programa);
+    let _ = prestamo_checker.analizar(&programa);
 
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
@@ -261,9 +261,9 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     // Crear proyecto Cargo
-    let src_dir = Path::new(&project_dir).join("src");
-    if let Err(e) = fs::create_dir_all(&src_dir) {
-        eprintln!("Error creando directorio '{}': {}", project_dir, e);
+    let fuente_directorio = Path::new(&project_directorio).join("src");
+    if let Err(e) = fs::create_dir_all(&fuente_directorio) {
+        eprintln!("Error creando directorio '{}': {}", project_directorio, e);
         process::exit(1);
     }
 
@@ -351,16 +351,19 @@ edition = "2021"
         )
     };
 
-    if let Err(e) = fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml) {
+    if let Err(e) = fs::write(
+        Path::new(&project_directorio).join("Cargo.toml"),
+        &cargo_toml,
+    ) {
         eprintln!("Error escribiendo Cargo.toml: {}", e);
         process::exit(1);
     }
 
     // Escribir src/lib.rs o src/main.rs
-    let file_name = if usa_gui { "lib.rs" } else { "main.rs" };
-    let rs_path = src_dir.join(file_name);
-    if let Err(e) = fs::write(&rs_path, &rust_code) {
-        eprintln!("Error escribiendo '{}': {}", rs_path.display(), e);
+    let archivo_name = if usa_gui { "lib.rs" } else { "main.rs" };
+    let rs_ruta = fuente_directorio.join(archivo_name);
+    if let Err(e) = fs::write(&rs_ruta, &rust_code) {
+        eprintln!("Error escribiendo '{}': {}", rs_ruta.display(), e);
         process::exit(1);
     }
 
@@ -372,24 +375,24 @@ edition = "2021"
                 .unwrap_or_else(|_| format!("{:#?}", p.declaraciones)),
             None => format!("{:#?}", programa.declaraciones),
         };
-        let json_path = src_dir.join("programa.json");
-        if let Err(e) = fs::write(&json_path, &ast_json) {
-            eprintln!("Error escribiendo '{}': {}", json_path.display(), e);
+        let json_ruta = fuente_directorio.join("programa.json");
+        if let Err(e) = fs::write(&json_ruta, &ast_json) {
+            eprintln!("Error escribiendo '{}': {}", json_ruta.display(), e);
             process::exit(1);
         }
     }
 
-    println!("✅ Proyecto Rust exportado: {}\\", project_dir);
-    println!("   {}\\Cargo.toml", project_dir);
-    println!("   {}\\src\\main.rs", project_dir);
+    println!("✅ Proyecto Rust exportado: {}\\", project_directorio);
+    println!("   {}\\Cargo.toml", project_directorio);
+    println!("   {}\\src\\main.rs", project_directorio);
     println!();
     println!("📦 Compilando con cargo...");
 
     // Compilar automáticamente con cargo
-    let try_build = |args: &[&str]| -> Result<(), ()> {
+    let intentar_construir = |args: &[&str]| -> Result<(), ()> {
         let resultado = std::process::Command::new("cargo")
             .args(args)
-            .current_dir(&project_dir)
+            .current_dir(&project_directorio)
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .status();
@@ -400,14 +403,14 @@ edition = "2021"
     };
 
     // Intentar release primero, si falla probar debug
-    let build_ok = try_build(&["build", "--release"]).or_else(|_| {
+    let construir_correcto = intentar_construir(&["build", "--release"]).or_else(|_| {
         eprintln!("⚠️  Compilación release falló, intentando debug...");
-        try_build(&["build"])
+        intentar_construir(&["build"])
     });
 
-    match build_ok {
+    match construir_correcto {
         Ok(()) => {
-            let build_dir = "release"; // siempre usamos release
+            let construir_directorio = "release"; // siempre usamos release
             let exe_name = if cfg!(target_os = "windows") {
                 format!("{}.exe", tallo_entrada.replace(['-', ' '], "_"))
             } else {
@@ -416,20 +419,20 @@ edition = "2021"
             println!();
             println!(
                 "🚀 Ejecutable: .\\{}\\target\\{}\\{}",
-                project_dir, build_dir, exe_name
+                project_directorio, construir_directorio, exe_name
             );
         }
         Err(_) => {
             eprintln!();
             eprintln!("⚠️  No se pudo compilar con cargo.");
-            eprintln!("   El código Rust se generó en: {}", rs_path.display());
+            eprintln!("   El código Rust se generó en: {}", rs_ruta.display());
             eprintln!();
             eprintln!("   Posibles soluciones:");
             eprintln!("   1. Asegurate de tener Rust instalado: rustup show");
             eprintln!("   2. Si usás el toolchain GNU (mingw), cambiá a MSVC:");
             eprintln!("      rustup default stable-msvc");
             eprintln!("   3. Compilá manualmente:");
-            eprintln!("      cd {}", project_dir);
+            eprintln!("      cd {}", project_directorio);
             eprintln!("      cargo build --release");
         }
     }

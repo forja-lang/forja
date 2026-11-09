@@ -26,7 +26,7 @@ proptest! {
     // El formatter puede cambiar la posición (línea/columna), pero la
     // estructura del AST debe preservarse.
     #[test]
-    fn parse_format_parse_estable(s in "\\PC*") {
+    fn parsear_formato_parsear_estable(s in "\\PC*") {
         let mut lexer = forja::lexer::Lexer::new(&s);
         if let Ok(tokens) = lexer.tokenize() {
             let mut parser = forja::parser::Parser::new(tokens);

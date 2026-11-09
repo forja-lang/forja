@@ -62,14 +62,14 @@ fn test_tk_tipo_exacto_as_ident() {
 }
 
 #[test]
-fn test_tk_caracter_single_quote_as_texto() {
+fn test_token_caracter_simple_entrecomillar_as_texto() {
     // Single-quoted strings are parsed as Texto, not Caracter
     let k = kinds("'a'");
     assert_eq!(k[0], TokenKind::Texto("a".to_string()));
 }
 
 #[test]
-fn test_tk_single_quote_basic() {
+fn test_token_simple_entrecomillar_basico() {
     let k = kinds("'a'");
     assert_eq!(k[0], TokenKind::Texto("a".to_string()));
 }
@@ -87,7 +87,7 @@ fn test_tk_doc_comment_exact() {
 // Missing Declaracion coverage
 // ============================================================
 
-fn parse(fuente: &str) -> forja::ast::Programa {
+fn parsear(fuente: &str) -> forja::ast::Programa {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
@@ -97,13 +97,13 @@ fn parse(fuente: &str) -> forja::ast::Programa {
 #[test]
 fn test_decl_acceso_miembro() {
     // AccesoMiembro as a statement may be wrapped in Expresion
-    let prog = parse("obj.metodo()");
+    let prog = parsear("obj.metodo()");
     assert_eq!(prog.declaraciones.len(), 1);
 }
 
 #[test]
 fn test_decl_asignacion_index() {
-    let prog = parse("arr[0] = 99");
+    let prog = parsear("arr[0] = 99");
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::AsignacionIndex { nombre, .. } => assert_eq!(nombre, "arr"),
         _ => panic!("expected AsignacionIndex"),
@@ -116,7 +116,7 @@ fn test_decl_asignacion_index() {
 
 #[test]
 fn test_expr_literal_nulo() {
-    let prog = parse("variable x = nulo");
+    let prog = parsear("variable x = nulo");
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::Variable {
             valor: Some(forja::ast::Expresion::LiteralNulo),
@@ -128,7 +128,7 @@ fn test_expr_literal_nulo() {
 
 #[test]
 fn test_expr_llamada_funcion_as_expr() {
-    let prog = parse("variable x = f(42)");
+    let prog = parsear("variable x = f(42)");
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::Variable {
             valor: Some(forja::ast::Expresion::LlamadaFuncion { nombre, .. }),
@@ -142,7 +142,7 @@ fn test_expr_llamada_funcion_as_expr() {
 
 #[test]
 fn test_expr_llamada_metodo() {
-    let prog = parse("variable s = \"hola\".trim()");
+    let prog = parsear("variable s = \"hola\".trim()");
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::Variable {
             valor: Some(forja::ast::Expresion::LlamadaMetodo { metodo, .. }),
@@ -156,14 +156,14 @@ fn test_expr_llamada_metodo() {
 
 #[test]
 fn test_expr_parentesis() {
-    let prog = parse("variable x = (2 + 3)");
+    let prog = parsear("variable x = (2 + 3)");
     // May fold to 5 or stay as Binaria
     assert_eq!(prog.declaraciones.len(), 1);
 }
 
 #[test]
 fn test_expr_asignacion_campo() {
-    let prog = parse("este.nombre = \"Ana\"");
+    let prog = parsear("este.nombre = \"Ana\"");
     // may be AsignacionMiembro or Expresion(AsignacionCampo)
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::AsignacionMiembro { .. } => {}
@@ -174,7 +174,7 @@ fn test_expr_asignacion_campo() {
 
 #[test]
 fn test_expr_resultado_kw() {
-    let prog = parse("funcion f() -> Entero\n    asegura resultado >= 0\n{ retornar 0 }");
+    let prog = parsear("funcion f() -> Entero\n    asegura resultado >= 0\n{ retornar 0 }");
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::Funcion {
             postcondiciones, ..
@@ -186,8 +186,8 @@ fn test_expr_resultado_kw() {
 }
 
 #[test]
-fn test_expr_error_type() {
-    let prog = parse("variable e = Error(\"fail\")");
+fn test_expresion_error_tipo() {
+    let prog = parsear("variable e = Error(\"fail\")");
     match &prog.declaraciones[0] {
         forja::ast::Declaracion::Variable {
             valor: Some(forja::ast::Expresion::Error(_)),
@@ -202,7 +202,7 @@ fn test_expr_error_type() {
 // ============================================================
 
 #[test]
-fn test_opc_serialize_check_tag() {
+fn test_opcode_serializar_verificar_etiqueta() {
     let codigos = vec![Opcode::VerificarEtiqueta(5)];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -210,7 +210,7 @@ fn test_opc_serialize_check_tag() {
 }
 
 #[test]
-fn test_opc_serialize_extract_field() {
+fn test_opcode_serializar_extraer_campo() {
     let codigos = vec![Opcode::ExtraerCampo(3)];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -218,7 +218,7 @@ fn test_opc_serialize_extract_field() {
 }
 
 #[test]
-fn test_opc_serialize_label() {
+fn test_opcode_serializar_etiqueta() {
     let codigos = vec![Opcode::Etiqueta(999)];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -226,7 +226,7 @@ fn test_opc_serialize_label() {
 }
 
 #[test]
-fn test_opc_serialize_function_def() {
+fn test_opcode_serializar_funcion_definicion() {
     let codigos = vec![Opcode::DefinirFuncion(
         Arc::from("test"),
         vec![Arc::from("a"), Arc::from("b")],
@@ -240,7 +240,7 @@ fn test_opc_serialize_function_def() {
 }
 
 #[test]
-fn test_opc_serialize_new_object() {
+fn test_opcode_serializar_nuevo_objeto() {
     let codigos = vec![Opcode::NuevoObjeto(Arc::from("Punto"))];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -248,7 +248,7 @@ fn test_opc_serialize_new_object() {
 }
 
 #[test]
-fn test_opc_serialize_set_field() {
+fn test_opcode_serializar_fijar_campo() {
     let codigos = vec![Opcode::FijarCampo(Arc::from("x"))];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -256,7 +256,7 @@ fn test_opc_serialize_set_field() {
 }
 
 #[test]
-fn test_opc_serialize_get_field() {
+fn test_opcode_serializar_obtener_campo() {
     let codigos = vec![Opcode::ObtenerCampo(Arc::from("nombre"))];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -264,7 +264,7 @@ fn test_opc_serialize_get_field() {
 }
 
 #[test]
-fn test_opc_serialize_call_method() {
+fn test_opcode_serializar_llamada_metodo() {
     let codigos = vec![Opcode::LlamarMetodo(Arc::from("saludar"), 1)];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -272,7 +272,7 @@ fn test_opc_serialize_call_method() {
 }
 
 #[test]
-fn test_opc_serialize_try() {
+fn test_opcode_serializar_intentar() {
     let codigos = vec![Opcode::Intentar];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -280,7 +280,7 @@ fn test_opc_serialize_try() {
 }
 
 #[test]
-fn test_opc_serialize_channel_new() {
+fn test_opcode_serializar_canal_nuevo() {
     let codigos = vec![Opcode::NuevoCanal];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -288,7 +288,7 @@ fn test_opc_serialize_channel_new() {
 }
 
 #[test]
-fn test_opc_serialize_thread_spawn() {
+fn test_opcode_serializar_hilo_lanzar() {
     // ThreadSpawn serialization may not support round-trip yet
     let ops = vec![Opcode::CrearHilo(Arc::from("f"), 2)];
     let s = serializar_bytecode(&ops);
@@ -296,7 +296,7 @@ fn test_opc_serialize_thread_spawn() {
 }
 
 #[test]
-fn test_opc_serialize_array_len() {
+fn test_opcode_serializar_arreglo_longitud() {
     let codigos = vec![Opcode::LongitudArreglo];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -304,7 +304,7 @@ fn test_opc_serialize_array_len() {
 }
 
 #[test]
-fn test_opc_serialize_parse_int() {
+fn test_opcode_serializar_parsear_entero() {
     let codigos = vec![Opcode::ParsearEntero];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -312,7 +312,7 @@ fn test_opc_serialize_parse_int() {
 }
 
 #[test]
-fn test_opc_serialize_read_line() {
+fn test_opcode_serializar_leer_linea() {
     let codigos = vec![Opcode::LeerLinea];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -320,7 +320,7 @@ fn test_opc_serialize_read_line() {
 }
 
 #[test]
-fn test_opc_serialize_tiempo_actual() {
+fn test_opcode_serializar_tiempo_actual() {
     let codigos = vec![Opcode::TiempoActual];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -328,7 +328,7 @@ fn test_opc_serialize_tiempo_actual() {
 }
 
 #[test]
-fn test_opc_serialize_y() {
+fn test_opcode_serializar_y() {
     let codigos = vec![Opcode::Y, Opcode::O, Opcode::No];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -338,7 +338,7 @@ fn test_opc_serialize_y() {
 }
 
 #[test]
-fn test_opc_serialize_diferente_menor_igual() {
+fn test_opcode_serializar_diferente_menor_igual() {
     let codigos = vec![Opcode::Diferente, Opcode::MenorIgual, Opcode::MayorIgual];
     let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
@@ -348,7 +348,7 @@ fn test_opc_serialize_diferente_menor_igual() {
 }
 
 #[test]
-fn test_opc_serialize_exacto() {
+fn test_opcode_serializar_exacto() {
     let ops = vec![
         Opcode::PushExacto(123, 2),
         Opcode::SumarExacto,
@@ -369,7 +369,7 @@ fn test_opc_serialize_exacto() {
 }
 
 #[test]
-fn test_opc_serialize_float_comparisons() {
+fn test_opcode_serializar_flotante_comparaciones() {
     let ops = vec![
         Opcode::IgualDecimal,
         Opcode::DistintoDecimal,
@@ -383,7 +383,7 @@ fn test_opc_serialize_float_comparisons() {
 }
 
 #[test]
-fn test_opc_serialize_contract() {
+fn test_opcode_serializar_contrato() {
     let ops = vec![
         Opcode::VerificarPrecondicion(0),
         Opcode::VerificarPostcondicion(1),
@@ -396,7 +396,7 @@ fn test_opc_serialize_contract() {
 }
 
 #[test]
-fn test_opc_serialize_set_line() {
+fn test_opcode_serializar_fijar_linea() {
     let ops = vec![Opcode::FijarLinea(42)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -404,7 +404,7 @@ fn test_opc_serialize_set_line() {
 }
 
 #[test]
-fn test_opc_serialize_store_entero_op() {
+fn test_opcode_serializar_almacen_entero_op() {
     let ops = vec![Opcode::GuardarOperacionEntero(5, 100)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -412,7 +412,7 @@ fn test_opc_serialize_store_entero_op() {
 }
 
 #[test]
-fn test_opc_serialize_declare_float_op() {
+fn test_opcode_serializar_declarar_flotante_op() {
     let ops = vec![Opcode::DeclararOperacionDecimal(3, 2.5)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -420,7 +420,7 @@ fn test_opc_serialize_declare_float_op() {
 }
 
 #[test]
-fn test_opc_serialize_store_float_op() {
+fn test_opcode_serializar_almacen_flotante_op() {
     let ops = vec![Opcode::GuardarOperacionDecimal(7, 1.5)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -428,21 +428,21 @@ fn test_opc_serialize_store_float_op() {
 }
 
 #[test]
-fn test_opc_serialize_call_native_roundtrip() {
+fn test_opcode_serializar_llamada_nativo_ida_y_vuelta() {
     let ops = vec![Opcode::LlamarNativa(Arc::from("printf"), 2)];
     let s = serializar_bytecode(&ops);
     assert!(s.len() > 4);
 }
 
 #[test]
-fn test_opc_serialize_socket_poll() {
+fn test_opcode_serializar_socket_sondear() {
     let ops = vec![Opcode::ConsultarSocket(Arc::from("conn"))];
     let s = serializar_bytecode(&ops);
     assert!(s.len() > 4);
 }
 
 #[test]
-fn test_opc_serialize_declare_exact_op() {
+fn test_opcode_serializar_declarar_exacto_op() {
     let ops = vec![Opcode::DeclararOperacionExacto(0, 12345, 3)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -454,13 +454,13 @@ fn test_opc_serialize_declare_exact_op() {
 // ============================================================
 
 #[test]
-fn test_uop_expand_load_idx() {
+fn test_uop_expandir_cargar_indice() {
     let uops = expandir_a_uops(&[Opcode::CargarIndice(42)]);
     assert_eq!(uops[0], Uop::LoadIdx(42));
 }
 
 #[test]
-fn test_uop_expand_store_idx() {
+fn test_uop_expandir_almacen_indice() {
     let uops = expandir_a_uops(&[Opcode::GuardarIndice(99)]);
     assert_eq!(uops[0], Uop::StoreIdx(99));
 }
@@ -472,49 +472,49 @@ fn test_uop_expand_try() {
 }
 
 #[test]
-fn test_uop_expand_label() {
+fn test_uop_expandir_etiqueta() {
     let uops = expandir_a_uops(&[Opcode::Etiqueta(7)]);
     assert_eq!(uops[0], Uop::Label(7));
 }
 
 #[test]
-fn test_uop_expand_function_def() {
+fn test_uop_expandir_funcion_definicion() {
     let uops = expandir_a_uops(&[Opcode::DefinirFuncion(Arc::from("f"), vec![])]);
     assert_eq!(uops.len(), 1);
 }
 
 #[test]
-fn test_uop_expand_new_object() {
+fn test_uop_expandir_nuevo_objeto() {
     let uops = expandir_a_uops(&[Opcode::NuevoObjeto(Arc::from("Punto"))]);
     assert_eq!(uops[0], Uop::NewObject("Punto".to_string()));
 }
 
 #[test]
-fn test_uop_expand_set_field() {
+fn test_uop_expandir_fijar_campo() {
     let uops = expandir_a_uops(&[Opcode::FijarCampo(Arc::from("x"))]);
     assert_eq!(uops[0], Uop::SetField("x".to_string()));
 }
 
 #[test]
-fn test_uop_expand_get_field() {
+fn test_uop_expandir_obtener_campo() {
     let uops = expandir_a_uops(&[Opcode::ObtenerCampo(Arc::from("nombre"))]);
     assert_eq!(uops[0], Uop::GetField("nombre".to_string()));
 }
 
 #[test]
-fn test_uop_expand_call_method() {
+fn test_uop_expandir_llamada_metodo() {
     let uops = expandir_a_uops(&[Opcode::LlamarMetodo(Arc::from("saludar"), 1)]);
     assert_eq!(uops[0], Uop::CallMethod("saludar".to_string(), 1));
 }
 
 #[test]
-fn test_uop_expand_array_len() {
+fn test_uop_expandir_arreglo_longitud() {
     let uops = expandir_a_uops(&[Opcode::LongitudArreglo]);
     assert_eq!(uops[0], Uop::ArrayLen);
 }
 
 #[test]
-fn test_uop_expand_parse_int() {
+fn test_uop_expandir_parsear_entero() {
     let uops = expandir_a_uops(&[Opcode::ParsearEntero]);
     assert_eq!(uops[0], Uop::ParseInt);
 }
@@ -526,13 +526,13 @@ fn test_uop_expand_tiempo_actual() {
 }
 
 #[test]
-fn test_uop_expand_read_line() {
+fn test_uop_expandir_leer_linea() {
     let uops = expandir_a_uops(&[Opcode::LeerLinea]);
     assert_eq!(uops[0], Uop::ReadLine);
 }
 
 #[test]
-fn test_uop_expand_channel_new() {
+fn test_uop_expandir_canal_nuevo() {
     let uops = expandir_a_uops(&[Opcode::NuevoCanal]);
     // ChannelNew expands to some sequence of uops
     assert!(!uops.is_empty());
@@ -571,7 +571,7 @@ fn test_uop_expand_poll() {
 }
 
 #[test]
-fn test_uop_expand_call_native() {
+fn test_uop_expandir_llamada_nativo() {
     let uops = expandir_a_uops(&[Opcode::LlamarNativa(Arc::from("printf"), 1)]);
     assert_eq!(uops[0], Uop::CallNative(Arc::from("printf"), 1));
 }
@@ -601,31 +601,31 @@ fn test_uop_expand_decimal_a_exacto() {
 }
 
 #[test]
-fn test_uop_expand_contract_check_pre() {
+fn test_uop_expandir_contrato_verificar_pre() {
     let uops = expandir_a_uops(&[Opcode::VerificarPrecondicion(0)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
-fn test_uop_expand_contract_check_post() {
+fn test_uop_expandir_contrato_verificar_post() {
     let uops = expandir_a_uops(&[Opcode::VerificarPostcondicion(1)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
-fn test_uop_expand_contract_save_anterior() {
+fn test_uop_expandir_contrato_guardar_anterior() {
     let uops = expandir_a_uops(&[Opcode::GuardarAnterior(2)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
-fn test_uop_expand_contract_check_inv() {
+fn test_uop_expandir_contrato_verificar_inv() {
     let uops = expandir_a_uops(&[Opcode::VerificarInvariante(3)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
-fn test_uop_expand_set_line() {
+fn test_uop_expandir_fijar_linea() {
     let uops = expandir_a_uops(&[Opcode::FijarLinea(10)]);
     assert!(!uops.is_empty());
 }
@@ -635,7 +635,7 @@ fn test_uop_expand_set_line() {
 // ============================================================
 
 #[test]
-fn test_e2e_bytecode_gen_ok() {
+fn test_extremo_a_extremo_bytecode_generacion_correcto() {
     let mut lex = Lexer::new("variable x = 42\nescribir(x)");
     let tokens = lex.tokenize().unwrap();
     let mut parser = Parser::new(tokens);

@@ -78,7 +78,7 @@ fn ejecutar_llvm_nativo(fuente: &str, path: &str) -> Result<Vec<String>, String>
 /// Ejecuta un archivo .fa en la VM seleccionada (default: ForjaFast)
 /// Motor y destino: `motor` (rapido|vm|jit) y `destino` (maquina|ensamblador|nativo).
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
-pub(crate) fn cmd_run(args: &[String]) {
+pub(crate) fn cmd_ejecutar(args: &[String]) {
     rechazar_flags(args);
     let Some(path) = args.first() else {
         eprintln!("Uso: forja ejecutar <archivo.fa>");
@@ -90,7 +90,7 @@ pub(crate) fn cmd_run(args: &[String]) {
     let vm_mode = cfg.motor.to_lowercase();
     let destino = cfg.destino.to_lowercase();
     let asm_mode = destino == "ensamblador" || destino == "asm";
-    let native_mode = matches!(destino.as_str(), "nativo" | "native" | "gui");
+    let nativo_mode = matches!(destino.as_str(), "nativo" | "native" | "gui");
     let hot_reload = cfg.recarga;
     let fast_math_flag = cfg.matematica_rapida; //
     let backtrace_flag = cfg.pila; // pila de llamadas
@@ -111,7 +111,7 @@ pub(crate) fn cmd_run(args: &[String]) {
         }
     };
 
-    if native_mode {
+    if nativo_mode {
         let resultado = ejecutar_nativo(&fuente, path, hot_reload);
         match resultado {
             Ok(()) => {}
@@ -124,7 +124,7 @@ pub(crate) fn cmd_run(args: &[String]) {
     }
 
     let auto_asm = !asm_mode
-        && !native_mode
+        && !nativo_mode
         && !cfg.estricto
         && !fuente.contains("requiere")
         && !fuente.contains("asegura")
@@ -285,7 +285,7 @@ pub(crate) fn construir_sandbox(
 
 /// Compila un programa Forja a ASM nativo, lo ensambla con gcc -O2 y lo ejecuta.
 /// Devuelve las líneas de output del programa.
-pub(crate) fn ejecutar_asm(fuente: &str, input_path: &str) -> Result<Vec<String>, String> {
+pub(crate) fn ejecutar_asm(fuente: &str, entrada_ruta: &str) -> Result<Vec<String>, String> {
     use std::process::Command;
 
     // 1. Parsear y compilar a ASM
@@ -301,49 +301,49 @@ pub(crate) fn ejecutar_asm(fuente: &str, input_path: &str) -> Result<Vec<String>
         .map_err(|e| format!("Error de compilación ASM: {:?}", e))?;
 
     // 2. Escribir ASM a archivo temporal
-    let stem = Path::new(input_path)
+    let stem = Path::new(entrada_ruta)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
-    let asm_path = format!("{}_asm.s", stem);
-    let exe_path = if cfg!(target_os = "windows") {
+    let ruta_asm = format!("{}_asm.s", stem);
+    let exe_ruta = if cfg!(target_os = "windows") {
         format!("{}_asm.exe", stem)
     } else {
         format!("{}_asm", stem)
     };
 
-    std::fs::write(&asm_path, &asm_code).map_err(|e| format!("Error escribiendo ASM: {}", e))?;
+    std::fs::write(&ruta_asm, &asm_code).map_err(|e| format!("Error escribiendo ASM: {}", e))?;
 
     // 3. Compilar con gcc -O2
     let salida = Command::new("gcc")
-        .args(["-O2", "-o", &exe_path, &asm_path])
+        .args(["-O2", "-o", &exe_ruta, &ruta_asm])
         .output()
         .map_err(|e| format!("Error ejecutando gcc: {}. ¿Está instalado?", e))?;
 
     if !salida.status.success() {
         let stderr = String::from_utf8_lossy(&salida.stderr);
-        let _ = std::fs::remove_file(&asm_path);
+        let _ = std::fs::remove_file(&ruta_asm);
         return Err(format!("gcc falló:\n{}", stderr));
     }
 
     // 4. Ejecutar binario
-    let run_output = Command::new(if cfg!(target_os = "windows") {
-        if exe_path.starts_with(".\\") {
-            exe_path.clone()
+    let ejecutar_salida = Command::new(if cfg!(target_os = "windows") {
+        if exe_ruta.starts_with(".\\") {
+            exe_ruta.clone()
         } else {
-            format!(".\\{}", exe_path)
+            format!(".\\{}", exe_ruta)
         }
     } else {
-        format!("./{}", exe_path)
+        format!("./{}", exe_ruta)
     })
     .output()
     .map_err(|e| format!("Error ejecutando binario: {}", e))?;
 
     // 5. Limpiar archivos temporales
-    let _ = std::fs::remove_file(&asm_path);
-    let _ = std::fs::remove_file(&exe_path);
+    let _ = std::fs::remove_file(&ruta_asm);
+    let _ = std::fs::remove_file(&exe_ruta);
 
-    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    let stdout = String::from_utf8_lossy(&ejecutar_salida.stdout);
     Ok(stdout.lines().map(|s| s.to_string()).collect())
 }
 
@@ -352,7 +352,7 @@ pub(crate) fn ejecutar_asm(fuente: &str, input_path: &str) -> Result<Vec<String>
 /// Equivalente a hacer: forja transpile + cd dir + cargo run
 pub(crate) fn ejecutar_nativo(
     fuente: &str,
-    input_path: &str,
+    entrada_ruta: &str,
     hot_reload: bool,
 ) -> Result<(), String> {
     // 1. Parsear el programa (usando módulos locales para evitar conflictos
@@ -372,7 +372,7 @@ pub(crate) fn ejecutar_nativo(
     }
 
     // 3. Nombre del proyecto
-    let tallo_entrada = Path::new(input_path)
+    let tallo_entrada = Path::new(entrada_ruta)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("app");
@@ -385,11 +385,12 @@ pub(crate) fn ejecutar_nativo(
     }
 
     // 4. Crear directorio temporal
-    let temp_dir = std::env::temp_dir().join(format!("forja_gui_{}", std::process::id()));
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir).ok();
+    let directorio_temporal =
+        std::env::temp_dir().join(format!("forja_gui_{}", std::process::id()));
+    if directorio_temporal.exists() {
+        std::fs::remove_dir_all(&directorio_temporal).ok();
     }
-    std::fs::create_dir_all(&temp_dir)
+    std::fs::create_dir_all(&directorio_temporal)
         .map_err(|e| format!("Error creando directorio temporal: {}", e))?;
 
     // 5. Transpilar a Rust
@@ -400,10 +401,13 @@ pub(crate) fn ejecutar_nativo(
 
     // 6. Escribir el fuentes en `src/main.rs` (Cargo exige el target en `src/`;
     // dejarlo en la raíz del paquete hacía fallar con «no targets specified»).
-    std::fs::create_dir_all(temp_dir.join("src"))
+    std::fs::create_dir_all(directorio_temporal.join("src"))
         .map_err(|e| format!("Error creando src/: {}", e))?;
-    std::fs::write(temp_dir.join("src").join("main.rs"), &codigo_rust)
-        .map_err(|e| format!("Error escribiendo src/main.rs: {}", e))?;
+    std::fs::write(
+        directorio_temporal.join("src").join("main.rs"),
+        &codigo_rust,
+    )
+    .map_err(|e| format!("Error escribiendo src/main.rs: {}", e))?;
 
     // 7. Escribir Cargo.toml con rutas absolutas
     let forja_root = forja::raiz_forja().ok_or_else(|| {
@@ -438,20 +442,20 @@ opt-level = 3
         forja::ruta_para_toml(&forja_root)
     );
 
-    std::fs::write(temp_dir.join("Cargo.toml"), &cargo_toml)
+    std::fs::write(directorio_temporal.join("Cargo.toml"), &cargo_toml)
         .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
 
     // 8. Compilar con cargo (release)
     println!("📦 Compilando GUI nativa...");
     let salida = std::process::Command::new("cargo")
         .args(["build", "--release"])
-        .current_dir(&temp_dir)
+        .current_dir(&directorio_temporal)
         .output()
         .map_err(|e| format!("Error ejecutando cargo: {}. ¿Está instalado Rust?", e))?;
 
     if !salida.status.success() {
         let stderr = String::from_utf8_lossy(&salida.stderr);
-        std::fs::remove_dir_all(&temp_dir).ok();
+        std::fs::remove_dir_all(&directorio_temporal).ok();
         return Err(format!("Error de compilación:\n{}", stderr));
     }
 
@@ -463,21 +467,21 @@ opt-level = 3
     };
     // Cargo respeta `CARGO_TARGET_DIR` del entorno: si está seteado, el binario no
     // queda en `<temp>/target/release` sino ahí.
-    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+    let destino_directorio = std::env::var_os("CARGO_TARGET_DIR")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| temp_dir.join("target"));
-    let bin_path = target_dir.join("release").join(&exe_name);
+        .unwrap_or_else(|| directorio_temporal.join("target"));
+    let bin_ruta = destino_directorio.join("release").join(&exe_name);
 
     println!("🚀 Ejecutando GUI nativa...");
-    let child = std::process::Command::new(&bin_path)
+    let hijo = std::process::Command::new(&bin_ruta)
         .spawn()
         .map_err(|e| format!("Error ejecutando binario: {}", e))?;
 
     if hot_reload {
-        iniciar_watcher_hot_reload(input_path, &temp_dir, &exe_name, child)?;
+        iniciar_watcher_hot_reload(entrada_ruta, &directorio_temporal, &exe_name, hijo)?;
     } else {
         // Esperar a que termine el proceso hijo
-        let _ = child.wait_with_output();
+        let _ = hijo.wait_with_output();
     }
 
     // Limpieza opcional (comentada para mantener el caché de cargo)
@@ -491,25 +495,25 @@ opt-level = 3
 /// Si cambió: mata la app actual, recompila, y ejecuta la nueva preservando estado.
 pub(crate) fn iniciar_watcher_hot_reload(
     ruta_fa: &str,
-    temp_dir: &std::path::Path,
+    directorio_temporal: &std::path::Path,
     exe_name: &str,
-    mut child: std::process::Child,
+    mut hijo: std::process::Child,
 ) -> Result<(), String> {
     use std::io::Read;
     use std::thread;
     use std::time::Duration;
 
-    let fa_path = std::path::Path::new(ruta_fa).to_path_buf();
-    let build_dir = temp_dir.to_path_buf();
-    let source_original = std::fs::read_to_string(&fa_path).unwrap_or_default();
-    let mut last_content = source_original;
+    let fa_ruta = std::path::Path::new(ruta_fa).to_path_buf();
+    let directorio_construccion = directorio_temporal.to_path_buf();
+    let fuente_original = std::fs::read_to_string(&fa_ruta).unwrap_or_default();
+    let mut ultimo_content = fuente_original;
 
     // Ruta donde la app guarda el estado al ser notificada
-    let state_path = build_dir.join("state.json");
+    let state_ruta = directorio_construccion.join("state.json");
 
     println!(
         "🔄 Hot reload activo. Esperando cambios en {}...",
-        fa_path.display()
+        fa_ruta.display()
     );
 
     loop {
@@ -517,11 +521,11 @@ pub(crate) fn iniciar_watcher_hot_reload(
         thread::sleep(Duration::from_millis(500));
 
         // Leer el archivo .fa
-        let current_content = std::fs::read_to_string(&fa_path).unwrap_or_default();
+        let actual_content = std::fs::read_to_string(&fa_ruta).unwrap_or_default();
 
-        if current_content != last_content && !current_content.is_empty() {
+        if actual_content != ultimo_content && !actual_content.is_empty() {
             println!("📝 Cambio detectado! Recompilando...");
-            last_content = current_content.clone();
+            ultimo_content = actual_content.clone();
 
             // Enviar señal a la app para que guarde estado
             // Enviar SIGINT en Unix o un ctrl+c simulado en Windows
@@ -539,15 +543,15 @@ pub(crate) fn iniciar_watcher_hot_reload(
             // actual que la app haya persistido.
 
             // Matar proceso anterior
-            println!("  Deteniendo app anterior (PID {})...", child.id());
-            child.kill().ok();
-            child.wait().ok();
+            println!("  Deteniendo app anterior (PID {})...", hijo.id());
+            hijo.kill().ok();
+            hijo.wait().ok();
 
             // Recompilar
             println!("  Recompilando...");
             let status = std::process::Command::new("cargo")
                 .args(["build", "--release"])
-                .current_dir(&build_dir)
+                .current_dir(&directorio_construccion)
                 .output()
                 .map_err(|e| format!("Error recompilando: {}", e))?;
 
@@ -559,8 +563,8 @@ pub(crate) fn iniciar_watcher_hot_reload(
             }
 
             // Cargar estado guardado (si existe)
-            let state_arg = if state_path.exists() {
-                if let Ok(mut archivo) = std::fs::File::open(&state_path) {
+            let state_arg = if state_ruta.exists() {
+                if let Ok(mut archivo) = std::fs::File::open(&state_ruta) {
                     let mut state = String::new();
                     if archivo.read_to_string(&mut state).is_ok() && !state.is_empty() {
                         format!("--load-state={}", state)
@@ -575,14 +579,16 @@ pub(crate) fn iniciar_watcher_hot_reload(
             };
 
             // Ejecutar nueva versión
-            let bin_path = build_dir.join("target/release").join(exe_name);
+            let bin_ruta = directorio_construccion
+                .join("target/release")
+                .join(exe_name);
 
             println!("  🚀 Reiniciando app con hot reload...");
-            let mut comando = std::process::Command::new(&bin_path);
+            let mut comando = std::process::Command::new(&bin_ruta);
             if !state_arg.is_empty() {
                 comando.arg(&state_arg);
             }
-            child = comando
+            hijo = comando
                 .spawn()
                 .map_err(|e| format!("Error ejecutando nueva versión: {}", e))?;
 
@@ -590,7 +596,7 @@ pub(crate) fn iniciar_watcher_hot_reload(
         }
 
         // Verificar si el hijo sigue vivo
-        match child.try_wait() {
+        match hijo.try_wait() {
             Ok(Some(_status)) => {
                 println!("👋 App terminada. Hot reload finalizado.");
                 break;
@@ -611,11 +617,15 @@ pub(crate) fn recolectar_archivos_fa(directorio: &Path, out: &mut Vec<String>) {
         Err(_) => return,
     };
     for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_dir() {
-            recolectar_archivos_fa(&path, out);
-        } else if path.extension().map(|ext| ext == "fa").unwrap_or(false) {
-            out.push(path.to_string_lossy().to_string());
+        let ruta_hijo = entry.path();
+        if ruta_hijo.is_dir() {
+            recolectar_archivos_fa(&ruta_hijo, out);
+        } else if ruta_hijo
+            .extension()
+            .map(|ext| ext == "fa")
+            .unwrap_or(false)
+        {
+            out.push(ruta_hijo.to_string_lossy().to_string());
         }
     }
 }

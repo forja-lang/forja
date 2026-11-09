@@ -18,7 +18,7 @@ coincidir (d) {
 }
 
 #[test]
-fn test_coincidir_con_patron_string() {
+fn test_coincidir_con_patron_texto() {
     compilar(
         r#"
 variable s = "hola"
@@ -75,7 +75,7 @@ escribir(dobles[2])
 }
 
 #[test]
-fn test_simple_output() {
+fn test_simple_salida() {
     let salida = forja::ejecutar_vm("escribir(\"hola\")").expect("ejecuta");
     assert_eq!(salida, vec!["hola".to_string()]);
 }

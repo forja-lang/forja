@@ -217,49 +217,49 @@ fn test_e2e_decimales() {
 // ============================================================
 
 #[test]
-fn test_string_length() {
+fn test_texto_longitud() {
     let salida = ejecutar("escribir(\"hola\".longitud())").unwrap();
     assert_eq!(salida, vec!["4"]);
 }
 
 #[test]
-fn test_string_to_upper() {
+fn test_texto_to_mayusculas() {
     let salida = ejecutar("escribir(\"hola\".a_mayusculas())").unwrap();
     assert_eq!(salida, vec!["HOLA"]);
 }
 
 #[test]
-fn test_string_to_lower() {
+fn test_texto_to_minusculas() {
     let salida = ejecutar("escribir(\"HOLA\".a_minusculas())").unwrap();
     assert_eq!(salida, vec!["hola"]);
 }
 
 #[test]
-fn test_string_trim() {
+fn test_texto_recortar() {
     let salida = ejecutar("escribir(\"  hola  \".recortar())").unwrap();
     assert_eq!(salida, vec!["hola"]);
 }
 
 #[test]
-fn test_string_contains_true() {
+fn test_texto_contiene_true() {
     let salida = ejecutar("escribir(\"hello world\".contiene(\"world\"))").unwrap();
     assert_eq!(salida, vec!["verdadero"]);
 }
 
 #[test]
-fn test_string_contains_false() {
+fn test_texto_contiene_false() {
     let salida = ejecutar("escribir(\"hello world\".contiene(\"xyz\"))").unwrap();
     assert_eq!(salida, vec!["falso"]);
 }
 
 #[test]
-fn test_string_reverse() {
+fn test_texto_invertir() {
     let salida = ejecutar("escribir(\"rust\".invertir())").unwrap();
     assert_eq!(salida, vec!["tsur"]);
 }
 
 #[test]
-fn test_string_starts_with() {
+fn test_texto_empieza_con() {
     let salida = ejecutar("escribir(\"hola mundo\".empieza_con(\"hola\"))").unwrap();
     assert_eq!(salida, vec!["verdadero"]);
     let out2 = ejecutar("escribir(\"hola mundo\".empieza_con(\"xyz\"))").unwrap();
@@ -267,7 +267,7 @@ fn test_string_starts_with() {
 }
 
 #[test]
-fn test_string_ends_with() {
+fn test_texto_termina_con() {
     let salida = ejecutar("escribir(\"hola mundo\".termina_con(\"mundo\"))").unwrap();
     assert_eq!(salida, vec!["verdadero"]);
     let out2 = ejecutar("escribir(\"hola mundo\".termina_con(\"xyz\"))").unwrap();
@@ -275,7 +275,7 @@ fn test_string_ends_with() {
 }
 
 #[test]
-fn test_string_char_at() {
+fn test_texto_caracter_at() {
     let salida = ejecutar("escribir(\"hola\".caracter_en(0))").unwrap();
     assert_eq!(salida, vec!["h"]);
     let out2 = ejecutar("escribir(\"hola\".caracter_en(3))").unwrap();
@@ -283,7 +283,7 @@ fn test_string_char_at() {
 }
 
 #[test]
-fn test_string_index_of() {
+fn test_texto_indice_of() {
     let salida = ejecutar("escribir(\"hello world\".indice_de(\"world\"))").unwrap();
     assert_eq!(salida, vec!["6"]);
     let out2 = ejecutar("escribir(\"hello\".indice_de(\"xyz\"))").unwrap();
@@ -291,25 +291,25 @@ fn test_string_index_of() {
 }
 
 #[test]
-fn test_string_substr() {
+fn test_texto_subcadena() {
     let salida = ejecutar("escribir(\"hello world\".subcadena(6, 5))").unwrap();
     assert_eq!(salida, vec!["world"]);
 }
 
 #[test]
-fn test_string_replace() {
+fn test_texto_reemplazar() {
     let salida = ejecutar("escribir(\"hola mundo\".reemplazar(\"mundo\", \"forja\"))").unwrap();
     assert_eq!(salida, vec!["hola forja"]);
 }
 
 #[test]
-fn test_string_parse_entero() {
+fn test_texto_parsear_entero() {
     let salida = ejecutar("escribir(\"42\".a_entero())").unwrap();
     assert_eq!(salida, vec!["42"]);
 }
 
 #[test]
-fn test_string_parse_flotante() {
+fn test_texto_parsear_flotante() {
     let salida = ejecutar("escribir(\"3.14\".a_flotante())").unwrap();
     assert_eq!(salida, vec!["3.14"]);
 }
@@ -333,13 +333,13 @@ fn test_array_literal() {
 }
 
 #[test]
-fn test_array_get() {
+fn test_arreglo_obtener() {
     let salida = ejecutar("variable arr = [10, 20, 30]\nescribir(arr[1])").unwrap();
     assert_eq!(salida, vec!["20"]);
 }
 
 #[test]
-fn test_array_set() {
+fn test_arreglo_fijar() {
     let salida = ejecutar(
         "variable arr = [1, 2, 3]
          arr[1] = 99
@@ -377,7 +377,7 @@ fn test_mapa_literal() {
 }
 
 #[test]
-fn test_mapa_get_edad() {
+fn test_mapa_obtener_edad() {
     let salida = ejecutar(
         "variable m = {\"x\": 10, \"y\": 20}
          escribir(m[\"y\"])",
@@ -501,8 +501,8 @@ escribir(ipv4_valida)
 escribir(ipv6_valida)
 escribir(mac_valida)
 "#;
-    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    let raiz_directorio = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_con_opciones_desde(codigo, raiz_directorio, true, None).unwrap();
     assert_eq!(salida, vec!["verdadero", "verdadero", "verdadero"]);
 }
 
@@ -529,8 +529,8 @@ coincidir (res_conn) {
     caso _ -> escribir("error conexion")
 }
 "#;
-    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    let raiz_directorio = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_con_opciones_desde(codigo, raiz_directorio, true, None).unwrap();
     assert_eq!(salida, vec!["HTTP/3 QUIC Stream OK"]);
 }
 
@@ -548,8 +548,8 @@ coincidir (res) {
     caso _ -> escribir("error h3")
 }
 "#;
-    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    let raiz_directorio = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_con_opciones_desde(codigo, raiz_directorio, true, None).unwrap();
     assert_eq!(salida, vec!["HTTP/3.0", "200"]);
 }
 
@@ -560,8 +560,8 @@ variable m = {"nombre": "Forja", "version": 1}
 escribir(m.nombre)
 escribir(m.version)
 "#;
-    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    let raiz_directorio = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_con_opciones_desde(codigo, raiz_directorio, true, None).unwrap();
     assert_eq!(salida, vec!["Forja", "1"]);
 }
 
@@ -587,8 +587,8 @@ variable nombre = "Mundo"
 variable msg = "Hola ${nombre}!"
 escribir(msg)
 "#;
-    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    let raiz_directorio = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_con_opciones_desde(codigo, raiz_directorio, true, None).unwrap();
     assert_eq!(salida, vec!["Hola Mundo!"]);
 }
 
@@ -610,7 +610,7 @@ escribir(b)
 }
 
 #[test]
-fn test_struct_literal_init() {
+fn test_struct_literal_inicializar() {
     let codigo = r#"
 clase Persona {
     nombre
@@ -621,8 +621,8 @@ variable p = nuevo Persona { nombre: "Ana", edad: 25 }
 escribir(p.nombre)
 escribir(p.edad)
 "#;
-    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    let raiz_directorio = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_con_opciones_desde(codigo, raiz_directorio, true, None).unwrap();
     assert_eq!(salida, vec!["Ana", "25"]);
 }
 

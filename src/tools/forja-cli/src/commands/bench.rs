@@ -33,17 +33,17 @@ pub(crate) fn cmd_bench(args: &[String]) {
         }
     };
 
-    let source_auto = !cfg.estricto
+    let fuente_auto = !cfg.estricto
         && !fuente.contains("requiere")
         && !fuente.contains("asegura")
         && !fuente.contains("importar")
         && !fuente.contains("gui")
         && !fuente.contains("entrada(");
-    if asm_mode || source_auto {
+    if asm_mode || fuente_auto {
         // Ruta LLVM nativa de Forja (clang -O3).
-        let t_compile = std::time::Instant::now();
+        let t_compilar = std::time::Instant::now();
         if let Ok(exe) = compilar_llvm_nativo(&fuente) {
-            let compile_ms = t_compile.elapsed().as_secs_f64() * 1000.0;
+            let compilar_ms = t_compilar.elapsed().as_secs_f64() * 1000.0;
             let directorio = std::path::Path::new(path)
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
@@ -63,7 +63,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
                     .collect();
             }
             let hot = hot_ns / iters.max(1) as f64;
-            println!("  {:<14} compilar {:>9.2} ms", "Forja LLVM", compile_ms);
+            println!("  {:<14} compilar {:>9.2} ms", "Forja LLVM", compilar_ms);
             println!(
                 "  {:<14} hot      {:>9.2} ms/iter",
                 "Forja LLVM",
@@ -80,11 +80,11 @@ pub(crate) fn cmd_bench(args: &[String]) {
         let t0 = std::time::Instant::now();
         match ejecutar_asm(&fuente, path) {
             Ok(salida) => {
-                let compile_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
+                let compilar_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
                 println!(
                     "  {:<14} compilar {:>9.2} ms",
                     "Forja ASM",
-                    compile_us / 1000.0
+                    compilar_us / 1000.0
                 );
 
                 // Medir ejecución en caliente (re-ejecutando el binario)

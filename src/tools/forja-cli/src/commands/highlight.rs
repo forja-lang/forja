@@ -142,21 +142,21 @@ pub(crate) fn cmd_highlight(args: &[String]) {
         if ch == '"' {
             let inicio = pos;
             pos += 1;
-            let mut escape = false;
+            let mut escapar = false;
             while pos < longitud {
                 let curr = chars[pos];
-                if escape {
-                    escape = false;
+                if escapar {
+                    escapar = false;
                 } else if curr == '\\' {
-                    escape = true;
+                    escapar = true;
                 } else if curr == '"' {
                     pos += 1;
                     break;
                 }
                 pos += 1;
             }
-            let string_lit: String = chars[inicio..pos].iter().collect();
-            salida.push_str(&st(&string_lit));
+            let texto_lit: String = chars[inicio..pos].iter().collect();
+            salida.push_str(&st(&texto_lit));
             continue;
         }
 
@@ -164,13 +164,13 @@ pub(crate) fn cmd_highlight(args: &[String]) {
         if ch == '\'' {
             let inicio = pos;
             pos += 1;
-            let mut escape = false;
+            let mut escapar = false;
             while pos < longitud {
                 let curr = chars[pos];
-                if escape {
-                    escape = false;
+                if escapar {
+                    escapar = false;
                 } else if curr == '\\' {
-                    escape = true;
+                    escapar = true;
                 } else if curr == '\'' {
                     pos += 1;
                     break;

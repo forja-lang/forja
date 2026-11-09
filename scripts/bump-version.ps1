@@ -276,6 +276,20 @@ Update-FileContent "installer\bootstrapper\ForjaBA.csproj" {
     $txt -replace '<Version>[0-9]+\.[0-9]+\.[0-9]+</Version>', "<Version>$NewVersion</Version>"
 }
 
+# 10d. Fórmula de Homebrew: la genera scripts/update-homebrew.sh (bash), que la
+#      reescribe entera desde la plantilla. Los sha256 quedan pendientes porque
+#      el release sale después del tag; se rellenan corriendo ese script sin
+#      --sin-hashes (ver packaging/homebrew-tap/README.md).
+if (Test-Path "packaging\homebrew-tap\Formula\forja.rb") {
+    if (Get-Command bash -ErrorAction SilentlyContinue) {
+        & bash scripts/update-homebrew.sh $NewVersion --sin-hashes | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Falló scripts/update-homebrew.sh" }
+        Write-Host "  ✅  packaging/homebrew-tap/Formula/forja.rb" -ForegroundColor Green
+    } else {
+        Write-Host "  ⚠️   bash no disponible: la fórmula de Homebrew no se regeneró" -ForegroundColor Yellow
+    }
+}
+
 # 11. Verificación: ningún Cargo.toml del workspace debe quedar desfasado.
 #     Es la red que faltaba: un bump incompleto dejaba el workspace sin resolver
 #     (`forja-gui-rt 0.9.6` exigiendo `forja-gui-core ^0.9.6` con 0.9.5).
@@ -302,6 +316,20 @@ if ($Desfasados.Count -gt 0) {
     exit 1
 }
 Write-Host "   ✅ Verificación: todos los Cargo.toml del workspace en $NewVersion" -ForegroundColor Green
+
+# 11b. La fórmula de Homebrew también tiene que quedar en la versión nueva.
+#      Si `bash` no está o alguien movió el archivo, esto lo delata acá y no en
+#      el tap publicado. Con placeholder de sha256 `brew install` igual falla:
+#      los hashes se rellenan cuando la release existe.
+$formula = "packaging\homebrew-tap\Formula\forja.rb"
+if (Test-Path (Join-Path $ProjectDir $formula)) {
+    if (-not (Select-String -Path (Join-Path $ProjectDir $formula) -Pattern "^  version `"$([regex]::Escape($NewVersion))`"$" -Quiet)) {
+        Write-Host "`n❌ $formula no quedó en $NewVersion" -ForegroundColor Red
+        Write-Host "   Corregí con: bash scripts/update-homebrew.sh $NewVersion --sin-hashes" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "   ✅ Verificación: fórmula de Homebrew en $NewVersion (sha256 pendientes del release)" -ForegroundColor Green
+}
 
 # 12. Cargo check to update Cargo.lock files
 if (Get-Command "cargo" -ErrorAction SilentlyContinue) {

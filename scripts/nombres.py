@@ -40,7 +40,7 @@ RAICES_INGLESAS = set(
     unswitch text size width height label pad wrap arrow indent escape quote line lines
     anchor margin border widget window event root child parent edit view bind bump next
     verbose trace debug warn warning info notice help version author license package
-    script todo fixme hack careful
+    script fixme hack careful
     """.split()
 )
 
@@ -48,7 +48,8 @@ RAICES_INGLESAS = set(
 PRESTAMOS = set(
     """
     bytecode opcode uop token hash buffer socket byte bit ptr mut id idx vm jit gc ast hir
-    ir ffi json http tls sql sandbox arena mutex crate span runtime vec std
+    ir ffi json http tls sql sandbox arena mutex crate span runtime vec std dce cse
+    struct trait enum
     config lint lexer parser cache enum version str
     """.split()
 )
@@ -68,6 +69,12 @@ EXENTAS_GLOBALES = set(
     serialize deserialize expecting visit_bool visit_i64 visit_u64 visit_str visit_string
     visit_map visit_seq visit_none visit_some visit_unit""".split()
 )
+
+# Archivos que son protocolo en el cable: sus nombres son campos JSON ajenos (CONVENCIONES.md §8.9).
+EXENTOS = {
+    "src/tools/forja-lsp/src/main.rs",  # LSP / tower-lsp
+    "src/tools/forja-dap/src/main.rs",  # DAP / VS Code
+}
 
 # Directorios que no son código propio.
 EXCLUIDOS = ("target", "node_modules", "patches", "fuzz", ".git", "docs", "scratch")
@@ -140,16 +147,32 @@ def archivos_rs() -> list[Path]:
         rel = ruta.relative_to(RAIZ).as_posix()
         if any(f"/{x}/" in f"/{rel}" for x in EXCLUIDOS):
             continue
+        if rel in EXENTOS:
+            continue
         out.append(ruta)
     return sorted(out)
 
 
+def _segmentar(texto: str) -> list[tuple[str, bool]]:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("renombrar", Path(__file__).with_name("renombrar.py"))
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo.segmentar(texto)
+
+
 def revisar(ruta: Path) -> list[tuple[int, str]]:
     hallazgos = []
-    for numero, linea in enumerate(ruta.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+    # strings multilínea, raw strings y comentarios fuera: sólo queda código
+    original = ruta.read_text(encoding="utf-8", errors="ignore")
+    codigo = "".join(
+        trozo if es_codigo else "".join(" " if c != chr(10) else chr(10) for c in trozo)
+        for trozo, es_codigo in _segmentar(original)
+    )
+    for numero, linea in enumerate(codigo.splitlines(), 1):
         if linea.lstrip().startswith("//"):
             continue
-        linea = TEXTO.sub('""', linea)
         nombres = []
         if m := RE_DECL.search(linea):
             nombres.extend(n for n in m.groups() if n)

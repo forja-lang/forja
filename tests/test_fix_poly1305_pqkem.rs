@@ -9,54 +9,54 @@ use std::vec::Vec;
 struct Sha256 {
     h: [u32; 8],
     buf: [u8; 64],
-    len: usize,
+    longitud: usize,
 }
 impl Sha256 {
-    fn new() -> Self {
+    fn nuevo() -> Self {
         Sha256 {
             h: [
                 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
                 0x5be0cd19,
             ],
             buf: [0u8; 64],
-            len: 0,
+            longitud: 0,
         }
     }
     fn digest(data: &[u8]) -> [u8; 32] {
-        let mut s = Sha256::new();
-        s.update(data);
+        let mut s = Sha256::nuevo();
+        s.actualizar(data);
         s.finalize()
     }
-    fn update(&mut self, data: &[u8]) {
+    fn actualizar(&mut self, data: &[u8]) {
         let mut desplazamiento = 0;
         while desplazamiento < data.len() {
-            let space = 64 - self.len;
+            let space = 64 - self.longitud;
             let take = (data.len() - desplazamiento).min(space);
-            self.buf[self.len..self.len + take]
+            self.buf[self.longitud..self.longitud + take]
                 .copy_from_slice(&data[desplazamiento..desplazamiento + take]);
-            self.len += take;
+            self.longitud += take;
             desplazamiento += take;
-            if self.len == 64 {
+            if self.longitud == 64 {
                 self.compress();
-                self.len = 0;
+                self.longitud = 0;
             }
         }
     }
     fn finalize(&mut self) -> [u8; 32] {
-        let bits = (self.len as u64) * 8;
-        self.buf[self.len] = 0x80;
-        self.len += 1;
-        if self.len > 56 {
-            while self.len < 64 {
-                self.buf[self.len] = 0;
-                self.len += 1;
+        let bits = (self.longitud as u64) * 8;
+        self.buf[self.longitud] = 0x80;
+        self.longitud += 1;
+        if self.longitud > 56 {
+            while self.longitud < 64 {
+                self.buf[self.longitud] = 0;
+                self.longitud += 1;
             }
             self.compress();
-            self.len = 0;
+            self.longitud = 0;
         }
-        while self.len < 56 {
-            self.buf[self.len] = 0;
-            self.len += 1;
+        while self.longitud < 56 {
+            self.buf[self.longitud] = 0;
+            self.longitud += 1;
         }
         self.buf[56..64].copy_from_slice(&bits.to_be_bytes());
         self.compress();
@@ -123,7 +123,7 @@ const K256: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-fn hex_encode(octetos: &[u8]) -> String {
+fn hex_codificar(octetos: &[u8]) -> String {
     let h = b"0123456789abcdef";
     let mut s = String::with_capacity(octetos.len() * 2);
     for b in octetos {
@@ -137,9 +137,9 @@ fn hex_encode(octetos: &[u8]) -> String {
 // Poly1305 5 limbos
 // ════════════════════════════════════════
 fn le_bytes_to_limbs(b: &[u8]) -> [u64; 5] {
-    let len = b.len().min(16);
+    let longitud = b.len().min(16);
     let mut buf = [0u8; 16];
-    buf[..len].copy_from_slice(b);
+    buf[..longitud].copy_from_slice(b);
     let val = u128::from_le_bytes(buf);
     let mut h = [0u64; 5];
     h[0] = (val as u64) & ((1 << 26) - 1);
@@ -147,8 +147,8 @@ fn le_bytes_to_limbs(b: &[u8]) -> [u64; 5] {
     h[2] = ((val >> 52) as u64) & ((1 << 26) - 1);
     h[3] = ((val >> 78) as u64) & ((1 << 26) - 1);
     h[4] = (val >> 104) as u64;
-    if len > 0 {
-        let hp = len * 8;
+    if longitud > 0 {
+        let hp = longitud * 8;
         h[hp / 26] |= 1u64 << (hp % 26);
     }
     h
@@ -405,11 +405,11 @@ struct Poly {
     coeffs: [i16; N],
 }
 impl Poly {
-    fn new() -> Self {
+    fn nuevo() -> Self {
         Self { coeffs: [0i16; N] }
     }
     fn from_bytes(octetos: &[u8]) -> Self {
-        let mut p = Self::new();
+        let mut p = Self::nuevo();
         let n = N.min(octetos.len() / 2);
         for i in 0..n {
             let v = (octetos[i * 2] as u16 | (octetos[i * 2 + 1] as u16) << 8) % Q as u16;
@@ -428,14 +428,14 @@ impl Poly {
     }
 }
 fn add(a: &Poly, b: &Poly) -> Poly {
-    let mut c = Poly::new();
+    let mut c = Poly::nuevo();
     for i in 0..N {
         c.coeffs[i] = ((a.coeffs[i] as i32 + b.coeffs[i] as i32).rem_euclid(Q as i32)) as i16;
     }
     c
 }
 fn sub(a: &Poly, b: &Poly) -> Poly {
-    let mut c = Poly::new();
+    let mut c = Poly::nuevo();
     for i in 0..N {
         c.coeffs[i] = ((a.coeffs[i] as i32 - b.coeffs[i] as i32).rem_euclid(Q as i32)) as i16;
     }
@@ -459,14 +459,14 @@ fn mul_naive(a: &Poly, b: &Poly) -> Poly {
             c[indice] = (c[indice] + ai * bj * sign).rem_euclid(q);
         }
     }
-    let mut salida = Poly::new();
+    let mut salida = Poly::nuevo();
     for (o, &ci) in salida.coeffs.iter_mut().zip(c.iter()) {
         *o = ci as i16;
     }
     salida
 }
 fn sample_cbd(seed: &[u8]) -> Poly {
-    let mut p = Poly::new();
+    let mut p = Poly::nuevo();
     for i in 0..N {
         let byte = if i / 4 < seed.len() { seed[i / 4] } else { 0 };
         let a = (byte >> ((i % 4) * 2)) & 1;
@@ -476,7 +476,7 @@ fn sample_cbd(seed: &[u8]) -> Poly {
     p
 }
 fn sample_uniform(seed: &[u8], nonce: u8) -> Poly {
-    let mut p = Poly::new();
+    let mut p = Poly::nuevo();
     let mut indice = 0;
     let mut cnt: u8 = 0;
     while indice < N {
@@ -524,7 +524,7 @@ fn pq_encaps(pk: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let e1 = sample_cbd(&[0x34u8; 32]);
     let e2 = sample_cbd(&[0x56u8; 32]);
     let ms = [0x78u8; 32];
-    let mut mensaje = Poly::new();
+    let mut mensaje = Poly::nuevo();
     for i in 0..256.min(N) {
         let bit = (ms[i / 8] >> (i % 8)) & 1;
         mensaje.coeffs[i] = (Q / 2) * (bit as i16);
@@ -585,7 +585,7 @@ fn test_poly1305() {
         (&[b'A'; 33], "8f614e60aaab74afb3d96bd7cd84e2dc"),
     ];
     for (data, exp) in &cases {
-        let obtenido = hex_encode(&poly1305_mac(&clave, data));
+        let obtenido = hex_codificar(&poly1305_mac(&clave, data));
         println!("  poly1305: {}", if obtenido == *exp { "✓" } else { "✗" });
         assert_eq!(&obtenido, exp);
     }
@@ -601,10 +601,10 @@ fn test_pq_kem() {
 }
 
 fn test_pq_arithmetic() {
-    let mut a = Poly::new();
+    let mut a = Poly::nuevo();
     a.coeffs[0] = 1000;
     a.coeffs[1] = 3328;
-    let mut b = Poly::new();
+    let mut b = Poly::nuevo();
     b.coeffs[0] = 2000;
     b.coeffs[1] = 1;
     let sum = add(&a, &b);
@@ -615,10 +615,10 @@ fn test_pq_arithmetic() {
         diff.coeffs[0],
         ((1000i32 - 2000i32).rem_euclid(Q as i32)) as i16
     );
-    let mut x = Poly::new();
+    let mut x = Poly::nuevo();
     x.coeffs[0] = 1;
     x.coeffs[2] = 1;
-    let mut y = Poly::new();
+    let mut y = Poly::nuevo();
     y.coeffs[0] = 1;
     y.coeffs[1] = 1;
     let p = mul_naive(&x, &y);
@@ -626,7 +626,7 @@ fn test_pq_arithmetic() {
         (p.coeffs[0], p.coeffs[1], p.coeffs[2], p.coeffs[3]),
         (1, 1, 1, 1)
     );
-    let mut x2 = Poly::new();
+    let mut x2 = Poly::nuevo();
     x2.coeffs[0] = 1;
     x2.coeffs[N - 1] = 1;
     let p2 = mul_naive(&x2, &y);

@@ -56,15 +56,15 @@ fn diagnosticos_congelados() {
             Ok(_) => "[compiló sin error]\n".to_string(),
             Err(e) => quitar_ansi(&e),
         };
-        let esperado_path = ruta.with_extension("stderr");
+        let esperado_ruta = ruta.with_extension("stderr");
         if actualizar {
-            std::fs::write(&esperado_path, &salida).unwrap();
+            std::fs::write(&esperado_ruta, &salida).unwrap();
             continue;
         }
-        let esperado = std::fs::read_to_string(&esperado_path).unwrap_or_else(|_| {
+        let esperado = std::fs::read_to_string(&esperado_ruta).unwrap_or_else(|_| {
             panic!(
                 "falta {} (corré con FORJA_UPDATE=1)",
-                esperado_path.display()
+                esperado_ruta.display()
             )
         });
         let esperado = quitar_ansi(&esperado);

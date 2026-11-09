@@ -130,19 +130,25 @@ RE_CAMPO = re.compile(r"^\s{4,}([a-z_][a-z0-9_]*)\s*:", re.MULTILINE)
 def campos_del_archivo(codigo: str) -> set[str]:
     """Nombres de campo declarados en un `struct`/`enum` de este archivo."""
     campos: set[str] = set()
-    for m in re.finditer(r"(?:struct|enum)\s+[A-Za-z_][A-Za-z0-9_]*[^;{]*\{", codigo):
-        inicio = m.end()
+    for m in re.finditer(r"(?:struct|enum)\s+[A-Za-z_][A-Za-z0-9_]*[^;{]*{", codigo):
+        cuerpo = codigo[m.end():]
         profundidad = 1
-        i = inicio
-        while i < len(codigo) and profundidad > 0:
-            if codigo[i] == "{":
+        fin = len(cuerpo)
+        for i, c in enumerate(cuerpo):
+            if c == "{":
                 profundidad += 1
-            elif codigo[i] == "}":
+            elif c == "}":
                 profundidad -= 1
-            i += 1
-        cuerpo = codigo[inicio:i]
-        campos |= set(RE_CAMPO.findall(cuerpo))
+                if profundidad == 0:
+                    fin = i
+                    break
+        campos |= set(RE_CAMPO.findall(cuerpo[:fin]))
     return campos
+
+
+def tipos_del_archivo(codigo: str) -> set[str]:
+    """Nombres de `struct`/`enum`/`trait` declarados acá: sus `Tipo::fn` sí se renombran."""
+    return set(re.findall(r"\b(?:struct|enum|trait)\s+([A-Za-z_][A-Za-z0-9_]*)", codigo))
 
 
 def locales_del_archivo(codigo: str) -> set[str]:
@@ -156,7 +162,7 @@ RE_EN_CAMPO = re.compile(r"[{,{]\s*([a-z_][a-z0-9_]*)\s*[:,}]")
 
 def nombres_en_posicion_de_campo(codigo: str) -> set[str]:
     """Nombres usados como campo (`{ campo: v }`, `{ campo, .. }`): pueden ser de otro tipo."""
-    return set(RE_EN_CAMPO.findall(codigo))
+    return {m.group(1) for m in RE_EN_CAMPO.finditer(codigo) if en_llaves(codigo, m.start(1))}
 
 
 def en_llaves(codigo: str, pos: int) -> bool:
@@ -187,6 +193,8 @@ def reemplazar_codigo(
     permitidos: set[str] | None = None,
     vistos: set[str] | None = None,
     campos: set[str] | None = None,
+    tipos: set[str] | None = None,
+    funciones: set[str] | None = None,
 ) -> str:
 
     def una(m: re.Match) -> str:
@@ -198,27 +206,47 @@ def reemplazar_codigo(
         inicio = m.start()
         # `std::ruta`, `foo::ruta`, `#[cfg(...)]`, `x.ruta(`
         anterior = codigo[max(0, inicio - 2):inicio]
-        if anterior.endswith("::") or anterior.endswith(".#"):
+        if anterior.endswith("::"):
+            # `Vec::new` es de std; `Self::new` y `TipoPropio::new` sí son de este archivo.
+            calificador = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*::$", codigo[:inicio])
+            propio = calificador and (calificador.group(1) == "Self" or calificador.group(1) in (tipos or set()))
+            if not propio:
+                return palabra
+        if anterior.endswith(".#"):
             return palabra
         if anterior.endswith("#["):
             return palabra
+        previo = codigo[:inicio].rstrip()
+        siguiente = codigo[m.end():].lstrip()
         if inicio >= 1 and codigo[inicio - 1] == "." and not anterior.endswith(".."):
-            # `self.campo` sí se renombra si el campo se declara en este archivo;
-            # `algo.metodo(` no (es una llamada a método).
-            if campos is None or palabra not in campos or siguiente[:1] == "(":
+            # `self.campo` se renombra si el campo se declara en este archivo; `algo.metodo(`
+            # sólo si el método es un `fn` de este archivo (`.len()`, `.map()` quedan quietos).
+            es_campo_local = campos is not None and palabra in campos and siguiente[:1] != "("
+            es_metodo_local = funciones is not None and palabra in funciones and siguiente[:1] == "("
+            if not (es_campo_local or es_metodo_local):
                 return palabra
         # campo de struct/patrón (`nombre: tipo`): puede ser de un tipo de otra crate.
         # Los parámetros (`fn f(nombre: T)`) sí se renombran: son locales de este archivo.
         # campo abreviado de patrón o de literal: `Expresion::Unaria { expr, .. }`
-        previo = codigo[:inicio].rstrip()
-        siguiente = codigo[m.end():].lstrip()
         if previo[-1:] in "{," and siguiente[:1] in "}," and en_llaves(codigo, inicio):
             return palabra
         # campo de patrón o de literal con valor: `Unaria { expr: e }`
-        if siguiente[:1] == ":" and siguiente[:2] != "::" and previo[-1:] in "{," and en_llaves(codigo, inicio):
+        if (
+            siguiente[:1] == ":"
+            and siguiente[:2] != "::"
+            and previo[-1:] in "{,"
+            and en_llaves(codigo, inicio)
+            and palabra not in (campos or set())
+        ):
             return palabra
         es_local = (permitidos is not None and palabra in permitidos) or palabra in (campos or set())
-        if not es_local and codigo[m.end():m.end() + 1] == ":" and codigo[m.end():m.end() + 2] != "::":
+        es_let = re.search(r"\blet(?:\s+mut)?\s+$", previo) is not None
+        if (
+            not es_local
+            and not es_let
+            and codigo[m.end():m.end() + 1] == ":"
+            and codigo[m.end():m.end() + 2] != "::"
+        ):
             return palabra
         nuevo = mapa.get(palabra, palabra)
         if nuevo != palabra and vistos is not None:
@@ -248,26 +276,45 @@ def cargar_mapa(ruta: Path) -> dict[str, str]:
     return {k: v for k, v in modulo.MAPA.items() if k != v}
 
 
-def procesar(ruta: Path, mapa: dict[str, str], aplicar: bool, solo_locales: bool = True) -> int:
+def procesar(
+    ruta: Path,
+    mapa: dict[str, str],
+    aplicar: bool,
+    solo_locales: bool = True,
+    incluir_funciones: bool = False,
+    tipos_extra: set[str] | None = None,
+    funciones_extra: set[str] | None = None,
+    campos_extra: set[str] | None = None,
+) -> int:
     original = ruta.read_text(encoding="utf-8")
     partes = segmentar(original)
     codigo_completo = "".join(trozo for trozo, es_codigo in partes if es_codigo)
     permitidos = locales_del_archivo(codigo_completo) if solo_locales else None
-    campos = campos_del_archivo(codigo_completo)
+    if permitidos is not None and incluir_funciones:
+        # los `fn` de este archivo se renombran junto con sus llamadas
+        permitidos |= set(RE_FN.findall(codigo_completo))
+    # sólo importan los nombres que efectivamente se renombran (`len`/`map` de std quedan fuera)
+    renombrables = set(mapa)
+    campos = (campos_del_archivo(codigo_completo) | (campos_extra or set())) & renombrables
+    tipos = (tipos_del_archivo(codigo_completo) | (tipos_extra or set())) & renombrables
+    funciones = (set(RE_FN.findall(codigo_completo)) | (funciones_extra or set())) & renombrables
+    if permitidos is not None:
+        # ítems de toda la crate (fn, tipos, campos): se renombran también en este archivo
+        permitidos |= tipos | funciones | campos
     # si un nombre se usa como campo de un struct que no declaramos, no lo tocamos
     mapa = {k: v for k, v in mapa.items() if k not in nombres_en_posicion_de_campo(codigo_completo) or k in campos}
     # 1ª pasada: qué variables se renombran de verdad (para los `{campo}` de format!)
     vistos: set[str] = set()
     for trozo, es_codigo in partes:
         if es_codigo:
-            reemplazar_codigo(trozo, mapa, permitidos, vistos, campos)
+            reemplazar_codigo(trozo, mapa, permitidos, vistos, campos, tipos, funciones)
 
     # 2ª pasada: reconstruir respetando el orden original
     nuevas: list[str] = []
     cambios = 0
     for trozo, es_codigo in partes:
         if es_codigo:
-            nuevas.append(reemplazar_codigo(trozo, mapa, permitidos, None, campos))
+            nuevas.append(reemplazar_codigo(trozo, mapa, permitidos, None, campos, tipos, funciones))
         else:
             nuevas.append(reemplazar_en_format(trozo, mapa, vistos) if trozo.startswith('"') else trozo)
     resultado = "".join(nuevas)
@@ -287,11 +334,15 @@ def main(argv: list[str]) -> int:
     objetivo = RAIZ / argv[argv.index("--ruta") + 1]
     aplicar = "--aplicar" in argv
     solo_locales = "--todo" not in argv
+    incluir_funciones = "--con-funciones" in argv
+    tipos_extra: set[str] = set()
+    funciones_extra: set[str] = set()
+    campos_extra: set[str] = set()
 
     archivos = sorted(objetivo.rglob("*.rs")) if objetivo.is_dir() else [objetivo]
     total = 0
     for ruta in archivos:
-        cambios = procesar(ruta, mapa, aplicar, solo_locales)
+        cambios = procesar(ruta, mapa, aplicar, solo_locales, incluir_funciones)
         if cambios:
             total += cambios
             print(f"  {'escrito' if aplicar else 'cambiaría'}: {ruta.relative_to(RAIZ)} ({cambios} líneas)")

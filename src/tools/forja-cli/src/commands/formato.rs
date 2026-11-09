@@ -6,11 +6,15 @@ use super::*;
 /// formateado (o fue escrito), `false` si necesita formateo en modo `--check`.
 /// Los archivos que no parsean se reportan como advertencia y NO cuentan como
 /// fallo (para no romper el CI por ejemplos con sintaxis obsoleta).
-pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) -> bool {
-    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+pub(crate) fn fmt_un_archivo(
+    ruta_archivo: &str,
+    verificar_formato: bool,
+    out_ruta: Option<&str>,
+) -> bool {
+    let fuente = match forja::leer_archivo_con_limite(ruta_archivo, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("⚠️  {}: {}", path, e);
+            eprintln!("⚠️  {}: {}", ruta_archivo, e);
             return true;
         }
     };
@@ -24,7 +28,7 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
                 .unwrap_or_default();
             eprintln!(
                 "⚠️  {}: no se pudo tokenizar (se omite) — {}",
-                path, detalle
+                ruta_archivo, detalle
             );
             return true;
         }
@@ -37,7 +41,10 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
                 .first()
                 .map(|e| e.mostrar_compacto())
                 .unwrap_or_default();
-            eprintln!("⚠️  {}: no se pudo parsear (se omite) — {}", path, detalle);
+            eprintln!(
+                "⚠️  {}: no se pudo parsear (se omite) — {}",
+                ruta_archivo, detalle
+            );
             return true;
         }
     };
@@ -45,14 +52,14 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
     let comentarios = lexer::extraer_comentarios(&fuente);
     let salida = fmt.formatear_con_comentarios(&programa, &comentarios);
 
-    if check {
+    if verificar_formato {
         if salida == fuente {
             true
         } else {
-            eprintln!("❌ {} necesita formateo", path);
+            eprintln!("❌ {} necesita formateo", ruta_archivo);
             false
         }
-    } else if let Some(out) = out_path {
+    } else if let Some(out) = out_ruta {
         match fs::write(out, &salida) {
             Ok(_) => {
                 println!("✅ Código formateado: {}", out);
@@ -64,13 +71,13 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
             }
         }
     } else {
-        match fs::write(path, &salida) {
+        match fs::write(ruta_archivo, &salida) {
             Ok(_) => {
-                println!("✅ Código formateado: {}", path);
+                println!("✅ Código formateado: {}", ruta_archivo);
                 true
             }
             Err(e) => {
-                eprintln!("Error escribiendo '{}': {}", path, e);
+                eprintln!("Error escribiendo '{}': {}", ruta_archivo, e);
                 false
             }
         }
@@ -79,29 +86,29 @@ pub(crate) fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) ->
 
 pub(crate) fn cmd_fmt(args: &[String]) {
     rechazar_flags(args);
-    let Some(path) = args.first() else {
+    let Some(ruta_archivo) = args.first() else {
         eprintln!("Uso: forja formatear <archivo.fa|directorio> [salida]  (verificar con `fmt_check: true` en forja.yaml)");
         process::exit(1);
     };
-    let check = forja::config::actual().verificar_formato;
-    let out_path = args.get(1).map(|s| s.as_str());
+    let verificar_formato = forja::config::actual().verificar_formato;
+    let out_ruta = args.get(1).map(|s| s.as_str());
 
     // Modo directorio: recorrer recursivamente todos los .fa
-    if Path::new(path).is_dir() {
+    if Path::new(ruta_archivo).is_dir() {
         let mut archivos = Vec::new();
-        recolectar_archivos_fa(Path::new(path), &mut archivos);
+        recolectar_archivos_fa(Path::new(ruta_archivo), &mut archivos);
         archivos.sort();
         if archivos.is_empty() {
-            eprintln!("No se encontraron archivos .fa en '{}'", path);
+            eprintln!("No se encontraron archivos .fa en '{}'", ruta_archivo);
             process::exit(1);
         }
         let mut fallos = 0usize;
         for archivo in &archivos {
-            if !fmt_un_archivo(archivo, check, None) {
+            if !fmt_un_archivo(archivo, verificar_formato, None) {
                 fallos += 1;
             }
         }
-        if check {
+        if verificar_formato {
             if fallos == 0 {
                 println!(
                     "✅ {} archivo(s) correctamente formateado(s)",
@@ -122,7 +129,7 @@ pub(crate) fn cmd_fmt(args: &[String]) {
     }
 
     // Modo archivo único (retrocompatible)
-    if !fmt_un_archivo(path, check, out_path) {
+    if !fmt_un_archivo(ruta_archivo, verificar_formato, out_ruta) {
         process::exit(1);
     }
 }
@@ -134,7 +141,7 @@ pub(crate) fn cmd_fmt(args: &[String]) {
 /// como fallo del linter.
 pub(crate) fn cmd_lint(args: &[String]) {
     rechazar_flags(args);
-    let Some(path) = args.first() else {
+    let Some(ruta_archivo) = args.first() else {
         eprintln!("Uso: forja lint <archivo.fa|directorio>  (`lint_deny: true` en CI)");
         process::exit(1);
     };
@@ -145,12 +152,12 @@ pub(crate) fn cmd_lint(args: &[String]) {
     let config = cargar_config_lint();
 
     // Modo directorio: recorrer recursivamente todos los .fa
-    if Path::new(path).is_dir() {
+    if Path::new(ruta_archivo).is_dir() {
         let mut archivos = Vec::new();
-        recolectar_archivos_fa(Path::new(path), &mut archivos);
+        recolectar_archivos_fa(Path::new(ruta_archivo), &mut archivos);
         archivos.sort();
         if archivos.is_empty() {
-            eprintln!("No se encontraron archivos .fa en '{}'", path);
+            eprintln!("No se encontraron archivos .fa en '{}'", ruta_archivo);
             process::exit(1);
         }
         let mut total_diags = 0usize;
@@ -179,7 +186,7 @@ pub(crate) fn cmd_lint(args: &[String]) {
     }
 
     // Modo archivo único
-    let (_, errores) = lint_un_archivo(path, &config, deny_warnings, json_mode);
+    let (_, errores) = lint_un_archivo(ruta_archivo, &config, deny_warnings, json_mode);
     if errores > 0 {
         process::exit(1);
     }
@@ -205,15 +212,15 @@ pub(crate) fn cargar_config_lint() -> linter::ConfigLint {
 /// Los errores cuentan solo si la severidad es `Error` o si `deny_warnings` está
 /// activo y hay al menos una advertencia.
 pub(crate) fn lint_un_archivo(
-    path: &str,
+    ruta_archivo: &str,
     config: &linter::ConfigLint,
     deny_warnings: bool,
     json_mode: bool,
 ) -> (usize, usize) {
-    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(ruta_archivo, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("⚠️  {}: {}", path, e);
+            eprintln!("⚠️  {}: {}", ruta_archivo, e);
             return (0, 0);
         }
     };
@@ -224,7 +231,10 @@ pub(crate) fn lint_un_archivo(
                 .first()
                 .map(|e| e.mostrar_compacto())
                 .unwrap_or_default();
-            eprintln!("⚠️  {}: no se pudo analizar (se omite) — {}", path, detalle);
+            eprintln!(
+                "⚠️  {}: no se pudo analizar (se omite) — {}",
+                ruta_archivo, detalle
+            );
             return (0, 0);
         }
     };
@@ -251,7 +261,7 @@ pub(crate) fn lint_un_archivo(
                 icono,
                 etiqueta,
                 codigo_lint(d.regla),
-                path,
+                ruta_archivo,
                 d.linea,
                 d.mensaje
             );
@@ -278,19 +288,19 @@ pub(crate) fn codigo_lint(regla: linter::Regla) -> u32 {
 /// forja doc|documentar <archivo.fa> — Genera documentación HTML desde el AST
 pub(crate) fn cmd_doc(args: &[String]) {
     rechazar_flags(args);
-    let Some(path) = args.first() else {
+    let Some(ruta_archivo) = args.first() else {
         eprintln!("Uso: forja documentar <archivo.fa> [salida.html]");
         process::exit(1);
     };
     let ruta_salida = match args.get(1) {
         Some(salida) => Some(salida.clone()),
         None => {
-            let entrada = std::path::Path::new(path);
+            let entrada = std::path::Path::new(ruta_archivo);
             Some(entrada.with_extension("html").to_string_lossy().to_string())
         }
     };
 
-    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(ruta_archivo, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);

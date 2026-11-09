@@ -68,7 +68,7 @@ enum SimboloTipo {
 }
 
 #[derive(Debug, Clone)]
-struct SimboloInfo {
+struct SimboloInformacion {
     nombre: String,
     tipo_simbolo: SimboloTipo,
     linea: u32,      // 0-based
@@ -80,7 +80,7 @@ struct SimboloInfo {
 #[derive(Debug, Clone)]
 struct AnalisisDocumento {
     /// Declaraciones encontradas en el documento
-    simbolos: Vec<SimboloInfo>,
+    simbolos: Vec<SimboloInformacion>,
     /// (linea, col_inicio, col_fin, nombre, es_llamada_funcion)
     referencias: Vec<(u32, u32, u32, String, bool)>,
     /// Errores del compilador (para code actions)
@@ -202,7 +202,7 @@ fn encontrar_cursor_en_tokens(tokens: &[Token], pos: tower_lsp::lsp_types::Posit
 // ======================================================================
 
 struct Backend {
-    client: Client,
+    cliente: Client,
     documentos: Arc<Mutex<HashMap<Url, String>>>,
     analisis_cache: Arc<Mutex<HashMap<Url, AnalisisDocumento>>>,
     completion_resolver: CompletionResolver,
@@ -260,7 +260,7 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        self.client
+        self.cliente
             .log_message(MessageType::INFO, "Forja LSP v0.4.0 inicializado")
             .await;
     }
@@ -273,7 +273,7 @@ impl LanguageServer for Backend {
     // Document Synchronization
     // ----------------------------------------------------------------
 
-    async fn did_open(&self, parametros: DidOpenTextDocumentParams) {
+    async fn did_abrir(&self, parametros: DidOpenTextDocumentParams) {
         let uri = parametros.text_document.uri;
         let texto = parametros.text_document.text;
         self._actualizar_documento(uri, texto).await;
@@ -290,7 +290,7 @@ impl LanguageServer for Backend {
         self._actualizar_documento(uri, texto).await;
     }
 
-    async fn did_save(&self, parametros: DidSaveTextDocumentParams) {
+    async fn did_guardar(&self, parametros: DidSaveTextDocumentParams) {
         let uri = parametros.text_document.uri;
         let documentos = self.documentos.lock().await;
         if let Some(texto) = documentos.get(&uri) {
@@ -311,8 +311,8 @@ impl LanguageServer for Backend {
         parametros: DocumentFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
         let uri = parametros.text_document.uri;
-        let texto = self._get_text(&uri).await;
-        Ok(Some(self._generar_text_edits(&texto)))
+        let texto = self.obtener_texto(&uri).await;
+        Ok(Some(self.generar_texto_edits(&texto)))
     }
 
     // ----------------------------------------------------------------
@@ -324,7 +324,7 @@ impl LanguageServer for Backend {
         parametros: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         let uri = parametros.text_document.uri;
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
         let tokens_semanticos = generar_tokens_semanticos(&texto);
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
@@ -342,20 +342,20 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = parametros.text_document_position_params.text_document.uri;
         let pos = parametros.text_document_position_params.position;
-        let texto = self._get_text(&uri).await;
-        let analisis = self._get_analisis(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
 
-        if let Some(info) = buscar_nombre_en_posicion(&analisis, &texto, pos) {
+        if let Some(informacion) = buscar_nombre_en_posicion(&analisis, &texto, pos) {
             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                 uri: uri.clone(),
                 range: Range {
                     start: Position {
-                        line: info.linea,
-                        character: info.col_inicio,
+                        line: informacion.linea,
+                        character: informacion.col_inicio,
                     },
                     end: Position {
-                        line: info.linea,
-                        character: info.col_fin,
+                        line: informacion.linea,
+                        character: informacion.col_fin,
                     },
                 },
             })));
@@ -397,10 +397,10 @@ impl LanguageServer for Backend {
     async fn references(&self, parametros: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = parametros.text_document_position.text_document.uri;
         let pos = parametros.text_document_position.position;
-        let analisis = self._get_analisis(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
 
         // Buscar el nombre del símbolo en la posición actual
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
         let nombre_buscado = if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
                 if let TokenKind::Identificador(nombre) = &token.kind {
@@ -466,7 +466,7 @@ impl LanguageServer for Backend {
     async fn hover(&self, parametros: HoverParams) -> Result<Option<Hover>> {
         let uri = parametros.text_document_position_params.text_document.uri;
         let pos = parametros.text_document_position_params.position;
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
 
         // 1. Intentar hover sobre keyword
         if let Ok(tokens) = tokenizar(&texto) {
@@ -480,22 +480,22 @@ impl LanguageServer for Backend {
                 }
 
                 // Mostrar info del token como raw
-                let info = format!(
+                let informacion = format!(
                     "**Token:** `{}`\n\nLínea: {}, Columna: {}",
                     palabra, token.linea, token.columna
                 );
                 return Ok(Some(Hover {
-                    contents: HoverContents::Scalar(MarkedString::String(info)),
+                    contents: HoverContents::Scalar(MarkedString::String(informacion)),
                     range: None,
                 }));
             }
         }
 
         // 2. Hover sobre símbolos definidos por el usuario
-        let analisis = self._get_analisis(&uri).await;
-        if let Some(info) = buscar_nombre_en_posicion(&analisis, &texto, pos) {
-            let mut parts = vec![format!("**{}**", info.nombre)];
-            let tipo_str = match info.tipo_simbolo {
+        let analisis = self.obtener_analisis(&uri).await;
+        if let Some(informacion) = buscar_nombre_en_posicion(&analisis, &texto, pos) {
+            let mut parts = vec![format!("**{}**", informacion.nombre)];
+            let tipo_str = match informacion.tipo_simbolo {
                 SimboloTipo::Variable => "Variable",
                 SimboloTipo::Funcion => "Función",
                 SimboloTipo::Clase => "Clase",
@@ -504,7 +504,7 @@ impl LanguageServer for Backend {
                 SimboloTipo::Rasgo => "Rasgo (Trait)",
             };
             parts.push(format!("**Tipo:** {}", tipo_str));
-            if let Some(ref doc) = info.doc {
+            if let Some(ref doc) = informacion.doc {
                 parts.push(format!("\n{}", doc));
             }
             return Ok(Some(Hover {
@@ -525,7 +525,7 @@ impl LanguageServer for Backend {
         parametros: CodeActionParams,
     ) -> Result<Option<CodeActionResponse>> {
         let uri = parametros.text_document.uri;
-        let analisis = self._get_analisis(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
 
         let mut actions: Vec<CodeActionOrCommand> = Vec::new();
 
@@ -544,7 +544,7 @@ impl LanguageServer for Backend {
             ..Default::default()
         }));
 
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
         for err in &analisis.errores {
             let rango = calcular_rango_error_palabra(&texto, err.linea, err.columna);
             let diag = Diagnostic {
@@ -629,10 +629,10 @@ impl LanguageServer for Backend {
     async fn rename(&self, parametros: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = parametros.text_document_position.text_document.uri;
         let pos = parametros.text_document_position.position;
-        let new_name = parametros.new_name;
+        let nuevo_name = parametros.new_name;
 
-        let analisis = self._get_analisis(&uri).await;
-        let texto = self._get_text(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
 
         let nombre_buscado = if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
@@ -664,7 +664,7 @@ impl LanguageServer for Backend {
                                 character: s.col_fin,
                             },
                         },
-                        new_text: new_name.clone(),
+                        new_text: nuevo_name.clone(),
                     });
                 }
             }
@@ -682,15 +682,15 @@ impl LanguageServer for Backend {
                                 character: *cf,
                             },
                         },
-                        new_text: new_name.clone(),
+                        new_text: nuevo_name.clone(),
                     });
                 }
             }
             if !changes.is_empty() {
-                let mut map = HashMap::new();
-                map.insert(uri, changes);
+                let mut mapa = HashMap::new();
+                mapa.insert(uri, changes);
                 return Ok(Some(WorkspaceEdit {
-                    changes: Some(map),
+                    changes: Some(mapa),
                     document_changes: None,
                     change_annotations: None,
                 }));
@@ -709,7 +709,7 @@ impl LanguageServer for Backend {
         parametros: FoldingRangeParams,
     ) -> Result<Option<Vec<FoldingRange>>> {
         let uri = parametros.text_document.uri;
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
         Ok(Some(generar_folding_ranges(&texto)))
     }
 
@@ -763,11 +763,11 @@ impl LanguageServer for Backend {
     async fn completion(&self, parametros: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = parametros.text_document_position.text_document.uri;
         let pos = parametros.text_document_position.position;
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
 
         let tokens = tokenizar(&texto).unwrap_or_default();
         let cursor = encontrar_cursor_en_tokens(&tokens, pos);
-        let analisis = self._get_analisis(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
         let locales = completar_locales(&analisis);
 
         let forja_items = self.completion_resolver.resolver(&tokens, cursor, &locales);
@@ -823,7 +823,7 @@ impl LanguageServer for Backend {
         parametros: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         let uri = parametros.text_document.uri;
-        let analisis = self._get_analisis(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
 
         let mut symbols: Vec<DocumentSymbol> = Vec::new();
         for s in &analisis.simbolos {
@@ -875,8 +875,8 @@ impl LanguageServer for Backend {
 
     async fn inlay_hint(&self, parametros: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         let uri = parametros.text_document.uri;
-        let texto = self._get_text(&uri).await;
-        let analisis = self._get_analisis(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
 
         let mut hints: Vec<InlayHint> = Vec::new();
         for s in &analisis.simbolos {
@@ -974,21 +974,21 @@ impl LanguageServer for Backend {
     // Signature Help
     // ----------------------------------------------------------------
 
-    async fn signature_help(
+    async fn signature_ayuda(
         &self,
         parametros: SignatureHelpParams,
     ) -> Result<Option<SignatureHelp>> {
         let uri = parametros.text_document_position_params.text_document.uri;
         let pos = parametros.text_document_position_params.position;
-        let texto = self._get_text(&uri).await;
+        let texto = self.obtener_texto(&uri).await;
 
         let tokens = tokenizar(&texto).unwrap_or_default();
         let cursor = encontrar_cursor_en_tokens(&tokens, pos);
-        let analisis = self._get_analisis(&uri).await;
+        let analisis = self.obtener_analisis(&uri).await;
         let locales = completar_locales(&analisis);
 
-        if let Some(info) = self.signature_resolver.resolver(&tokens, cursor, &locales) {
-            let parametros: Vec<ParameterInformation> = info
+        if let Some(informacion) = self.signature_resolver.resolver(&tokens, cursor, &locales) {
+            let parametros: Vec<ParameterInformation> = informacion
                 .params
                 .iter()
                 .map(|p| ParameterInformation {
@@ -1002,17 +1002,17 @@ impl LanguageServer for Backend {
                 .collect();
             Ok(Some(SignatureHelp {
                 signatures: vec![SignatureInformation {
-                    label: info.label,
-                    documentation: if info.documentation.is_empty() {
+                    label: informacion.label,
+                    documentation: if informacion.documentation.is_empty() {
                         None
                     } else {
-                        Some(Documentation::String(info.documentation))
+                        Some(Documentation::String(informacion.documentation))
                     },
                     parameters: Some(parametros),
-                    active_parameter: Some(info.active_param as u32),
+                    active_parameter: Some(informacion.active_param as u32),
                 }],
                 active_signature: Some(0),
-                active_parameter: Some(info.active_param as u32),
+                active_parameter: Some(informacion.active_param as u32),
             }))
         } else {
             Ok(None)
@@ -1043,12 +1043,12 @@ impl Backend {
         self._enviar_diagnostics(uri, &texto).await;
     }
 
-    async fn _get_text(&self, uri: &Url) -> String {
+    async fn obtener_texto(&self, uri: &Url) -> String {
         let docs = self.documentos.lock().await;
         docs.get(uri).cloned().unwrap_or_default()
     }
 
-    async fn _get_analisis(&self, uri: &Url) -> AnalisisDocumento {
+    async fn obtener_analisis(&self, uri: &Url) -> AnalisisDocumento {
         let cache = self.analisis_cache.lock().await;
         cache
             .get(uri)
@@ -1137,12 +1137,12 @@ impl Backend {
             }
         }
 
-        self.client
+        self.cliente
             .publish_diagnostics(uri, diagnostics, None)
             .await;
     }
 
-    fn _generar_text_edits(&self, texto: &str) -> Vec<TextEdit> {
+    fn generar_texto_edits(&self, texto: &str) -> Vec<TextEdit> {
         let formateado = forja::formatear(texto);
         if formateado != texto {
             vec![TextEdit {
@@ -1178,7 +1178,7 @@ fn analizar_documento(fuente: &str) -> AnalisisDocumento {
         Err(_) => return analisis,
     };
 
-    extraer_info(&tokens, &mut analisis);
+    extraer_informacion(&tokens, &mut analisis);
 
     // Intentar parse real para obtener errores de compilación
     if let Err(errors) = forja::transpilar_a_rust(fuente) {
@@ -1188,7 +1188,7 @@ fn analizar_documento(fuente: &str) -> AnalisisDocumento {
     analisis
 }
 
-fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
+fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
     let mut i = 0;
     while i < tokens.len() {
         let token = &tokens[i];
@@ -1198,7 +1198,7 @@ fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 if i + 1 < tokens.len() {
                     if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
-                        analisis.simbolos.push(SimboloInfo {
+                        analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
                             tipo_simbolo: SimboloTipo::Funcion,
                             linea: tokens[i + 1].linea as u32,
@@ -1213,7 +1213,7 @@ fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 if i + 1 < tokens.len() {
                     if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
-                        analisis.simbolos.push(SimboloInfo {
+                        analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
                             tipo_simbolo: SimboloTipo::Clase,
                             linea: tokens[i + 1].linea as u32,
@@ -1225,7 +1225,7 @@ fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 }
             }
             TokenKind::Variable | TokenKind::Constante => {
-                let is_const = matches!(token.kind, TokenKind::Constante);
+                let es_const = matches!(token.kind, TokenKind::Constante);
                 let mut skip = 1;
                 // Saltar mut si existe
                 if i + 1 < tokens.len() {
@@ -1236,8 +1236,8 @@ fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 if i + skip < tokens.len() {
                     if let TokenKind::Identificador(ref nombre) = tokens[i + skip].kind {
                         let doc = buscar_doc_previo(tokens, i);
-                        let _es_const = is_const;
-                        analisis.simbolos.push(SimboloInfo {
+                        let _es_const = es_const;
+                        analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
                             tipo_simbolo: SimboloTipo::Variable,
                             linea: tokens[i + skip].linea as u32,
@@ -1252,7 +1252,7 @@ fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 if i + 1 < tokens.len() {
                     if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
-                        analisis.simbolos.push(SimboloInfo {
+                        analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
                             tipo_simbolo: SimboloTipo::Enum,
                             linea: tokens[i + 1].linea as u32,
@@ -1267,7 +1267,7 @@ fn extraer_info(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                 if i + 1 < tokens.len() {
                     if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
-                        analisis.simbolos.push(SimboloInfo {
+                        analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
                             tipo_simbolo: SimboloTipo::Rasgo,
                             linea: tokens[i + 1].linea as u32,
@@ -1344,7 +1344,7 @@ fn buscar_nombre_en_posicion(
     analisis: &AnalisisDocumento,
     texto: &str,
     pos: Position,
-) -> Option<SimboloInfo> {
+) -> Option<SimboloInformacion> {
     let tokens = tokenizar(texto).ok()?;
     let token = token_en_posicion(&tokens, pos)?;
     let nombre = match &token.kind {
@@ -1395,8 +1395,8 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
     };
 
     let mut semanticos = Vec::new();
-    let mut prev_linea: u32 = 0;
-    let mut prev_col: u32 = 0;
+    let mut anterior_linea: u32 = 0;
+    let mut anterior_col: u32 = 0;
 
     for token in &tokens {
         if token.kind == TokenKind::EOF {
@@ -1408,9 +1408,9 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
         let col = token.columna as u32;
         let len = token.kind.to_string().len() as u32;
 
-        let delta_line = linea.saturating_sub(prev_linea);
-        let delta_start = if delta_line == 0 {
-            col.saturating_sub(prev_col)
+        let delta_line = linea.saturating_sub(anterior_linea);
+        let delta_inicio = if delta_line == 0 {
+            col.saturating_sub(anterior_col)
         } else {
             col
         };
@@ -1423,8 +1423,8 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
             token_modifiers_bitset: modifier_bitset,
         });
 
-        prev_linea = linea;
-        prev_col = col;
+        anterior_linea = linea;
+        anterior_col = col;
     }
 
     semanticos
@@ -1524,19 +1524,19 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
 // ======================================================================
 
 fn generar_folding_ranges(fuente: &str) -> Vec<FoldingRange> {
-    let lines: Vec<&str> = fuente.lines().collect();
-    let mut stack: Vec<u32> = Vec::new(); // (start_line)
+    let lineas: Vec<&str> = fuente.lines().collect();
+    let mut pila: Vec<u32> = Vec::new(); // (start_line)
     let mut ranges = Vec::new();
 
-    for (i, linea) in lines.iter().enumerate() {
+    for (i, linea) in lineas.iter().enumerate() {
         let trimmed = linea.trim();
         // Detectar apertura de bloque
         if trimmed.ends_with('{') || keyword_abre_bloque(trimmed) {
-            stack.push(i as u32);
+            pila.push(i as u32);
         }
         // Detectar cierre de bloque
         if trimmed.starts_with('}') {
-            if let Some(inicio) = stack.pop() {
+            if let Some(inicio) = pila.pop() {
                 if i as u32 > inicio + 1 {
                     ranges.push(FoldingRange {
                         start_line: inicio,
@@ -1597,7 +1597,7 @@ async fn main() {
     let stdout = tokio::io::stdout();
 
     let stdlib = cached_stdlib().clone();
-    let (service, socket) = LspService::new(|client| Backend {
+    let (service, socket) = LspService::new(|cliente| Backend {
         client,
         documentos: Arc::new(Mutex::new(HashMap::new())),
         analisis_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -1639,7 +1639,7 @@ fn codigo_lint_lsp(regla: forja::linter::Regla) -> u32 {
 // ─── Helpers de quick fixes ─────────────────────────────
 
 /// Construye un `WorkspaceEdit` con un único `TextEdit` sobre `uri`.
-fn crear_workspace_edit(uri: &Url, edit: TextEdit) -> WorkspaceEdit {
+fn crear_workspace_editar(uri: &Url, edit: TextEdit) -> WorkspaceEdit {
     let mut cambios: HashMap<Url, Vec<TextEdit>> = HashMap::new();
     cambios.insert(uri.clone(), vec![edit]);
     WorkspaceEdit {
@@ -1723,7 +1723,7 @@ fn insertar_importacion(uri: &Url, texto: &str, modulo: &str) -> WorkspaceEdit {
         },
         new_text: nuevo_texto,
     };
-    crear_workspace_edit(uri, edit)
+    crear_workspace_editar(uri, edit)
 }
 
 /// Detecta si un mensaje de error corresponde a reasignación de una variable
@@ -1764,7 +1764,7 @@ fn insertar_mut(uri: &Url, texto: &str, nombre: &str) -> Option<WorkspaceEdit> {
                     },
                     new_text: "mut ".to_string(),
                 };
-                return Some(crear_workspace_edit(uri, edit));
+                return Some(crear_workspace_editar(uri, edit));
             }
         }
     }
@@ -1821,7 +1821,7 @@ fn reemplazar_tipo_en_linea(
         },
         new_text: tipo.to_string(),
     };
-    Some(crear_workspace_edit(uri, edit))
+    Some(crear_workspace_editar(uri, edit))
 }
 
 /// Infiere el tipo de una variable a partir del literal asignado en su línea
@@ -1870,12 +1870,12 @@ fn inferir_tipo_variable(linea: &str, nombre: &str) -> Option<String> {
 
 /// Verifica si una variable aparece como patrón en un `caso` cerca de la línea
 fn es_variable_de_patron(fuente: &str, linea: usize, var_name: &str) -> bool {
-    let lines: Vec<&str> = fuente.lines().collect();
-    let line_idx = linea.saturating_sub(1);
-    let inicio = line_idx.saturating_sub(5);
-    let end = std::cmp::min(line_idx + 5, lines.len());
+    let lineas: Vec<&str> = fuente.lines().collect();
+    let linea_indice = linea.saturating_sub(1);
+    let inicio = linea_indice.saturating_sub(5);
+    let end = std::cmp::min(linea_indice + 5, lineas.len());
 
-    for linea in &lines[inicio..end] {
+    for linea in &lineas[inicio..end] {
         let linea = linea.trim();
         if linea.starts_with("caso ") {
             if let Some(paren_start) = linea.find('(') {
@@ -1893,12 +1893,12 @@ fn es_variable_de_patron(fuente: &str, linea: usize, var_name: &str) -> bool {
 
 /// Calcula el rango completo (Range) del token o palabra en la posición dada por linea/columna
 fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Range {
-    let line_idx = (linea as u32).saturating_sub(1);
-    let start_col = (columna as u32).saturating_sub(1);
+    let linea_indice = (linea as u32).saturating_sub(1);
+    let inicio_col = (columna as u32).saturating_sub(1);
 
-    if let Some(line_str) = texto.lines().nth(line_idx as usize) {
+    if let Some(line_str) = texto.lines().nth(linea_indice as usize) {
         let chars: Vec<char> = line_str.chars().collect();
-        let col_idx = start_col as usize;
+        let col_idx = inicio_col as usize;
 
         if col_idx < chars.len() {
             let mut end_col = col_idx;
@@ -1915,11 +1915,11 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
 
             return Range {
                 start: Position {
-                    line: line_idx,
-                    character: start_col,
+                    line: linea_indice,
+                    character: inicio_col,
                 },
                 end: Position {
-                    line: line_idx,
+                    line: linea_indice,
                     character: end_col as u32,
                 },
             };
@@ -1928,12 +1928,12 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
 
     Range {
         start: Position {
-            line: line_idx,
-            character: start_col,
+            line: linea_indice,
+            character: inicio_col,
         },
         end: Position {
-            line: line_idx,
-            character: start_col + 1,
+            line: linea_indice,
+            character: inicio_col + 1,
         },
     }
 }

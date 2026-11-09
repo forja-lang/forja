@@ -8,15 +8,15 @@ use super::*;
 ///
 /// --target:  x86_64-windows, x86_64-linux, arm64, riscv64 (default: plataforma actual)
 /// -o:       archivo de salida (default: nombre del .fa con extensión del SO)
-pub(crate) fn cmd_build_asm(args: &[String]) {
+pub(crate) fn cmd_construir_asm(args: &[String]) {
     rechazar_flags(args);
     let Some(input_path) = args.first() else {
         eprintln!("Uso: forja asm <archivo.fa> [salida]  (arquitectura en `arch` de forja.yaml)");
         process::exit(1);
     };
     // Arquitectura desde `forja.yaml` (`arch`).
-    let target_str: Option<String> = opcion(&forja::config::actual().arquitectura);
-    let output_path: Option<String> = args.get(1).cloned();
+    let destino_texto: Option<String> = opcion(&forja::config::actual().arquitectura);
+    let salida_ruta: Option<String> = args.get(1).cloned();
 
     let fuente = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
@@ -27,7 +27,7 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
     };
 
     // Determinar target
-    let destino = if let Some(ref ts) = target_str {
+    let destino = if let Some(ref ts) = destino_texto {
         match compiler_asm::TargetArch::desde_str(ts) {
             Some(t) => t,
             None => {
@@ -43,18 +43,18 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
     };
 
     // Determinar output
-    let input_stem = Path::new(input_path)
+    let entrada_stem = Path::new(input_path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
 
-    let output_path = output_path.unwrap_or_else(|| {
+    let salida_ruta = salida_ruta.unwrap_or_else(|| {
         let ext = if cfg!(target_os = "windows") {
             "exe"
         } else {
             ""
         };
-        format!("{}.{}", input_stem, ext)
+        format!("{}.{}", entrada_stem, ext)
     });
 
     let mut lexer = lexer::Lexer::new(&fuente);
@@ -86,15 +86,15 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
     };
 
     // Escribir archivo .s
-    let asm_path = Path::new(&output_path).with_extension("s");
-    match fs::write(&asm_path, &asm_code) {
+    let asm_ruta = Path::new(&salida_ruta).with_extension("s");
+    match fs::write(&asm_ruta, &asm_code) {
         Ok(_) => println!(
             "✅ Assembly generado: {} (target: {})",
-            asm_path.display(),
+            asm_ruta.display(),
             destino.name()
         ),
         Err(e) => {
-            eprintln!("Error escribiendo '{}': {}", asm_path.display(), e);
+            eprintln!("Error escribiendo '{}': {}", asm_ruta.display(), e);
             process::exit(1);
         }
     }
@@ -110,37 +110,37 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
         println!(
             "   {} -O2 -o {} {}",
             compilador_cruzado(destino),
-            output_path,
-            asm_path.display()
+            salida_ruta,
+            asm_ruta.display()
         );
         return;
     }
 
     println!("📦 Compilando con gcc -O2...");
-    let gcc_result = std::process::Command::new("gcc")
-        .args(["-O2", "-o", &output_path, asm_path.to_str().unwrap()])
+    let gcc_resultado = std::process::Command::new("gcc")
+        .args(["-O2", "-o", &salida_ruta, asm_ruta.to_str().unwrap()])
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status();
 
-    match gcc_result {
+    match gcc_resultado {
         Ok(status) if status.success() => {
-            println!("🚀 Ejecutable nativo: {}", output_path);
+            println!("🚀 Ejecutable nativo: {}", salida_ruta);
         }
         Ok(_) => {
             eprintln!(
                 "⚠️  gcc falló. El assembly quedó en: {}",
-                asm_path.display()
+                asm_ruta.display()
             );
             eprintln!("   Compilá manualmente:");
-            eprintln!("   gcc -O2 -o {} {}", output_path, asm_path.display());
+            eprintln!("   gcc -O2 -o {} {}", salida_ruta, asm_ruta.display());
         }
         Err(e) => {
             eprintln!("⚠️  No se pudo ejecutar gcc: {}", e);
-            eprintln!("   El assembly quedó en: {}", asm_path.display());
+            eprintln!("   El assembly quedó en: {}", asm_ruta.display());
             eprintln!("   Instalá MinGW o MSYS2 con gcc para compilar.");
             eprintln!("   Compilá manualmente:");
-            eprintln!("   gcc -O2 -o {} {}", output_path, asm_path.display());
+            eprintln!("   gcc -O2 -o {} {}", salida_ruta, asm_ruta.display());
         }
     }
 }

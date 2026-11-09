@@ -109,27 +109,27 @@ fn main() {
         // Benchmark / medición
         "medir" | "bench" | "medicion" | "benchmark" => cmd_bench(&args[2..]),
         // Ejecutar en VM
-        "run" | "ejecutar" | "correr" => cmd_run(&args[2..]),
+        "run" | "ejecutar" | "correr" => cmd_ejecutar(&args[2..]),
         // REPL interactivo (motor en `forja.yaml`)
         "repl" | "interactivo" => cmd_repl(&args[2..]),
         // Generar diagram HTML
         "diagrama" | "grafico" | "diagram" => cmd_diagram(&args[2..]),
         // Compilar a ejecutable autónomo
-        "build" | "compilar" | "construir" => cmd_build(&args[2..]),
+        "build" | "compilar" | "construir" => cmd_construir(&args[2..]),
         // Formatear código
         "fmt" | "format" | "formatear" => cmd_fmt(&args[2..]),
         // Linter (reglas configurables)
         "lint" | "linter" | "analizar-lint" => cmd_lint(&args[2..]),
         // Compilar a assembly nativo
-        "build-asm" | "compilar-asm" | "asm" => cmd_build_asm(&args[2..]),
+        "build-asm" | "compilar-asm" | "asm" => cmd_construir_asm(&args[2..]),
         "llvm" => cmd_llvm(&args[2..]),
         "aot" | "nativo" => cmd_aot(&args[2..]),
         // Transpilar a Rust
         "transpile" | "t" | "transpilar" | "transpilador" => cmd_transpile(&args[2..]),
         // Crear nuevo proyecto
-        "new" | "nuevo" | "crear" => cmd_new(&args[2..]),
+        "new" | "nuevo" | "crear" => cmd_nuevo(&args[2..]),
         // Inicializar proyecto en directorio actual
-        "init" | "iniciar" => cmd_init(),
+        "init" | "iniciar" => cmd_inicializar(),
         // Gestión de dependencias
         "add" | "agregar" | "añadir" => cmd_add(),
         // Actualizar Forja desde los releases de GitHub
@@ -154,12 +154,12 @@ fn main() {
         "portable" => {
             cmd_portable();
         }
-        "remove" | "remover" | "eliminar" => cmd_remove(),
+        "remove" | "remover" | "eliminar" => cmd_quitar(),
         "install" | "instalar" => cmd_install(),
         // Registry de paquetes
         "publish" | "publicar" => cmd_publish(&args[2..]),
         "yank" | "retirar" => cmd_yank(&args[2..]),
-        "registry-serve" | "servidor-registry" => cmd_registry_serve(&args[2..]),
+        "registry-serve" | "servidor-registry" => cmd_registro_serve(&args[2..]),
         // Tutorial interactivo
         "learn" | "aprender" => cmd_learn(&args[2..]),
         // Colorear código Forja en la terminal
@@ -182,7 +182,7 @@ fn main() {
         // Ayuda
         "help" | "ayuda" => {
             if args.len() > 2 {
-                cmd_help(&args[2]);
+                cmd_ayuda(&args[2]);
             } else {
                 mostrar_ayuda();
             }
@@ -190,7 +190,7 @@ fn main() {
         _ => {
             // Si el primer argumento es un archivo .fa, ejecutar directo en ForjaFast
             if comando.ends_with(".fa") {
-                cmd_run(&args[1..]);
+                cmd_ejecutar(&args[1..]);
             } else {
                 eprintln!("Comando desconocido: '{}'. Probá 'forja ayuda'", comando);
                 process::exit(1);

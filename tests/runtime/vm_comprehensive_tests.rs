@@ -18,7 +18,7 @@ fn ejecutar(fuente: &str) -> ForjaFast {
     vm
 }
 
-fn output(fuente: &str) -> Vec<String> {
+fn salida_texto(fuente: &str) -> Vec<String> {
     ejecutar(fuente).obtener_output().to_vec()
 }
 
@@ -28,27 +28,27 @@ fn output(fuente: &str) -> Vec<String> {
 
 #[test]
 fn test_vm_hola_mundo() {
-    assert_eq!(output("escribir(\"Hola VM\")"), vec!["Hola VM"]);
+    assert_eq!(salida_texto("escribir(\"Hola VM\")"), vec!["Hola VM"]);
 }
 
 #[test]
 fn test_vm_escribir_entero() {
-    assert_eq!(output("escribir(42)"), vec!["42"]);
+    assert_eq!(salida_texto("escribir(42)"), vec!["42"]);
 }
 
 #[test]
 fn test_vm_escribir_decimal() {
-    assert_eq!(output("escribir(3.14)"), vec!["3.14"]);
+    assert_eq!(salida_texto("escribir(3.14)"), vec!["3.14"]);
 }
 
 #[test]
 fn test_vm_escribir_booleano_true() {
-    assert_eq!(output("escribir(verdadero)"), vec!["verdadero"]);
+    assert_eq!(salida_texto("escribir(verdadero)"), vec!["verdadero"]);
 }
 
 #[test]
 fn test_vm_escribir_booleano_false() {
-    assert_eq!(output("escribir(falso)"), vec!["falso"]);
+    assert_eq!(salida_texto("escribir(falso)"), vec!["falso"]);
 }
 
 // ============================================================
@@ -57,36 +57,42 @@ fn test_vm_escribir_booleano_false() {
 
 #[test]
 fn test_vm_variable_entero() {
-    assert_eq!(output("variable x = 42\nescribir(x)"), vec!["42"]);
+    assert_eq!(salida_texto("variable x = 42\nescribir(x)"), vec!["42"]);
 }
 
 #[test]
 fn test_vm_variable_texto() {
-    assert_eq!(output("variable s = \"hola\"\nescribir(s)"), vec!["hola"]);
+    assert_eq!(
+        salida_texto("variable s = \"hola\"\nescribir(s)"),
+        vec!["hola"]
+    );
 }
 
 #[test]
 fn test_vm_variable_decimal() {
-    assert_eq!(output("variable pi = 3.14\nescribir(pi)"), vec!["3.14"]);
+    assert_eq!(
+        salida_texto("variable pi = 3.14\nescribir(pi)"),
+        vec!["3.14"]
+    );
 }
 
 #[test]
 fn test_vm_variable_booleana() {
     assert_eq!(
-        output("variable flag = verdadero\nescribir(flag)"),
+        salida_texto("variable flag = verdadero\nescribir(flag)"),
         vec!["verdadero"]
     );
 }
 
 #[test]
 fn test_vm_constante() {
-    assert_eq!(output("constante x = 10\nescribir(x)"), vec!["10"]);
+    assert_eq!(salida_texto("constante x = 10\nescribir(x)"), vec!["10"]);
 }
 
 #[test]
 fn test_vm_multiples_variables() {
     assert_eq!(
-        output("variable a = 1\nvariable b = 2\nescribir(a + b)"),
+        salida_texto("variable a = 1\nvariable b = 2\nescribir(a + b)"),
         vec!["3"]
     );
 }
@@ -97,13 +103,16 @@ fn test_vm_multiples_variables() {
 
 #[test]
 fn test_vm_asignacion() {
-    assert_eq!(output("variable x = 5\nx = 10\nescribir(x)"), vec!["10"]);
+    assert_eq!(
+        salida_texto("variable x = 5\nx = 10\nescribir(x)"),
+        vec!["10"]
+    );
 }
 
 #[test]
 fn test_vm_asignacion_repetida() {
     assert_eq!(
-        output("variable x = 1\nx = 2\nx = 3\nescribir(x)"),
+        salida_texto("variable x = 1\nx = 2\nx = 3\nescribir(x)"),
         vec!["3"]
     );
 }
@@ -114,42 +123,42 @@ fn test_vm_asignacion_repetida() {
 
 #[test]
 fn test_vm_suma() {
-    assert_eq!(output("escribir(2 + 3)"), vec!["5"]);
+    assert_eq!(salida_texto("escribir(2 + 3)"), vec!["5"]);
 }
 
 #[test]
 fn test_vm_resta() {
-    assert_eq!(output("escribir(10 - 3)"), vec!["7"]);
+    assert_eq!(salida_texto("escribir(10 - 3)"), vec!["7"]);
 }
 
 #[test]
 fn test_vm_multiplicacion() {
-    assert_eq!(output("escribir(4 * 3)"), vec!["12"]);
+    assert_eq!(salida_texto("escribir(4 * 3)"), vec!["12"]);
 }
 
 #[test]
 fn test_vm_division() {
-    assert_eq!(output("escribir(10 / 2)"), vec!["5"]);
+    assert_eq!(salida_texto("escribir(10 / 2)"), vec!["5"]);
 }
 
 #[test]
 fn test_vm_modulo() {
-    assert_eq!(output("escribir(10 % 3)"), vec!["1"]);
+    assert_eq!(salida_texto("escribir(10 % 3)"), vec!["1"]);
 }
 
 #[test]
 fn test_vm_aritmetica_compleja() {
-    assert_eq!(output("escribir((2 + 3) * 4)"), vec!["20"]);
+    assert_eq!(salida_texto("escribir((2 + 3) * 4)"), vec!["20"]);
 }
 
 #[test]
 fn test_vm_negativo() {
-    assert_eq!(output("variable x = -5\nescribir(x)"), vec!["-5"]);
+    assert_eq!(salida_texto("variable x = -5\nescribir(x)"), vec!["-5"]);
 }
 
 #[test]
 fn test_vm_decimal_suma() {
-    assert_eq!(output("escribir(2.5 + 3.2)"), vec!["5.7"]);
+    assert_eq!(salida_texto("escribir(2.5 + 3.2)"), vec!["5.7"]);
 }
 
 // ============================================================
@@ -158,22 +167,22 @@ fn test_vm_decimal_suma() {
 
 #[test]
 fn test_vm_mayor_que() {
-    assert_eq!(output("escribir(5 > 3)"), vec!["verdadero"]);
+    assert_eq!(salida_texto("escribir(5 > 3)"), vec!["verdadero"]);
 }
 
 #[test]
 fn test_vm_menor_que() {
-    assert_eq!(output("escribir(2 > 10)"), vec!["falso"]);
+    assert_eq!(salida_texto("escribir(2 > 10)"), vec!["falso"]);
 }
 
 #[test]
 fn test_vm_igualdad() {
-    assert_eq!(output("escribir(5 == 5)"), vec!["verdadero"]);
+    assert_eq!(salida_texto("escribir(5 == 5)"), vec!["verdadero"]);
 }
 
 #[test]
 fn test_vm_diferente() {
-    assert_eq!(output("escribir(5 != 3)"), vec!["verdadero"]);
+    assert_eq!(salida_texto("escribir(5 != 3)"), vec!["verdadero"]);
 }
 
 // ============================================================
@@ -183,7 +192,7 @@ fn test_vm_diferente() {
 #[test]
 fn test_vm_si_verdadero() {
     assert_eq!(
-        output("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }"),
+        salida_texto("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }"),
         vec!["si"]
     );
 }
@@ -191,7 +200,7 @@ fn test_vm_si_verdadero() {
 #[test]
 fn test_vm_si_falso() {
     assert_eq!(
-        output("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }"),
+        salida_texto("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }"),
         vec!["no"]
     );
 }
@@ -199,7 +208,7 @@ fn test_vm_si_falso() {
 #[test]
 fn test_vm_si_sin_sino() {
     assert_eq!(
-        output("si (verdadero) { escribir(\"ok\") }\nescribir(\"fin\")"),
+        salida_texto("si (verdadero) { escribir(\"ok\") }\nescribir(\"fin\")"),
         vec!["ok", "fin"]
     );
 }
@@ -207,7 +216,7 @@ fn test_vm_si_sin_sino() {
 #[test]
 fn test_vm_si_con_comparacion() {
     assert_eq!(
-        output("variable x = 5\nsi (x > 3) { escribir(\"mayor\") }"),
+        salida_texto("variable x = 5\nsi (x > 3) { escribir(\"mayor\") }"),
         vec!["mayor"]
     );
 }
@@ -215,7 +224,7 @@ fn test_vm_si_con_comparacion() {
 #[test]
 fn test_vm_si_anidado() {
     assert_eq!(
-        output("variable x = 5\nsi (x > 0) { si (x < 10) { escribir(\"ok\") } }"),
+        salida_texto("variable x = 5\nsi (x > 0) { si (x < 10) { escribir(\"ok\") } }"),
         vec!["ok"]
     );
 }
@@ -227,7 +236,7 @@ fn test_vm_si_anidado() {
 #[test]
 fn test_vm_mientras() {
     assert_eq!(
-        output("variable x = 0\nmientras (x < 3) { escribir(x)\nx = x + 1 }"),
+        salida_texto("variable x = 0\nmientras (x < 3) { escribir(x)\nx = x + 1 }"),
         vec!["0", "1", "2"]
     );
 }
@@ -235,7 +244,7 @@ fn test_vm_mientras() {
 #[test]
 fn test_vm_mientras_falso() {
     assert_eq!(
-        output("mientras (falso) { escribir(\"no\") }"),
+        salida_texto("mientras (falso) { escribir(\"no\") }"),
         Vec::<String>::new()
     );
 }
@@ -243,7 +252,7 @@ fn test_vm_mientras_falso() {
 #[test]
 fn test_vm_repetir() {
     assert_eq!(
-        output("repetir (3) { escribir(\"a\") }"),
+        salida_texto("repetir (3) { escribir(\"a\") }"),
         vec!["a", "a", "a"]
     );
 }
@@ -251,14 +260,14 @@ fn test_vm_repetir() {
 #[test]
 fn test_vm_repetir_cero() {
     assert_eq!(
-        output("repetir (0) { escribir(\"x\") }"),
+        salida_texto("repetir (0) { escribir(\"x\") }"),
         Vec::<String>::new()
     );
 }
 
 #[test]
 fn test_vm_repetir_uno() {
-    assert_eq!(output("repetir (1) { escribir(\"u\") }"), vec!["u"]);
+    assert_eq!(salida_texto("repetir (1) { escribir(\"u\") }"), vec!["u"]);
 }
 
 // ============================================================
@@ -268,29 +277,38 @@ fn test_vm_repetir_uno() {
 #[test]
 fn test_vm_concatenacion_texto() {
     assert_eq!(
-        output("escribir(\"Hola\" + \" \" + \"Mundo\")"),
+        salida_texto("escribir(\"Hola\" + \" \" + \"Mundo\")"),
         vec!["Hola Mundo"]
     );
 }
 
 #[test]
-fn test_vm_string_length() {
-    assert_eq!(output("escribir(\"hola\".longitud())"), vec!["4"]);
+fn test_vm_texto_longitud() {
+    assert_eq!(salida_texto("escribir(\"hola\".longitud())"), vec!["4"]);
 }
 
 #[test]
-fn test_vm_string_to_upper() {
-    assert_eq!(output("escribir(\"hola\".a_mayusculas())"), vec!["HOLA"]);
+fn test_vm_texto_to_mayusculas() {
+    assert_eq!(
+        salida_texto("escribir(\"hola\".a_mayusculas())"),
+        vec!["HOLA"]
+    );
 }
 
 #[test]
-fn test_vm_string_to_lower() {
-    assert_eq!(output("escribir(\"HOLA\".a_minusculas())"), vec!["hola"]);
+fn test_vm_texto_to_minusculas() {
+    assert_eq!(
+        salida_texto("escribir(\"HOLA\".a_minusculas())"),
+        vec!["hola"]
+    );
 }
 
 #[test]
-fn test_vm_string_trim() {
-    assert_eq!(output("escribir(\"  hola  \".recortar())"), vec!["hola"]);
+fn test_vm_texto_recortar() {
+    assert_eq!(
+        salida_texto("escribir(\"  hola  \".recortar())"),
+        vec!["hola"]
+    );
 }
 
 // ============================================================
@@ -300,36 +318,36 @@ fn test_vm_string_trim() {
 #[test]
 fn test_vm_array_literal() {
     assert_eq!(
-        output("variable arr = [1, 2, 3]\nescribir(arr)"),
+        salida_texto("variable arr = [1, 2, 3]\nescribir(arr)"),
         vec!["[1,2,3]"]
     );
 }
 
 #[test]
-fn test_vm_array_get() {
+fn test_vm_arreglo_obtener() {
     assert_eq!(
-        output("variable arr = [10, 20, 30]\nescribir(arr[1])"),
+        salida_texto("variable arr = [10, 20, 30]\nescribir(arr[1])"),
         vec!["20"]
     );
 }
 
 #[test]
-fn test_vm_array_set() {
-    let salida = output("variable arr = [1, 2, 3]\narr[1] = 99\nescribir(arr[1])");
+fn test_vm_arreglo_fijar() {
+    let salida = salida_texto("variable arr = [1, 2, 3]\narr[1] = 99\nescribir(arr[1])");
     assert_eq!(salida, vec!["99"]);
 }
 
 #[test]
 fn test_vm_array_out_of_bounds() {
     assert_eq!(
-        output("variable arr = [1, 2]\nescribir(arr[99])"),
+        salida_texto("variable arr = [1, 2]\nescribir(arr[99])"),
         vec!["nulo"]
     );
 }
 
 #[test]
 fn test_vm_array_vacio() {
-    assert_eq!(output("variable arr = []\nescribir(arr)"), vec!["[]"]);
+    assert_eq!(salida_texto("variable arr = []\nescribir(arr)"), vec!["[]"]);
 }
 
 // ============================================================
@@ -339,7 +357,7 @@ fn test_vm_array_vacio() {
 #[test]
 fn test_vm_mapa_literal() {
     assert_eq!(
-        output("variable m = {\"nombre\": \"Ana\"}\nescribir(m[\"nombre\"])"),
+        salida_texto("variable m = {\"nombre\": \"Ana\"}\nescribir(m[\"nombre\"])"),
         vec!["Ana"]
     );
 }
@@ -351,7 +369,7 @@ fn test_vm_mapa_literal() {
 #[test]
 fn test_vm_para() {
     assert_eq!(
-        output("para (variable i = 0; i < 3; i = i + 1) { escribir(i) }"),
+        salida_texto("para (variable i = 0; i < 3; i = i + 1) { escribir(i) }"),
         vec!["0", "1", "2"]
     );
 }
@@ -362,26 +380,32 @@ fn test_vm_para() {
 
 #[test]
 fn test_vm_funcion_simple() {
-    assert_eq!(output("funcion f() { escribir(42) }\nf()"), vec!["42"]);
+    assert_eq!(
+        salida_texto("funcion f() { escribir(42) }\nf()"),
+        vec!["42"]
+    );
 }
 
 #[test]
 fn test_vm_funcion_con_parametros() {
     assert_eq!(
-        output("funcion suma(a, b) { retornar a + b }\nescribir(suma(3, 4))"),
+        salida_texto("funcion suma(a, b) { retornar a + b }\nescribir(suma(3, 4))"),
         vec!["7"]
     );
 }
 
 #[test]
 fn test_vm_funcion_sin_retorno() {
-    assert_eq!(output("funcion f() { }\nf()\nescribir(\"ok\")"), vec!["ok"]);
+    assert_eq!(
+        salida_texto("funcion f() { }\nf()\nescribir(\"ok\")"),
+        vec!["ok"]
+    );
 }
 
 #[test]
 fn test_vm_funcion_recursiva() {
     let src = "funcion fact(n) { si (n <= 1) { retornar 1 } sino { retornar n * fact(n - 1) } }\nescribir(fact(5))";
-    assert_eq!(output(src), vec!["120"]);
+    assert_eq!(salida_texto(src), vec!["120"]);
 }
 
 // ============================================================
@@ -391,7 +415,7 @@ fn test_vm_funcion_recursiva() {
 #[test]
 fn test_vm_multiples_prints() {
     assert_eq!(
-        output("escribir(\"a\")\nescribir(\"b\")\nescribir(\"c\")"),
+        salida_texto("escribir(\"a\")\nescribir(\"b\")\nescribir(\"c\")"),
         vec!["a", "b", "c"]
     );
 }
@@ -402,13 +426,13 @@ fn test_vm_multiples_prints() {
 
 #[test]
 fn test_vm_expresion_compuesta() {
-    assert_eq!(output("escribir(2 + 3 * 4)"), vec!["14"]);
+    assert_eq!(salida_texto("escribir(2 + 3 * 4)"), vec!["14"]);
 }
 
 #[test]
 fn test_vm_concatenacion_con_numero() {
     assert_eq!(
-        output("escribir(\"El valor es \" + 42)"),
+        salida_texto("escribir(\"El valor es \" + 42)"),
         vec!["El valor es 42"]
     );
 }
@@ -420,7 +444,7 @@ fn test_vm_concatenacion_con_numero() {
 #[test]
 fn test_vm_cuando_verdadero() {
     assert_eq!(
-        output("variable x = 35\ncuando (x > 30) { escribir(\"Caliente\") }"),
+        salida_texto("variable x = 35\ncuando (x > 30) { escribir(\"Caliente\") }"),
         vec!["Caliente"]
     );
 }
@@ -429,7 +453,7 @@ fn test_vm_cuando_verdadero() {
 // ForjaFast — Async/Await runtime test
 // ============================================================
 
-fn output_fast(fuente: &str) -> Vec<String> {
+fn salida_fast(fuente: &str) -> Vec<String> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
@@ -449,7 +473,7 @@ fn output_fast(fuente: &str) -> Vec<String> {
 
 #[test]
 fn test_vm_fast_hola_mundo() {
-    let salida = output_fast("escribir(\"hola fast\")");
+    let salida = salida_fast("escribir(\"hola fast\")");
     assert_eq!(salida, vec!["hola fast"]);
 }
 
@@ -457,7 +481,7 @@ fn test_vm_fast_hola_mundo() {
 fn test_vm_fast_async_hilo_return_int() {
     // Las strings no se pueden pasar entre threads (str_heap es local).
     // Los enteros sí funcionan.
-    let salida = output_fast(
+    let salida = salida_fast(
         "funcion asincrona foo() -> Entero {
              retornar 42
          }

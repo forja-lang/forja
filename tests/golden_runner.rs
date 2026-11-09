@@ -99,7 +99,7 @@ const EXCLUIDOS: &[(&str, &str)] = &[
     ),
 ];
 
-fn dir_golden() -> PathBuf {
+fn directorio_dorado() -> PathBuf {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("tests")
         .join("golden")
@@ -107,7 +107,7 @@ fn dir_golden() -> PathBuf {
 
 /// Raíz del proyecto: los ejemplos importan `std/...`, así que la ejecución
 /// tiene que resolver imports contra el workspace (no contra el cwd del test).
-fn dir_ejemplos_raiz() -> PathBuf {
+fn directorio_ejemplos_raiz() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
@@ -145,7 +145,7 @@ fn nombre_golden(nombre: &str) -> String {
 
 #[test]
 fn golden_del_corpus() {
-    let directorio = dir_golden();
+    let directorio = directorio_dorado();
     std::fs::create_dir_all(&directorio).expect("crear tests/golden/");
 
     let actualizar = actualizar_golden();
@@ -166,7 +166,7 @@ fn golden_del_corpus() {
 
         // Un error también puede ser el golden (ejemplo que falla a propósito),
         // pero sólo si está declarado: un error nuevo no debe pasar inadvertido.
-        let (salida, error) = match forja::ejecutar_desde(&fuente, &dir_ejemplos_raiz()) {
+        let (salida, error) = match forja::ejecutar_desde(&fuente, &directorio_ejemplos_raiz()) {
             Ok(lineas) => (lineas.join("\n"), None),
             Err(e) => (format!("ERROR: {e}"), Some(e)),
         };
@@ -177,23 +177,23 @@ fn golden_del_corpus() {
             }
         }
 
-        let golden_path = directorio.join(nombre_golden(&nombre));
+        let dorado_ruta = directorio.join(nombre_golden(&nombre));
 
         if actualizar {
-            if let Err(e) = std::fs::write(&golden_path, &salida) {
+            if let Err(e) = std::fs::write(&dorado_ruta, &salida) {
                 fallos.push(format!("[{nombre}] no se pudo escribir el golden: {e}"));
             }
             continue;
         }
 
-        match std::fs::read_to_string(&golden_path) {
+        match std::fs::read_to_string(&dorado_ruta) {
             Ok(esperado) if esperado == salida => {}
             Ok(esperado) => fallos.push(format!(
                 "[{nombre}] la salida difiere del golden:\n--- esperado ---\n{esperado}\n--- obtenido ---\n{salida}\n----------------"
             )),
             Err(_) => fallos.push(format!(
                 "[{nombre}] falta el golden {} — regenerar con FORJA_UPDATE_GOLDEN=1",
-                golden_path.display()
+                dorado_ruta.display()
             )),
         }
     }

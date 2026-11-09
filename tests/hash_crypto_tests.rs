@@ -112,7 +112,7 @@ fn test_sha1_largo() {
 // ============================================================
 
 #[test]
-fn test_hex_encode_vacio() {
+fn test_hex_codificar_vacio() {
     assert_eq!(hex_encode(b""), "");
 }
 
@@ -121,42 +121,42 @@ fn test_hex_encode_vacio() {
 // ============================================================
 
 #[test]
-fn test_b64_encode_hello() {
+fn test_b64_codificar_hola() {
     assert_eq!(base64::b64_encode(b"hello"), "aGVsbG8=");
 }
 
 #[test]
-fn test_b64_decode_hello() {
+fn test_b64_decodificar_hola() {
     assert_eq!(base64::b64_decode("aGVsbG8=").unwrap(), b"hello");
 }
 
 #[test]
-fn test_b64_encode_vacio() {
+fn test_b64_codificar_vacio() {
     assert_eq!(base64::b64_encode(b""), "");
 }
 
 #[test]
-fn test_b64_decode_vacio() {
+fn test_b64_decodificar_vacio() {
     assert_eq!(base64::b64_decode("").unwrap(), b"");
 }
 
 #[test]
-fn test_b64_encode_3_bytes() {
+fn test_b64_codificar_3_bytes() {
     assert_eq!(base64::b64_encode(b"abc"), "YWJj");
 }
 
 #[test]
-fn test_b64_decode_3_bytes() {
+fn test_b64_decodificar_3_bytes() {
     assert_eq!(base64::b64_decode("YWJj").unwrap(), b"abc");
 }
 
 #[test]
-fn test_b64_encode_1_byte() {
+fn test_b64_codificar_1_byte() {
     assert_eq!(base64::b64_encode(b"a"), "YQ==");
 }
 
 #[test]
-fn test_b64_encode_2_bytes() {
+fn test_b64_codificar_2_bytes() {
     assert_eq!(base64::b64_encode(b"ab"), "YWI=");
 }
 
@@ -169,12 +169,12 @@ fn test_b64_roundtrip_largo() {
 }
 
 #[test]
-fn test_b64_invalid_char() {
+fn test_b64_invalido_caracter() {
     assert!(base64::b64_decode("¡Invalido!").is_err());
 }
 
 #[test]
-fn test_b64_invalid_length() {
+fn test_b64_invalido_longitud() {
     assert!(base64::b64_decode("abc").is_err());
 }
 
@@ -309,10 +309,10 @@ fn test_pbkdf2_determinista() {
 
 #[test]
 fn test_pbkdf2_longitud_variable() {
-    let key16 = crypto::pbkdf2_hmac_sha256(b"pass", b"salt", 10, 16);
-    let key32 = crypto::pbkdf2_hmac_sha256(b"pass", b"salt", 10, 32);
-    assert_eq!(key16.len(), 16);
-    assert_eq!(key32.len(), 32);
+    let clave16 = crypto::pbkdf2_hmac_sha256(b"pass", b"salt", 10, 16);
+    let clave32 = crypto::pbkdf2_hmac_sha256(b"pass", b"salt", 10, 32);
+    assert_eq!(clave16.len(), 16);
+    assert_eq!(clave32.len(), 32);
 }
 
 // ============================================================
@@ -320,7 +320,7 @@ fn test_pbkdf2_longitud_variable() {
 // ============================================================
 
 #[test]
-fn test_hash_verify_password_ok() {
+fn test_hash_verificar_contrasena_correcto() {
     let hash = crypto::hash_password("miPassword123").unwrap();
     assert!(crypto::verify_password("miPassword123", &hash));
 }

@@ -3,7 +3,7 @@
 use super::*;
 
 /// forja new <nombre>
-pub(crate) fn cmd_new(args: &[String]) {
+pub(crate) fn cmd_nuevo(args: &[String]) {
     if args.is_empty() {
         eprintln!("Uso: forja new|nuevo|crear <nombre>");
         process::exit(1);
@@ -20,11 +20,11 @@ pub(crate) fn cmd_new(args: &[String]) {
         eprintln!("Error creando directorio: {}", e);
         process::exit(1);
     });
-    let main_fa = format!(
+    let principal_fa = format!(
         "// {} — Programa en Forja (fa)\n// Creado con 'forja new'\n\nescribir(\"Hola desde {}!\")\n",
         nombre, nombre
     );
-    std::fs::write(directorio.join("main.fa"), &main_fa).unwrap_or_else(|e| {
+    std::fs::write(directorio.join("main.fa"), &principal_fa).unwrap_or_else(|e| {
         eprintln!("Error escribiendo main.fa: {}", e);
         process::exit(1);
     });
@@ -66,7 +66,7 @@ pub(crate) fn cmd_add() {
 }
 
 /// forja remove|remover|eliminar <paquete>
-pub(crate) fn cmd_remove() {
+pub(crate) fn cmd_quitar() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
         eprintln!("Uso: forja remove|remover|eliminar <paquete>");
@@ -234,7 +234,7 @@ pub(crate) fn cmd_publish(args: &[String]) {
 ///
 /// Servidor HTTP mínimo del registry remoto. Pensado para desarrollo y
 /// pruebas; en producción va detrás de un proxy TLS.
-pub(crate) fn cmd_registry_serve(args: &[String]) {
+pub(crate) fn cmd_registro_serve(args: &[String]) {
     rechazar_flags(args);
     let directorio = args
         .first()
@@ -301,6 +301,6 @@ pub(crate) fn cmd_yank(args: &[String]) {
 }
 
 /// forja init
-pub(crate) fn cmd_init() {
-    cmd_new(&[".".to_string()]);
+pub(crate) fn cmd_inicializar() {
+    cmd_nuevo(&[".".to_string()]);
 }

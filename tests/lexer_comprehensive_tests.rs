@@ -523,19 +523,19 @@ fn test_literal_texto_con_espacios() {
 }
 
 #[test]
-fn test_literal_texto_escape_n() {
+fn test_literal_texto_escapar_n() {
     let k = kinds("\"a\\nb\"");
     assert_eq!(k[0], TokenKind::Texto("a\nb".to_string()));
 }
 
 #[test]
-fn test_literal_texto_escape_t() {
+fn test_literal_texto_escapar_t() {
     let k = kinds("\"a\\tb\"");
     assert_eq!(k[0], TokenKind::Texto("a\tb".to_string()));
 }
 
 #[test]
-fn test_literal_texto_escape_comilla() {
+fn test_literal_texto_escapar_comilla() {
     let k = kinds("\"\\\"citado\\\"\"");
     assert_eq!(k[0], TokenKind::Texto("\"citado\"".to_string()));
 }
@@ -610,7 +610,7 @@ fn test_doc_comment() {
 // ============================================================
 
 #[test]
-fn test_source_vacio() {
+fn test_fuente_vacio() {
     let k = kinds("");
     assert_eq!(k[0], TokenKind::EOF);
 }

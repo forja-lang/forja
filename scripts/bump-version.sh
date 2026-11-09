@@ -43,6 +43,8 @@
 #   - scripts/install.sh y scripts/install.ps1
 #   - vscode/README.md, package.json y package-lock.json
 #   - installer.iss (Inno Setup)
+#   - packaging/homebrew-tap/Formula/forja.rb (vía scripts/update-homebrew.sh;
+#     los sha256 los rellena ese script cuando la release ya está publicada)
 
 set -euo pipefail
 
@@ -339,6 +341,20 @@ if [ -f "$csproj_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
+# 12d. Fórmula de Homebrew: se regenera entera desde la plantilla, así la
+#      versión sigue a Cargo.toml aunque el archivo estuviera viejo. Los sha256
+#      quedan pendientes porque el release (y sus tarballs) sale después del
+#      tag; se rellenan con `scripts/update-homebrew.sh` sin --sin-hashes.
+if [ -f "packaging/homebrew-tap/Formula/forja.rb" ] && [ -f "scripts/update-homebrew.sh" ]; then
+    if bash scripts/update-homebrew.sh "$NEW_VERSION" --sin-hashes >/dev/null; then
+        print_ok "packaging/homebrew-tap/Formula/forja.rb"
+        COUNT=$((COUNT + 1))
+    else
+        echo "❌ Falló scripts/update-homebrew.sh"
+        exit 1
+    fi
+fi
+
 # 13. Verificación: ningún Cargo.toml del workspace debe quedar desfasado.
 #     Es la red que faltaba: un bump incompleto dejaba el workspace sin resolver
 #     (`forja-gui-rt 0.9.6` exigiendo `forja-gui-core ^0.9.6` con 0.9.5).
@@ -369,6 +385,19 @@ if [ -n "$DESFASADOS" ]; then
     exit 1
 fi
 print_ok "Verificación: todos los Cargo.toml del workspace en $NEW_VERSION"
+
+# 13b. La fórmula de Homebrew también tiene que quedar en la versión nueva.
+#      Si `bash` no está o alguien movió el archivo, esto lo delata acá y no en
+#      el tap publicado. Con placeholder de sha256 `brew install` igual falla:
+#      los hashes se rellenan cuando la release existe.
+if [ -f "packaging/homebrew-tap/Formula/forja.rb" ]; then
+    if ! grep -q "^  version \"$NEW_VERSION\"$" packaging/homebrew-tap/Formula/forja.rb; then
+        echo "❌ packaging/homebrew-tap/Formula/forja.rb no quedó en $NEW_VERSION"
+        echo "   Corregí con: scripts/update-homebrew.sh $NEW_VERSION --sin-hashes"
+        exit 1
+    fi
+    print_ok "Verificación: fórmula de Homebrew en $NEW_VERSION (sha256 pendientes del release)"
+fi
 
 # 14. Actualizar Cargo.lock mediante cargo check
 if command -v cargo &>/dev/null; then
@@ -472,6 +501,11 @@ repo_slug=$(git config --get remote.origin.url 2>/dev/null \
     | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')
 echo "  https://github.com/${repo_slug:-forja-lang/forja}/releases"
 echo ""
+if [ -f "packaging/homebrew-tap/Formula/forja.rb" ]; then
+    echo "  📦  Homebrew: cuando la release esté publicada, corré"
+    echo "      scripts/update-homebrew.sh   (sin --sin-hashes) para completar los sha256."
+    echo ""
+fi
 
 if [ "$DO_PUSH" = false ]; then
     echo "📋  Para finalizar manualmente:"

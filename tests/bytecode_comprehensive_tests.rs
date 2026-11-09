@@ -31,49 +31,49 @@ fn generar_con_tipos(fuente: &str) -> Vec<Opcode> {
 // ============================================================
 
 #[test]
-fn test_bc_push_entero() {
+fn test_bytecode_empujar_entero() {
     let bc = generar("variable x = 42");
     assert_eq!(bc[0], Opcode::PushEntero(42));
 }
 
 #[test]
-fn test_bc_push_entero_negativo() {
+fn test_bytecode_empujar_entero_negativo() {
     let bc = generar("variable x = -5\nescribir(x)");
     assert!(bc.len() > 2);
 }
 
 #[test]
-fn test_bc_push_entero_grande() {
+fn test_bytecode_empujar_entero_grande() {
     let bc = generar("variable x = 1000000");
     assert_eq!(bc[0], Opcode::PushEntero(1000000));
 }
 
 #[test]
-fn test_bc_push_decimal() {
+fn test_bytecode_empujar_decimal() {
     let bc = generar("variable x = 3.14");
     assert!(bc.iter().any(|op| matches!(op, Opcode::PushDecimal(_))));
 }
 
 #[test]
-fn test_bc_push_texto() {
+fn test_bytecode_empujar_texto() {
     let bc = generar("escribir(\"hola\")");
     assert_eq!(bc[0], Opcode::PushTexto(Arc::from("hola")));
 }
 
 #[test]
-fn test_bc_push_texto_vacio() {
+fn test_bytecode_empujar_texto_vacio() {
     let bc = generar("escribir(\"\")");
     assert_eq!(bc[0], Opcode::PushTexto(Arc::from("")));
 }
 
 #[test]
-fn test_bc_push_booleano_true() {
+fn test_bytecode_empujar_booleano_true() {
     let bc = generar("variable x = verdadero");
     assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
 }
 
 #[test]
-fn test_bc_push_booleano_false() {
+fn test_bytecode_empujar_booleano_false() {
     let bc = generar("variable x = falso");
     assert!(bc
         .iter()
@@ -81,7 +81,7 @@ fn test_bc_push_booleano_false() {
 }
 
 #[test]
-fn test_bc_push_nulo() {
+fn test_bytecode_empujar_nulo() {
     let bc = generar("variable x = nulo");
     assert!(bc.contains(&Opcode::PushNulo));
 }
@@ -177,25 +177,25 @@ fn test_bc_comparacion_menor_int() {
 // ============================================================
 
 #[test]
-fn test_bc_si_has_jump_si_falso() {
+fn test_bytecode_si_tiene_salto_si_falso() {
     let bc = generar("si (verdadero) { variable x = 1 }");
     assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
 }
 
 #[test]
-fn test_bc_si_has_jump() {
+fn test_bytecode_si_tiene_salto() {
     let bc = generar("si (verdadero) { } sino { }");
     assert!(bc.iter().any(|op| matches!(op, Opcode::Salto(_))));
 }
 
 #[test]
-fn test_bc_mientras_has_jump_si_falso() {
+fn test_bytecode_mientras_tiene_salto_si_falso() {
     let bc = generar("mientras (falso) { }");
     assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
 }
 
 #[test]
-fn test_bc_repetir_push_cantidad() {
+fn test_bytecode_repetir_empujar_cantidad() {
     let bc = generar("repetir (5) { }");
     assert!(bc.iter().any(|op| matches!(op, Opcode::PushEntero(5))));
 }
@@ -217,13 +217,13 @@ fn test_bc_declare_inmutable() {
 }
 
 #[test]
-fn test_bc_load_variable() {
+fn test_bytecode_cargar_variable() {
     let bc = generar("variable x = 5\nescribir(x)");
     assert!(bc.iter().any(|op| matches!(op, Opcode::Cargar(_))));
 }
 
 #[test]
-fn test_bc_store_variable() {
+fn test_bytecode_almacen_variable() {
     let bc = generar("variable x = 5\nx = 10");
     assert!(bc.iter().any(|op| matches!(op, Opcode::Guardar(_))));
 }
@@ -259,7 +259,7 @@ fn test_bc_multiples_declaraciones() {
 // ============================================================
 
 #[test]
-fn test_bc_serializacion_push_entero() {
+fn test_bytecode_serializacion_empujar_entero() {
     let bc = vec![Opcode::PushEntero(123)];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
@@ -267,7 +267,7 @@ fn test_bc_serializacion_push_entero() {
 }
 
 #[test]
-fn test_bc_serializacion_push_decimal() {
+fn test_bytecode_serializacion_empujar_decimal() {
     let bc = vec![Opcode::PushDecimal(std::f64::consts::PI)];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
@@ -275,7 +275,7 @@ fn test_bc_serializacion_push_decimal() {
 }
 
 #[test]
-fn test_bc_serializacion_push_texto() {
+fn test_bytecode_serializacion_empujar_texto() {
     let bc = vec![Opcode::PushTexto(Arc::from("test"))];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
@@ -345,7 +345,7 @@ fn test_bc_print_opcode() {
 }
 
 #[test]
-fn test_bc_print_despues_de_push() {
+fn test_bytecode_imprimir_despues_de_empujar() {
     let bc = generar("escribir(42)");
     let idx_print = bc
         .iter()
@@ -381,19 +381,19 @@ fn test_bc_funcion_retornar() {
 // ============================================================
 
 #[test]
-fn test_bc_array_new() {
+fn test_bytecode_arreglo_nuevo() {
     let bc = generar("variable arr = [1, 2, 3]");
     assert!(bc.iter().any(|op| matches!(op, Opcode::NuevoArreglo(_))));
 }
 
 #[test]
-fn test_bc_array_get() {
+fn test_bytecode_arreglo_obtener() {
     let bc = generar("variable arr = [10, 20]\nvariable v = arr[0]");
     assert!(bc.iter().any(|op| matches!(op, Opcode::ObtenerElemento)));
 }
 
 #[test]
-fn test_bc_array_set() {
+fn test_bytecode_arreglo_fijar() {
     let bc = generar("variable arr = [1, 2]\narr[0] = 99");
     assert!(bc.iter().any(|op| matches!(op, Opcode::FijarElemento)));
 }
@@ -403,21 +403,21 @@ fn test_bc_array_set() {
 // ============================================================
 
 #[test]
-fn test_bc_map_new() {
+fn test_bytecode_mapa_nuevo() {
     let bc = generar("variable m = {\"a\": 1}");
     assert!(bc.iter().any(|op| matches!(op, Opcode::NuevoMapa(_))));
 }
 
 #[test]
-fn test_bc_map_get() {
+fn test_bytecode_mapa_obtener() {
     let bc = generar("variable m = {\"x\": 10}\nvariable v = m[\"x\"]");
-    let has_get = bc.iter().any(|op| {
+    let tiene_obtener = bc.iter().any(|op| {
         matches!(
             op,
             Opcode::ObtenerValorDeMapa | Opcode::Cargar(_) | Opcode::CargarIndice(_)
         )
     });
-    assert!(has_get);
+    assert!(tiene_obtener);
 }
 
 // ============================================================
@@ -425,16 +425,16 @@ fn test_bc_map_get() {
 // ============================================================
 
 #[test]
-fn test_bc_load_variable_con_indice() {
+fn test_bytecode_cargar_variable_con_indice() {
     let bc = generar_con_tipos("variable x = 5\nescribir(x)");
     // After index optimization, uses LoadIdx or LoadIdxEntero
-    let has_load = bc.iter().any(|op| {
+    let tiene_cargar = bc.iter().any(|op| {
         matches!(
             op,
             Opcode::CargarIndice(_) | Opcode::CargarIndiceEntero(_) | Opcode::Cargar(_)
         )
     });
-    assert!(has_load);
+    assert!(tiene_cargar);
 }
 
 // ============================================================
@@ -442,13 +442,13 @@ fn test_bc_load_variable_con_indice() {
 // ============================================================
 
 #[test]
-fn test_bc_string_length_ok() {
+fn test_bytecode_texto_longitud_correcto() {
     let resultado = generar("variable n = \"hola\".length()");
     assert!(!resultado.is_empty());
 }
 
 #[test]
-fn test_bc_string_concat() {
+fn test_bytecode_texto_concat() {
     let bc = generar("variable s = \"a\" + \"b\"");
     assert!(bc.iter().any(|op| matches!(op, Opcode::Sumar)));
 }

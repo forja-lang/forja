@@ -243,7 +243,7 @@ fn ir_emision_rechaza_fuera_del_subconjunto() {
 /// la ruta canónica es **AST-first** (el emisor IR duplica el bytecode
 /// y la VM lo ejecuta más lento); el backend AST explícito debe coincidir.
 #[test]
-fn ruta_canonica_es_ast_first_y_coincide_con_ast_estricto() {
+fn ruta_canonica_es_ast_primero_y_coincide_con_ast_estricto() {
     let fuente = "funcion f() -> Entero {\n    retornar 7\n}\nescribir(f())";
     let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let (bc_canonico, _c) = forja::compilar_pipeline_completa(fuente).expect("ruta canónica");

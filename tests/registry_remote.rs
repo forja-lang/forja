@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-fn temp_dir(nombre: &str) -> PathBuf {
+fn temporal_directorio(nombre: &str) -> PathBuf {
     let directorio = std::env::temp_dir().join(format!(
         "forja-registry-{}-{}-{}",
         nombre,
@@ -46,9 +46,9 @@ fn put_publicacion(
 }
 
 #[test]
-fn registry_remoto_publica_descarga_y_yank() {
-    let raiz = temp_dir("e2e");
-    let servidor_dir = raiz.join("server");
+fn registro_remoto_publica_descarga_y_extraer() {
+    let raiz = temporal_directorio("e2e");
+    let servidor_directorio = raiz.join("server");
     let proyecto = raiz.join("proyecto");
     let destino = raiz.join("instalado");
     std::fs::create_dir_all(&proyecto).unwrap();
@@ -58,9 +58,12 @@ fn registry_remoto_publica_descarga_y_yank() {
     )
     .unwrap();
 
-    let servidor =
-        forja::registry_server::iniciar(&servidor_dir, "127.0.0.1:0", Some("secreto".into()))
-            .expect("servidor");
+    let servidor = forja::registry_server::iniciar(
+        &servidor_directorio,
+        "127.0.0.1:0",
+        Some("secreto".into()),
+    )
+    .expect("servidor");
     std::env::set_var("FORJA_REGISTRY_URL", format!("http://{}", servidor.addr));
     std::env::set_var("FORJA_REGISTRY_TOKEN", "secreto");
     // Clave de autor fija para que el test no dependa de ~/.forja/keys.
@@ -123,7 +126,8 @@ fn registry_remoto_publica_descarga_y_yank() {
 
     // El servidor dejó rastro de lo que pasó (publicación, descarga del índice,
     // yank) en el registro de auditoría.
-    let auditoria = std::fs::read_to_string(servidor_dir.join("audit.log")).unwrap_or_default();
+    let auditoria =
+        std::fs::read_to_string(servidor_directorio.join("audit.log")).unwrap_or_default();
     assert!(
         auditoria.contains("\"status\":201"),
         "auditoría: {auditoria}"
@@ -143,7 +147,7 @@ fn registry_remoto_publica_descarga_y_yank() {
 /// corresponde al paquete se rechaza con 403; la correcta se publica.
 #[test]
 fn servidor_rechaza_firma_que_no_corresponde() {
-    let raiz = temp_dir("firma");
+    let raiz = temporal_directorio("firma");
     let servidor = forja::registry_server::iniciar(raiz.join("server"), "127.0.0.1:0", None)
         .expect("servidor");
 

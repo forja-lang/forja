@@ -181,17 +181,18 @@ pub(crate) fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<()
     let test_program = format!("{}\nfn main() {{\n    {}();\n}}\n", rust_clean, nombre);
 
     // Escribir a archivo temporal y compilar con rustc
-    let tmp_dir = std::env::temp_dir().join("forja_test");
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Error creando dir temp: {}", e))?;
-    let rs_file = tmp_dir.join("test.rs");
-    std::fs::write(&rs_file, &test_program)
+    let directorio_temporal = std::env::temp_dir().join("forja_test");
+    std::fs::create_dir_all(&directorio_temporal)
+        .map_err(|e| format!("Error creando dir temp: {}", e))?;
+    let rs_archivo = directorio_temporal.join("test.rs");
+    std::fs::write(&rs_archivo, &test_program)
         .map_err(|e| format!("Error escribiendo test.rs: {}", e))?;
 
     // Compilar con rustc
     let salida = std::process::Command::new("rustc")
-        .arg(&rs_file)
+        .arg(&rs_archivo)
         .arg("-o")
-        .arg(tmp_dir.join("test.exe"))
+        .arg(directorio_temporal.join("test.exe"))
         .output()
         .map_err(|e| format!("Error al ejecutar rustc: {}. ¿Está instalado?", e))?;
 
@@ -201,7 +202,7 @@ pub(crate) fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<()
     }
 
     // Ejecutar el binario de test
-    let salida = std::process::Command::new(tmp_dir.join("test.exe"))
+    let salida = std::process::Command::new(directorio_temporal.join("test.exe"))
         .output()
         .map_err(|e| format!("Error al ejecutar test: {}", e))?;
 

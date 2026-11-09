@@ -30,7 +30,7 @@ fn error(estricto: bool, fuente: &str) -> String {
 const CLASE: &str = "clase C { variable v: Entero  constructor() { este.v = 7 } }\n";
 
 #[test]
-fn usar_la_variable_original_despues_del_move_falla() {
+fn usar_la_variable_original_despues_del_mover_falla() {
     let e = error(
         true,
         &format!("{CLASE}variable a = nuevo C()\nvariable b = a\nescribir(a.v)"),
@@ -51,7 +51,7 @@ fn el_nuevo_dueno_si_puede_usarla() {
 }
 
 #[test]
-fn sin_estricto_el_move_de_clases_no_se_marca() {
+fn sin_estricto_el_mover_de_clases_no_se_marca() {
     let salida = salida(
         false,
         &format!("{CLASE}variable a = nuevo C()\nvariable b = a\nescribir(a.v)"),
@@ -60,7 +60,7 @@ fn sin_estricto_el_move_de_clases_no_se_marca() {
 }
 
 #[test]
-fn pasar_la_misma_clase_dos_veces_no_es_un_move() {
+fn pasar_la_misma_clase_dos_veces_no_es_un_mover() {
     let salida = salida(
         true,
         &format!(

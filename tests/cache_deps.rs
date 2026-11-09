@@ -3,7 +3,7 @@
 use forja_driver::IncrementalCache;
 use std::path::PathBuf;
 
-fn dir() -> PathBuf {
+fn directorio() -> PathBuf {
     let d = std::env::temp_dir().join(format!("forja_cache_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
@@ -12,7 +12,7 @@ fn dir() -> PathBuf {
 
 #[test]
 fn invalida_dependientes_transitivos() {
-    let d = dir();
+    let d = directorio();
     let mut c = IncrementalCache::new(&d);
     c.put("a.fa", 1, &[], &[]);
     c.put("b.fa", 1, &[], &["a.fa".into()]);

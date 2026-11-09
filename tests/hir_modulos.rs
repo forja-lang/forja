@@ -17,7 +17,7 @@ fn llamada_a_metodo_del_mismo_nombre_que_un_modulo_no_se_reescribe() {
 }
 
 #[test]
-fn llamada_cualificada_a_un_item_exportado_si_se_reescribe() {
+fn llamada_cualificada_a_un_elemento_exportado_si_se_reescribe() {
     let fuente = "importar std/texto\nescribir(texto.capitalizar(\"hola\"))\n";
     let salida = forja_test_support::ejecutar_desde(fuente, raiz()).expect("no ejecutó");
     assert_eq!(salida, vec!["Hola"]);
