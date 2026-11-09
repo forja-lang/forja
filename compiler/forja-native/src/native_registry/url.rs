@@ -36,32 +36,20 @@ pub fn nativo_url_parsear(
         (anfitrion, "")
     };
 
-    let sym = vm.tabla_simbolos().internar("URL");
-    let id_forma = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
-    obj.campos_vec = vec![
-        {
-            let indice = vm.reservar_texto(Arc::from(esquema));
-            ValorFast::texto(indice)
-        },
-        {
-            let indice = vm.reservar_texto(Arc::from(hostname));
-            ValorFast::texto(indice)
-        },
-        {
-            let indice = vm.reservar_texto(Arc::from(puerto));
-            ValorFast::texto(indice)
-        },
-        {
-            let indice = vm.reservar_texto(Arc::from(ruta));
-            ValorFast::texto(indice)
-        },
-        {
-            let indice = vm.reservar_texto(Arc::from(query.unwrap_or("")));
-            ValorFast::texto(indice)
-        },
-    ];
-    Ok(ValorFast::objeto(vm.reservar_objeto(obj)))
+    // Se devuelve un mapa (no un objeto posicional): `url.parsear` declara
+    // `Resultado<URL, ErrorUrl>` y desde Forja sólo se pueden leer mapas por
+    // clave. Antes el objeto no tenía campos accesibles.
+    let mut mapa: HashMap<String, ValorFast> = HashMap::new();
+    let mut insertar = |clave: &str, valor: &str| {
+        let indice = vm.reservar_texto(Arc::from(valor));
+        mapa.insert(clave.to_string(), ValorFast::texto(indice));
+    };
+    insertar("esquema", esquema);
+    insertar("host", hostname);
+    insertar("puerto", puerto);
+    insertar("ruta", ruta);
+    insertar("query", query.unwrap_or(""));
+    Ok(ValorFast::mapa(vm.reservar_mapa(mapa)))
 }
 
 pub fn nativo_url_construir(

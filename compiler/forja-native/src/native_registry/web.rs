@@ -450,10 +450,14 @@ pub fn nativo_query_parsear(
         }
     }
 
-    let pares_ref: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    let salida = construir_mapa_texto(&pares_ref);
-    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(indice))
+    // Se devuelve un mapa real: antes era un texto "a|1|b|2" y `query_parsear`
+    // declaraba `Resultado<Arreglo<(Texto, Texto)>, ErrorUrl>`.
+    let mut resultado: HashMap<String, ValorFast> = HashMap::new();
+    for (clave, valor) in mapa {
+        let indice = vm.reservar_texto(Arc::from(valor.as_str()));
+        resultado.insert(clave, ValorFast::texto(indice));
+    }
+    Ok(ValorFast::mapa(vm.reservar_mapa(resultado)))
 }
 
 /// Decodificación URL simple (reusable, sin VM)
