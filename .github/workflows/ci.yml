@@ -115,6 +115,10 @@ jobs:
       # comprueba que los módulos importen; esto ejecuta las funciones.
       - name: Tests de la stdlib (VM)
         run: bash scripts/probar-stdlib.sh
+      # Servidor + cliente HTTP reales: levanta un puerto y consulta con
+      # std/cliente_http (GET, params, 404, POST).
+      - name: Stack HTTP de punta a punta
+        run: bash scripts/probar-http.sh
       # Guardas del workflow de entrega: matriz de release, firmas y par WASM
       # del playground. Cuesta milisegundos y evita publicar un release roto.
       - name: cargo xtask tidy

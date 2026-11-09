@@ -56,6 +56,7 @@ if [ -x target/debug/forja ] || [ -f target/debug/forja.exe ]; then
 else
     "$CARGO_BIN" build -q --locked --bin forja && bash scripts/probar-stdlib.sh
 fi
+bash scripts/probar-http.sh
 
 echo "==> métricas de documentación"
 if command -v python >/dev/null 2>&1; then
