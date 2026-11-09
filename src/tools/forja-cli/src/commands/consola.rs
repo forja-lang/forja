@@ -40,23 +40,23 @@ pub(crate) fn rechazar_flags(args: &[String]) {
 /// Con `consola: true` en `forja.yaml` se conserva la ventana de consola.
 pub(crate) fn cmd_build(args: &[String]) {
     rechazar_flags(args);
-    let Some(input) = args.first() else {
+    let Some(entrada) = args.first() else {
         eprintln!("Uso: forja compilar <archivo.fa> [salida]");
         process::exit(1);
     };
-    let input = input.clone();
-    let output = args.get(1).cloned();
+    let entrada = entrada.clone();
+    let salida = args.get(1).cloned();
     let con_consola = forja::config::actual().consola;
 
-    let output = output.unwrap_or_else(|| {
-        Path::new(&input)
+    let salida = salida.unwrap_or_else(|| {
+        Path::new(&entrada)
             .with_extension("exe")
             .to_string_lossy()
             .to_string()
     });
 
     // Detectar si usa GUI (importar gui)
-    let usa_gui = std::fs::read_to_string(&input)
+    let usa_gui = std::fs::read_to_string(&entrada)
         .ok()
         .map(|s| {
             s.contains("importar gui")
@@ -68,9 +68,9 @@ pub(crate) fn cmd_build(args: &[String]) {
 
     if usa_gui {
         eprintln!("Detectado GUI — compilando a binario nativo con forja-rt-gui...");
-    } else if let Ok(source) = std::fs::read_to_string(&input) {
-        if crate::commands::compilar_llvm_a(&source, Path::new(&output)).is_ok() {
-            println!("✅ AOT nativo: {output}");
+    } else if let Ok(fuente) = std::fs::read_to_string(&entrada) {
+        if crate::commands::compilar_llvm_a(&fuente, Path::new(&salida)).is_ok() {
+            println!("✅ AOT nativo: {salida}");
             return;
         }
     }
@@ -78,7 +78,7 @@ pub(crate) fn cmd_build(args: &[String]) {
     // Fallback: compilar a ejecutable autónomo (AOT con bytecode embebido)
     // - Sin GUI: usa forja-rt.exe (VM sola)
     // - Con GUI: usa forja-rt-gui.exe (VM + forja-gui-rt con Xilem/Vello)
-    if let Err(e) = forja::aot::AOTCompiler::compilar_con(&input, &output, usa_gui, con_consola) {
+    if let Err(e) = forja::aot::AOTCompiler::compilar_con(&entrada, &salida, usa_gui, con_consola) {
         eprintln!("{}", e);
         process::exit(1);
     }
@@ -92,15 +92,15 @@ pub(crate) fn cmd_diagram(args: &[String]) {
         process::exit(1);
     };
 
-    let output_path = match args.get(1) {
+    let ruta_salida = match args.get(1) {
         Some(salida) => Some(salida.clone()),
         None => {
-            let input = Path::new(input_path);
-            Some(input.with_extension("mmd").to_string_lossy().to_string())
+            let entrada = Path::new(input_path);
+            Some(entrada.with_extension("mmd").to_string_lossy().to_string())
         }
     };
 
-    let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
@@ -109,7 +109,7 @@ pub(crate) fn cmd_diagram(args: &[String]) {
     };
 
     // Lexer
-    let mut lexer = lexer::Lexer::new(&source);
+    let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
@@ -136,7 +136,7 @@ pub(crate) fn cmd_diagram(args: &[String]) {
     let mut gen = diagrama::DiagramGenerator::new();
     let mmd = gen.generar(&programa);
 
-    if let Some(out) = output_path {
+    if let Some(out) = ruta_salida {
         if out == "-" {
             println!("{}", mmd);
         } else {
@@ -162,7 +162,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
         process::exit(1);
     };
 
-    let input_stem = Path::new(input_path)
+    let tallo_entrada = Path::new(input_path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("proyecto");
@@ -171,8 +171,8 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     let project_dir = args
         .get(1)
         .cloned()
-        .unwrap_or_else(|| format!("{}_rs", input_stem));
-    let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+        .unwrap_or_else(|| format!("{}_rs", tallo_entrada));
+    let fuente = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
@@ -181,12 +181,12 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(&source);
+    let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
             eprintln!("{}", error::archivo(input_path));
-            mostrar_errores(&source, &errors, error::json_mode());
+            mostrar_errores(&fuente, &errors, error::json_mode());
             process::exit(1);
         }
     };
@@ -196,7 +196,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
         Ok(p) => p,
         Err(errors) => {
             eprintln!("{}", error::archivo(input_path));
-            mostrar_errores(&source, &errors, error::json_mode());
+            mostrar_errores(&fuente, &errors, error::json_mode());
             process::exit(1);
         }
     };
@@ -217,7 +217,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
         "📂 Directorio raíz para imports: {}",
         root_for_imports.display()
     );
-    let programa_resuelto = match forja::resolver_imports(&source, &root_for_imports) {
+    let programa_resuelto = match forja::resolver_imports(&fuente, &root_for_imports) {
         Ok(p) => {
             eprintln!(
                 "📦 Imports resueltos correctamente ({} declaraciones)",
@@ -235,8 +235,8 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     // FASE 4: Type Checker + Type Inference
-    let mut type_checker = semantics::TypeChecker::new();
-    let _ = type_checker.analizar(&programa);
+    let mut verificador = semantics::TypeChecker::new();
+    let _ = verificador.analizar(&programa);
     // FASE 4b: Borrow Checker — verifica ownership y préstamos
     // (con los nuevos fixes de scope tracking ya no hay falsos positivos)
     let mut borrow_checker =
@@ -246,7 +246,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
     let rust_code = match transpiler.transpilar(&programa) {
-        Ok(code) => code,
+        Ok(codigo) => codigo,
         Err(errors) => {
             if error::json_mode() {
                 for err in &errors {
@@ -254,7 +254,7 @@ pub(crate) fn cmd_transpile(args: &[String]) {
                 }
             } else {
                 eprintln!("{}", error::archivo(input_path));
-                mostrar_errores(&source, &errors, false);
+                mostrar_errores(&fuente, &errors, false);
             }
             process::exit(1);
         }
@@ -268,10 +268,10 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     }
 
     // Sanitizar nombre: debe empezar con letra (regla de Cargo)
-    let mut nombre_crate = input_stem.replace(['-', ' '], "_");
+    let mut nombre_crate = tallo_entrada.replace(['-', ' '], "_");
     if !nombre_crate.is_empty() {
-        let first = nombre_crate.chars().next().unwrap();
-        if first.is_ascii_digit() {
+        let primero = nombre_crate.chars().next().unwrap();
+        if primero.is_ascii_digit() {
             nombre_crate = format!("forja_{}", nombre_crate);
         }
     }
@@ -387,13 +387,13 @@ edition = "2021"
 
     // Compilar automáticamente con cargo
     let try_build = |args: &[&str]| -> Result<(), ()> {
-        let result = std::process::Command::new("cargo")
+        let resultado = std::process::Command::new("cargo")
             .args(args)
             .current_dir(&project_dir)
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .status();
-        match result {
+        match resultado {
             Ok(s) if s.success() => Ok(()),
             _ => Err(()),
         }
@@ -409,9 +409,9 @@ edition = "2021"
         Ok(()) => {
             let build_dir = "release"; // siempre usamos release
             let exe_name = if cfg!(target_os = "windows") {
-                format!("{}.exe", input_stem.replace(['-', ' '], "_"))
+                format!("{}.exe", tallo_entrada.replace(['-', ' '], "_"))
             } else {
-                input_stem.replace(['-', ' '], "_")
+                tallo_entrada.replace(['-', ' '], "_")
             };
             println!();
             println!(
@@ -436,8 +436,8 @@ edition = "2021"
 }
 
 /// Nombre del gcc que necesita un target cruzado para enlazar su assembly.
-pub(crate) fn compilador_cruzado(target: compiler_asm::TargetArch) -> &'static str {
-    match target {
+pub(crate) fn compilador_cruzado(destino: compiler_asm::TargetArch) -> &'static str {
+    match destino {
         compiler_asm::TargetArch::AArch64 => "aarch64-linux-gnu-gcc",
         compiler_asm::TargetArch::RiscV64 => "riscv64-linux-gnu-gcc",
         _ => "gcc",
@@ -450,14 +450,14 @@ pub(crate) fn cmd_llvm(args: &[String]) {
         eprintln!("Uso: forja llvm <archivo.fa> [salida.ll]");
         process::exit(1);
     };
-    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{e}");
             process::exit(1);
         }
     };
-    match forja::compilar_a_llvm(&source) {
+    match forja::compilar_a_llvm(&fuente) {
         Ok(ir) => {
             let out = args
                 .get(1)
