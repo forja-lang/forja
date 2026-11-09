@@ -47,23 +47,23 @@ pub fn native_perfilado_detener(
         .remove(&etiqueta)
         .unwrap_or(now_ms());
     let total_ms = (now_ms() - inicio) as i64;
-    let mut map = perfil_map().lock().unwrap();
-    let entry = map.entry(etiqueta.clone()).or_insert((0, 0));
-    entry.0 += total_ms as u128;
-    entry.1 += 1;
+    let mut mapa = perfil_map().lock().unwrap();
+    let entrada = mapa.entry(etiqueta.clone()).or_insert((0, 0));
+    entrada.0 += total_ms as u128;
+    entrada.1 += 1;
     // build ReportePerfilado object
     let sym = vm.tabla_simbolos().internar("ReportePerfilado");
-    let shape_id = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::new(sym, shape_id);
+    let id_forma = vm.registro_formas().obtener_o_crear(sym);
+    let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
     obj.campos_vec = vec![
         {
-            let idx = vm.alloc_str(Arc::from(etiqueta.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(etiqueta.as_str()));
+            ValorFast::texto(indice)
         },
         ValorFast::entero(total_ms),
-        ValorFast::entero(entry.1 as i64),
-        ValorFast::entero(if entry.1 > 0 {
-            (entry.0 / entry.1 as u128) as i64
+        ValorFast::entero(entrada.1 as i64),
+        ValorFast::entero(if entrada.1 > 0 {
+            (entrada.0 / entrada.1 as u128) as i64
         } else {
             0
         }),
@@ -75,16 +75,16 @@ pub fn native_perfilado_reportes(
     vm: &mut dyn Host,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let map = perfil_map().lock().unwrap();
+    let mapa = perfil_map().lock().unwrap();
     let mut reportes: Vec<ValorFast> = Vec::new();
-    for (etiqueta, (tiempo_total, iteraciones)) in map.iter() {
+    for (etiqueta, (tiempo_total, iteraciones)) in mapa.iter() {
         let sym = vm.tabla_simbolos().internar("ReportePerfilado");
-        let shape_id = vm.registro_formas().obtener_o_crear(sym);
-        let mut obj = forja_runtime::ObjVal::new(sym, shape_id);
+        let id_forma = vm.registro_formas().obtener_o_crear(sym);
+        let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
         obj.campos_vec = vec![
             {
-                let idx = vm.alloc_str(Arc::from(etiqueta.as_str()));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(etiqueta.as_str()));
+                ValorFast::texto(indice)
             },
             ValorFast::entero(*tiempo_total as i64),
             ValorFast::entero(*iteraciones as i64),
