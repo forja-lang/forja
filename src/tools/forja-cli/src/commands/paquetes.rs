@@ -8,34 +8,34 @@ pub(crate) fn cmd_new(args: &[String]) {
         eprintln!("Uso: forja new|nuevo|crear <nombre>");
         process::exit(1);
     }
-    let name = &args[0];
-    let dir = std::path::Path::new(name);
+    let nombre = &args[0];
+    let directorio = std::path::Path::new(nombre);
     // `forja iniciar` usa ".": el directorio actual ya existe y debe poder
     // inicializarse (antes fallaba siempre con "El directorio '.' ya existe").
-    if dir.exists() && name != "." {
-        eprintln!("El directorio '{}' ya existe", name);
+    if directorio.exists() && nombre != "." {
+        eprintln!("El directorio '{}' ya existe", nombre);
         process::exit(1);
     }
-    std::fs::create_dir_all(dir.join("modulos")).unwrap_or_else(|e| {
+    std::fs::create_dir_all(directorio.join("modulos")).unwrap_or_else(|e| {
         eprintln!("Error creando directorio: {}", e);
         process::exit(1);
     });
     let main_fa = format!(
         "// {} — Programa en Forja (fa)\n// Creado con 'forja new'\n\nescribir(\"Hola desde {}!\")\n",
-        name, name
+        nombre, nombre
     );
-    std::fs::write(dir.join("main.fa"), &main_fa).unwrap_or_else(|e| {
+    std::fs::write(directorio.join("main.fa"), &main_fa).unwrap_or_else(|e| {
         eprintln!("Error escribiendo main.fa: {}", e);
         process::exit(1);
     });
     // Archivo de configuración completo con ForjaConfig
-    let config = ForjaConfig::new(name, "0.1.0");
-    if let Err(e) = config.save(&dir.join("forja.json")) {
+    let config = ForjaConfig::new(nombre, "0.1.0");
+    if let Err(e) = config.save(&directorio.join("forja.json")) {
         eprintln!("Error escribiendo forja.json: {}", e);
         process::exit(1);
     }
-    println!("✅ Proyecto '{}' creado", name);
-    println!("   cd {} && forja run main.fa", name);
+    println!("✅ Proyecto '{}' creado", nombre);
+    println!("   cd {} && forja run main.fa", nombre);
 }
 
 /// forja add|agregar|añadir <paquete> [version]
@@ -48,9 +48,9 @@ pub(crate) fn cmd_add() {
     let nombre = &args[2];
     let version = args.get(3).map(|s| s.as_str()).unwrap_or("latest");
 
-    let config_path = Path::new("forja.json");
-    let mut config = if config_path.exists() {
-        ForjaConfig::load(config_path).unwrap_or_else(|_| ForjaConfig::new("app", "0.1.0"))
+    let ruta_config = Path::new("forja.json");
+    let mut config = if ruta_config.exists() {
+        ForjaConfig::load(ruta_config).unwrap_or_else(|_| ForjaConfig::new("app", "0.1.0"))
     } else {
         ForjaConfig::new("app", "0.1.0")
     };
@@ -58,7 +58,7 @@ pub(crate) fn cmd_add() {
     config
         .dependencias
         .insert(nombre.to_string(), version.to_string());
-    if let Err(e) = config.save(config_path) {
+    if let Err(e) = config.save(ruta_config) {
         eprintln!("Error guardando forja.json: {}", e);
         return;
     }
@@ -74,13 +74,13 @@ pub(crate) fn cmd_remove() {
     }
     let nombre = &args[2];
 
-    let config_path = Path::new("forja.json");
-    if !config_path.exists() {
+    let ruta_config = Path::new("forja.json");
+    if !ruta_config.exists() {
         eprintln!("No se encontró forja.json en el directorio actual");
         return;
     }
 
-    let mut config = match ForjaConfig::load(config_path) {
+    let mut config = match ForjaConfig::load(ruta_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
@@ -95,7 +95,7 @@ pub(crate) fn cmd_remove() {
         return;
     }
 
-    if let Err(e) = config.save(config_path) {
+    if let Err(e) = config.save(ruta_config) {
         eprintln!("Error guardando forja.json: {}", e);
         return;
     }
@@ -104,14 +104,14 @@ pub(crate) fn cmd_remove() {
 
 /// forja install|instalar
 pub(crate) fn cmd_install() {
-    let config_path = Path::new("forja.json");
-    if !config_path.exists() {
+    let ruta_config = Path::new("forja.json");
+    if !ruta_config.exists() {
         eprintln!("No se encontró forja.json en el directorio actual");
         eprintln!("Usá 'forja new <nombre>' o 'forja init' para crear un proyecto");
         return;
     }
 
-    let config = match ForjaConfig::load(config_path) {
+    let config = match ForjaConfig::load(ruta_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
@@ -124,8 +124,9 @@ pub(crate) fn cmd_install() {
         return;
     }
 
-    let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-    let mut resolver = PackageResolver::new(&project_dir);
+    let directorio_proyecto =
+        std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let mut resolver = PackageResolver::new(&directorio_proyecto);
 
     println!("📦 Instalando dependencias...");
     for (nombre, version) in &config.dependencias {
@@ -157,20 +158,20 @@ pub(crate) fn cmd_install() {
 /// Lee nombre/version/autor/descripcion de `forja.json`.
 pub(crate) fn cmd_publish(args: &[String]) {
     rechazar_flags(args);
-    let dir = match args.first() {
+    let directorio = match args.first() {
         Some(ruta) => Path::new(ruta).to_path_buf(),
         None => std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf()),
     };
 
-    let config_path = dir.join("forja.json");
-    if !config_path.exists() {
+    let ruta_config = directorio.join("forja.json");
+    if !ruta_config.exists() {
         eprintln!(
             "No se encontró forja.json en {}. Usá 'forja new <nombre>' o 'forja init'.",
-            dir.display()
+            directorio.display()
         );
         process::exit(1);
     }
-    let config = match ForjaConfig::load(&config_path) {
+    let config = match ForjaConfig::load(&ruta_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
@@ -191,7 +192,7 @@ pub(crate) fn cmd_publish(args: &[String]) {
         config.nombre, config.version
     );
     match forja::registry::publicar(
-        &dir,
+        &directorio,
         &config.nombre,
         &config.version,
         &config.autor,
@@ -235,7 +236,7 @@ pub(crate) fn cmd_publish(args: &[String]) {
 /// pruebas; en producción va detrás de un proxy TLS.
 pub(crate) fn cmd_registry_serve(args: &[String]) {
     rechazar_flags(args);
-    let dir = args
+    let directorio = args
         .first()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| forja::registry::dir_registry().join("server"));
@@ -247,10 +248,10 @@ pub(crate) fn cmd_registry_serve(args: &[String]) {
     let token = std::env::var("FORJA_REGISTRY_TOKEN").ok();
     let addr = format!("127.0.0.1:{}", puerto);
     let tiene_token = token.is_some();
-    match forja::registry_server::iniciar(&dir, &addr, token) {
+    match forja::registry_server::iniciar(&directorio, &addr, token) {
         Ok(servidor) => {
             println!("📦 Registry remoto escuchando en http://{}", servidor.addr);
-            println!("   dir:   {}", dir.display());
+            println!("   dir:   {}", directorio.display());
             println!(
                 "   token: {}",
                 if tiene_token {
