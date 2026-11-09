@@ -10,6 +10,17 @@
        PathRoot     HKLM | HKCU (clave de registro que marca el PATH) -->
 <Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
+  <!-- ── Requisitos ────────────────────────────────────────────────────────
+       Los ejecutables son binarios MSVC x64: enlazan VCRUNTIME140.dll
+       dinámicamente y usan la UCRT, que desde Windows 10 viene en el sistema.
+       Por eso: 64 bits y Windows 10 o posterior.
+
+       El runtime de Visual C++ (2015-2022, x64) lo instala el bundle antes de
+       este MSI; si alguien corre el .msi suelto en una máquina sin él, forja.exe
+       no arranca (falta VCRUNTIME140.dll). -->
+  <Launch Condition="VersionNT64 AND VersionNT &gt;= 1000"
+          Message="Forja necesita Windows 10 (64 bits) o posterior." />
+
   <ComponentGroup Id="CoreFiles">
     <Component Id="Compiler" Directory="INSTALLDIR" Guid="8f8b7d10-3c1e-4b52-9a11-2c6d0e5a7b01">
       <File Id="ForjaExe" Source="target\release\forja.exe" KeyPath="yes" />
@@ -63,13 +74,15 @@
   </ComponentGroup>
 
   <!-- Los .fa se cosechan del repo; las rutas son relativas a este .wxi
-       (installer/), así que suben un nivel. -->
+       (installer/), así que suben un nivel. `**` es necesario en ejemplos: el
+       submódulo los agrupa por carpeta (fundamentos/, algoritmos/, …), así que
+       un `*.fa` plano no cosechaba ninguno. -->
   <ComponentGroup Id="Stdlib">
     <Files Include="..\library\std\*.fa" Directory="StdlibDir" />
   </ComponentGroup>
 
   <ComponentGroup Id="Ejemplos">
-    <Files Include="..\ejemplos\*.fa" Directory="EjemplosDir" />
+    <Files Include="..\ejemplos\**\*.fa" Directory="EjemplosDir" />
   </ComponentGroup>
 
   <Feature Id="Core" Title="Forja (compilador, biblioteca estándar y ejemplos)" Level="1" AllowAbsent="no">

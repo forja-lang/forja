@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Security.Principal;
 using System.Threading;
 using System.Windows;
+using Microsoft.Win32;
 using WixToolset.BootstrapperApplicationApi;
 
 namespace Forja.Setup
@@ -239,6 +240,16 @@ namespace Forja.Setup
             OverallProgress = 0;
             InstallFolder = targetDir;
             Features = features;
+
+            // El runtime de VC++ lo avisa y lo pide la UI (SetupWindow). En
+            // silencio no hay a quién preguntarle: se sigue y se deja constancia,
+            // porque abortar rompería instalaciones desatendidas que después
+            // resuelven el runtime por su cuenta.
+            if (silent && FaltaVCRuntime())
+            {
+                Engine.Log(LogLevel.Error,
+                    "Falta el runtime de Visual C++ 2015-2022 (x64): forja.exe no va a arrancar.");
+            }
 
             // Cambiar componentes o carpeta: no se puede hacer en caliente.
             if (HaceFaltaReinstalar())
@@ -602,6 +613,35 @@ namespace Forja.Setup
                 Scope = "user",
                 Features = Features,
             }.Write();
+        }
+
+        /// <summary>
+        /// ¿Falta el runtime de Visual C++ 2015-2022 (x64)? Los ejecutables
+        /// enlazan VCRUNTIME140.dll dinámicamente y esa DLL no viene con Windows:
+        /// sin el redistribuible, forja.exe no arranca. La clave es la que escribe
+        /// el propio redistribuible; se lee la vista de 64 bits (el .exe es x64).
+        /// </summary>
+        internal static bool FaltaVCRuntime()
+        {
+            const string clave = @"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64";
+            try
+            {
+                using (var k = Registry.LocalMachine.OpenSubKey(clave))
+                {
+                    if (k == null)
+                    {
+                        return true;
+                    }
+
+                    var instalado = k.GetValue("Installed", 0);
+                    return Convert.ToInt32(instalado) != 1;
+                }
+            }
+            catch
+            {
+                // Si no se puede leer, no se bloquea al usuario por las dudas.
+                return false;
+            }
         }
 
         private void Fail(string message, int error)

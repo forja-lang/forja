@@ -7,6 +7,15 @@
      relanza este mismo .exe elevado (UAC) y ahí sí escribe donde eligió; el
      PATH sigue siendo del usuario. Sin elección protegida, cero UAC.
 
+     Requisitos: el bundle NO lleva el runtime de Visual C++ adentro. La UI
+     (ForjaBootstrapper.FaltaVCRuntime) mira
+     HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64 y, si falta, avisa
+     y ofrece la descarga oficial antes de instalar: los .exe enlazan
+     VCRUNTIME140.dll dinámicamente y sin él forja.exe no arranca. Windows 10
+     (64 bits) o posterior lo exige el MSI, que aborta con un mensaje claro.
+     La UI necesita .NET Framework 4.8, que viene en las versiones de Windows 10
+     que siguen soportadas.
+
        wix build -arch x64 -d Version=0.10.2 -o forja-setup-x64.exe installer\Bundle.wxs -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Bundle Name="Forja"

@@ -248,6 +248,43 @@ namespace Forja.Setup
                 DirBox.Text = dir;
             }
 
+            // Requisito: runtime de Visual C++ (los .exe enlazan VCRUNTIME140.dll).
+            // Se avisa y se ofrece instalarlo; sin él, forja.exe no arranca, así
+            // que no se sigue hasta que esté.
+            if (ForjaBootstrapper.FaltaVCRuntime())
+            {
+                var elegido = System.Windows.MessageBox.Show(
+                    "Forja necesita el runtime de Visual C++ 2015-2022 (x64) y esta máquina no lo tiene.\n\n" +
+                    "Los ejecutables lo usan para arrancar; sin él, forja.exe falla al abrirse.\n\n" +
+                    "¿Querés abrir la descarga oficial de Microsoft? Instalala y después volvé acá y dale a Instalar.",
+                    "Falta un requisito",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (elegido == MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+                            UseShellExecute = true,
+                        });
+                        FooterStatus.Text = "Instalá el runtime de Visual C++ y después dale a Instalar de nuevo.";
+                    }
+                    catch (Exception ex)
+                    {
+                        FooterStatus.Text = "No pude abrir el navegador. Bajalo de https://aka.ms/vs/17/release/vc_redist.x64.exe — " + ex.Message;
+                    }
+                }
+                else
+                {
+                    FooterStatus.Text = "Sin el runtime de Visual C++ la instalación no va a funcionar.";
+                }
+
+                return;
+            }
+
             FooterStatus.Text = "";
             ba.BeginInstall(DirBox.Text, SelectedFeatures());
         }

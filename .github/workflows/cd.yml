@@ -262,6 +262,7 @@ jobs:
           dotnet build installer/bootstrapper/ForjaBA.csproj -c Release
           $version = (Select-String -Path compiler/forja/Cargo.toml -Pattern '^version').Line.Split('"')[1]
           # Un solo MSI per-user (sin pedir permisos) + bundle con la UI.
+          # El runtime de VC++ no se embeber: la UI avisa y ofrece instalarlo.
           wix build -arch x64 -d Version=$version -d PathSystem=yes -d PathRoot=HKLM `
                     -o forja-installer-x64.msi installer/msi.wxs
           wix build -arch x64 -d Version=$version -o forja-setup-x64.exe installer/Bundle.wxs
@@ -546,6 +547,18 @@ jobs:
             | macOS Intel | `forja-*.tar.gz` (`macos-x64`) |
             | macOS Apple Silicon | `forja-*.tar.gz` (`macos-arm64`) |
             | Windows x64 | `forja-*.zip` (`windows-x64`) |
+
+            ### Requisitos
+
+            - **Windows**: 10 (64 bits) o posterior. Los ejecutables enlazan
+              `VCRUNTIME140.dll`, así que necesitan el *Microsoft Visual C++
+              2015-2022 Redistributable (x64)*: `forja-setup-x64.exe` lo instala
+              solo si falta; con el `.zip` portable hay que instalarlo aparte
+              ([vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)).
+            - **Linux**: glibc 2.39 o posterior (Ubuntu 24.04+, Debian 13+).
+            - **macOS**: Intel 10.12 o posterior; Apple Silicon 11 o posterior.
+            - La GUI (`forja-rt-gui`) necesita GPU con Direct3D 12 (Windows),
+              Vulkan (Linux) o Metal (macOS).
 
             Cada asset incluye un `.bundle` de **cosign** (firma keyless de
             Sigstore). Para verificar:
