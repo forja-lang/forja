@@ -178,11 +178,11 @@ pub type VirtReg = usize;
 #[derive(Debug, Clone)]
 pub struct LiveInterval {
     pub virt_reg: VirtReg,
-    pub start: usize, // primera instrucción donde se usa
-    pub end: usize,   // última instrucción donde se usa (exclusive)
-    pub reg_class: RegClass,
+    pub inicio: usize, // primera instrucción donde se usa
+    pub end: usize,    // última instrucción donde se usa (exclusive)
+    pub clase_registro: RegClass,
     /// Posiciones donde se usa esta variable (para interval splitting).
-    /// Si está vacío, se comporta como si todos los puntos entre start y end fueran usos.
+    /// Si está vacío, se comporta como si todos los puntos entre inicio y end fueran usos.
     pub uses: Vec<usize>,
 }
 
@@ -200,7 +200,7 @@ fn split_interval(interval: &LiveInterval) -> Vec<LiveInterval> {
 
     let uses = &interval.uses;
     let mut sub_intervals = Vec::new();
-    let mut current_start = interval.start;
+    let mut current_start = interval.inicio;
     let mut last_use = uses[0];
 
     for &use_pos in uses.iter().skip(1) {
@@ -208,21 +208,21 @@ fn split_interval(interval: &LiveInterval) -> Vec<LiveInterval> {
             // Gap significativo — crear sub-intervalo hasta el último uso
             sub_intervals.push(LiveInterval {
                 virt_reg: interval.virt_reg,
-                start: current_start,
+                inicio: current_start,
                 end: last_use + 1,
-                reg_class: interval.reg_class,
+                clase_registro: interval.clase_registro,
                 uses: Vec::new(), // sub-intervalos derivados no necesitan usos internos
             });
             current_start = use_pos;
         }
         last_use = use_pos;
     }
-    // Sub-intervalo final (desde el último start hasta el final original)
+    // Sub-intervalo final (desde el último inicio hasta el final original)
     sub_intervals.push(LiveInterval {
         virt_reg: interval.virt_reg,
-        start: current_start,
+        inicio: current_start,
         end: interval.end,
-        reg_class: interval.reg_class,
+        clase_registro: interval.clase_registro,
         uses: Vec::new(),
     });
     sub_intervals
@@ -251,7 +251,7 @@ pub struct AssignResult {
 
 /// Linear Scan Register Allocator
 pub struct RegisterAllocator {
-    /// Intervalos de vida ordenados por start
+    /// Intervalos de vida ordenados por inicio
     intervals: Vec<LiveInterval>,
     /// Resultado de la asignación
     assignments: HashMap<VirtReg, Location>,
@@ -301,7 +301,7 @@ impl RegisterAllocator {
         }
 
         // 2. Ordenar intervalos por punto de inicio
-        self.intervals.sort_by_key(|i| i.start);
+        self.intervals.sort_by_key(|i| i.inicio);
 
         // 3. Resetear estado
         self.active_intervals.clear();
@@ -314,10 +314,10 @@ impl RegisterAllocator {
         // 3. Para cada intervalo, en orden
         for interval in &intervals {
             // 3a. Expirar intervalos que terminaron antes de este
-            self.expire_old(interval.start);
+            self.expire_old(interval.inicio);
 
             // 3b. Intentar asignar un registro libre
-            if let Some(phys) = self.find_free_reg(interval.reg_class) {
+            if let Some(phys) = self.find_free_reg(interval.clase_registro) {
                 self.active_regs.insert(phys, interval.virt_reg);
                 self.assignments
                     .insert(interval.virt_reg, Location::Reg(phys));
@@ -326,7 +326,7 @@ impl RegisterAllocator {
                 // 3c. No hay registro libre → spill del que termina más tarde
                 // (de la MISMA clase: nunca se roba un GPR para un valor Float
                 // ni al revés, lo que corrompía el codegen).
-                let spill = self.spill_latest(interval.reg_class);
+                let spill = self.spill_latest(interval.clase_registro);
                 let slot = self.alloc_spill_slot();
                 self.assignments
                     .insert(interval.virt_reg, Location::Stack(slot));
@@ -340,7 +340,7 @@ impl RegisterAllocator {
                             let phys = *phys;
                             // Sólo intercambiar si la clase del registro físico
                             // coincide con la del intervalo (seguridad de clase).
-                            if phys.is_xmm() == (interval.reg_class == RegClass::Float) {
+                            if phys.is_xmm() == (interval.clase_registro == RegClass::Float) {
                                 self.active_regs.insert(phys, interval.virt_reg);
                                 self.assignments
                                     .insert(interval.virt_reg, Location::Reg(phys));
@@ -382,8 +382,8 @@ impl RegisterAllocator {
     }
 
     /// Encuentra un registro libre de la clase dada
-    fn find_free_reg(&self, class: RegClass) -> Option<PhysReg> {
-        match class {
+    fn find_free_reg(&self, clase: RegClass) -> Option<PhysReg> {
+        match clase {
             RegClass::Integer => {
                 // Primero buscar en registros temporales (caller-saved, preferidos)
                 for &reg in TEMP_REGS {
@@ -411,11 +411,11 @@ impl RegisterAllocator {
     }
 
     /// Spill del intervalo **de la clase dada** que termina más tarde.
-    fn spill_latest(&mut self, class: RegClass) -> Option<LiveInterval> {
+    fn spill_latest(&mut self, clase: RegClass) -> Option<LiveInterval> {
         let latest = self
             .active_intervals
             .iter()
-            .filter(|i| i.reg_class == class)
+            .filter(|i| i.clase_registro == clase)
             .max_by_key(|i| i.end)?
             .clone();
         self.active_intervals
@@ -431,7 +431,7 @@ impl RegisterAllocator {
     }
 
     /// Retorna cuántos slots de spill se necesitan
-    pub fn spill_count(&self) -> usize {
+    pub fn cantidad_derrames(&self) -> usize {
         self.spill_slots
     }
 
@@ -457,16 +457,16 @@ mod tests {
         // Dos variables con vida no superpuesta
         ra.add_interval(LiveInterval {
             virt_reg: 0,
-            start: 0,
+            inicio: 0,
             end: 5,
-            reg_class: RegClass::Integer,
+            clase_registro: RegClass::Integer,
             uses: Vec::new(),
         });
         ra.add_interval(LiveInterval {
             virt_reg: 1,
-            start: 6,
+            inicio: 6,
             end: 10,
-            reg_class: RegClass::Integer,
+            clase_registro: RegClass::Integer,
             uses: Vec::new(),
         });
 
@@ -485,9 +485,9 @@ mod tests {
         for i in 0..15 {
             ra.add_interval(LiveInterval {
                 virt_reg: i,
-                start: 0,
+                inicio: 0,
                 end: 10,
-                reg_class: RegClass::Integer,
+                clase_registro: RegClass::Integer,
                 uses: Vec::new(),
             });
         }
@@ -508,23 +508,23 @@ mod tests {
         // 3 variables sin superposición → todas usan el mismo registro
         ra.add_interval(LiveInterval {
             virt_reg: 0,
-            start: 0,
+            inicio: 0,
             end: 3,
-            reg_class: RegClass::Integer,
+            clase_registro: RegClass::Integer,
             uses: Vec::new(),
         });
         ra.add_interval(LiveInterval {
             virt_reg: 1,
-            start: 3,
+            inicio: 3,
             end: 6,
-            reg_class: RegClass::Integer,
+            clase_registro: RegClass::Integer,
             uses: Vec::new(),
         });
         ra.add_interval(LiveInterval {
             virt_reg: 2,
-            start: 6,
+            inicio: 6,
             end: 9,
-            reg_class: RegClass::Integer,
+            clase_registro: RegClass::Integer,
             uses: Vec::new(),
         });
 
@@ -555,17 +555,17 @@ mod tests {
         // Variable entera con vida superpuesta
         ra.add_interval(LiveInterval {
             virt_reg: 0,
-            start: 0,
+            inicio: 0,
             end: 10,
-            reg_class: RegClass::Integer,
+            clase_registro: RegClass::Integer,
             uses: Vec::new(),
         });
         // Variable flotante con vida superpuesta
         ra.add_interval(LiveInterval {
             virt_reg: 1,
-            start: 0,
+            inicio: 0,
             end: 10,
-            reg_class: RegClass::Float,
+            clase_registro: RegClass::Float,
             uses: Vec::new(),
         });
 
