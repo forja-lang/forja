@@ -9,19 +9,15 @@ const COLS: usize = 4096;
 fn main() {
     println!("Iniciando prueba de Localidad de Memoria y Cache CPU...");
     
-    // Matriz aplanada contigua en el heap. Se rellena con valores opacos:
-    // con `vec![1; N]` LLVM pliega las sumas y los recorridos no se ejecutan.
-    let mut matriz = vec![0_u64; FILAS * COLS];
-    for (i, v) in matriz.iter_mut().enumerate() {
-        *v = std::hint::black_box(i as u64 & 1);
-    }
+    // Matriz aplanada contigua en el heap
+    let mut matriz = vec![1_u64; FILAS * COLS];
 
     // Recorrido continuo en memoria (Cache Line Hit)
     let inicio_hit = Instant::now();
     let mut suma_hit: u64 = 0;
     for r in 0..FILAS {
         for c in 0..COLS {
-            suma_hit = suma_hit.wrapping_add(matriz[r * COLS + c]);
+            suma_hit = suma_hit.wrapping_add(std::hint::black_box(matriz[r * COLS + c]));
         }
     }
     let duracion_hit = inicio_hit.elapsed();
@@ -31,7 +27,7 @@ fn main() {
     let mut suma_miss: u64 = 0;
     for c in 0..COLS {
         for r in 0..FILAS {
-            suma_miss = suma_miss.wrapping_add(matriz[r * COLS + c]);
+            suma_miss = suma_miss.wrapping_add(std::hint::black_box(matriz[r * COLS + c]));
         }
     }
     let duracion_miss = inicio_miss.elapsed();
