@@ -18,12 +18,12 @@ fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
         let mut vm = ForjaFast::new();
         vm.set_max_inst(5_000_000);
         vm.cargar_bytecode(bc);
-        let res = vm.ejecutar().map_err(|e| format!("{}", e));
-        let out = vm.obtener_output().to_vec();
-        tx.send((res, out)).ok();
+        let resultado = vm.ejecutar().map_err(|e| format!("{}", e));
+        let salida = vm.obtener_output().to_vec();
+        tx.send((resultado, salida)).ok();
     });
     match rx.recv_timeout(LIMITE) {
-        Ok((Ok(()), out)) => Ok(out),
+        Ok((Ok(()), salida)) => Ok(salida),
         Ok((Err(e), _)) => Err(e),
         Err(_) => panic!("deadlock: la ejecución no terminó en {LIMITE:?}"),
     }
