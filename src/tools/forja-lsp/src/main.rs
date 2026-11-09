@@ -20,8 +20,8 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
         .simbolos
         .iter()
         .map(|s| SymbolEntry {
-            nombre: s.nombre.clone(),
-            tipo: match s.tipo_simbolo {
+            name: s.nombre.clone(),
+            kind: match s.tipo_simbolo {
                 SimboloTipo::Variable => ForjaSymbolKind::Variable,
                 SimboloTipo::Funcion => ForjaSymbolKind::Funcion,
                 SimboloTipo::Clase => ForjaSymbolKind::Clase,
@@ -29,7 +29,7 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
                 SimboloTipo::Rasgo => ForjaSymbolKind::Rasgo,
                 SimboloTipo::Parametro => ForjaSymbolKind::Parametro,
             },
-            parametros: Vec::new(),
+            params: Vec::new(),
             doc: s.doc.clone().unwrap_or_default(),
         })
         .collect()
@@ -349,12 +349,12 @@ impl LanguageServer for Backend {
             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                 uri: uri.clone(),
                 range: Range {
-                    inicio: Position {
-                        linea: info.linea,
+                    start: Position {
+                        line: info.linea,
                         character: info.col_inicio,
                     },
                     end: Position {
-                        linea: info.linea,
+                        line: info.linea,
                         character: info.col_fin,
                     },
                 },
@@ -371,12 +371,12 @@ impl LanguageServer for Backend {
                             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                                 uri: uri.clone(),
                                 range: Range {
-                                    inicio: Position {
-                                        linea: s.linea,
+                                    start: Position {
+                                        line: s.linea,
                                         character: s.col_inicio,
                                     },
                                     end: Position {
-                                        linea: s.linea,
+                                        line: s.linea,
                                         character: s.col_fin,
                                     },
                                 },
@@ -423,12 +423,12 @@ impl LanguageServer for Backend {
                     locs.push(Location {
                         uri: uri.clone(),
                         range: Range {
-                            inicio: Position {
-                                linea: s.linea,
+                            start: Position {
+                                line: s.linea,
                                 character: s.col_inicio,
                             },
                             end: Position {
-                                linea: s.linea,
+                                line: s.linea,
                                 character: s.col_fin,
                             },
                         },
@@ -441,12 +441,12 @@ impl LanguageServer for Backend {
                     locs.push(Location {
                         uri: uri.clone(),
                         range: Range {
-                            inicio: Position {
-                                linea: *l,
+                            start: Position {
+                                line: *l,
                                 character: *ci,
                             },
                             end: Position {
-                                linea: *l,
+                                line: *l,
                                 character: *cf,
                             },
                         },
@@ -532,7 +532,7 @@ impl LanguageServer for Backend {
         // 1. Code Action: Formatear documento
         actions.push(CodeActionOrCommand::CodeAction(CodeAction {
             title: "Formatear documento".to_string(),
-            tipo: Some(CodeActionKind::SOURCE_FIX_ALL),
+            kind: Some(CodeActionKind::SOURCE_FIX_ALL),
             diagnostics: None,
             edit: None,
             command: Some(Command {
@@ -550,7 +550,7 @@ impl LanguageServer for Backend {
             let diag = Diagnostic {
                 range: rango,
                 severity: Some(DiagnosticSeverity::ERROR),
-                fuente: Some("forja".to_string()),
+                source: Some("forja".to_string()),
                 message: err.mensaje.to_string(),
                 ..Default::default()
             };
@@ -562,7 +562,7 @@ impl LanguageServer for Backend {
                     let edit = insertar_importacion(&uri, &texto, &modulo);
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                         title: format!("🔧 Importar `{}` desde std/{}", nombre, modulo),
-                        tipo: Some(CodeActionKind::QUICKFIX),
+                        kind: Some(CodeActionKind::QUICKFIX),
                         diagnostics: Some(vec![diag.clone()]),
                         edit: Some(edit),
                         command: None,
@@ -578,7 +578,7 @@ impl LanguageServer for Backend {
                     if let Some(edit) = insertar_mut(&uri, &texto, &nombre) {
                         actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                             title: format!("🔧 Añadir `mut` a `{}`", nombre),
-                            tipo: Some(CodeActionKind::QUICKFIX),
+                            kind: Some(CodeActionKind::QUICKFIX),
                             diagnostics: Some(vec![diag.clone()]),
                             edit: Some(edit),
                             command: None,
@@ -595,7 +595,7 @@ impl LanguageServer for Backend {
                 if let Some(edit) = reemplazar_tipo_en_linea(&uri, &texto, err.linea, &tipo) {
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                         title: format!("🔧 Cambiar tipo a `{}`", tipo),
-                        tipo: Some(CodeActionKind::QUICKFIX),
+                        kind: Some(CodeActionKind::QUICKFIX),
                         diagnostics: Some(vec![diag.clone()]),
                         edit: Some(edit),
                         command: None,
@@ -609,7 +609,7 @@ impl LanguageServer for Backend {
             if !err.sugerencia.is_empty() {
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                     title: format!("💡 {}: {}", err.sugerencia, err.mensaje),
-                    tipo: Some(CodeActionKind::QUICKFIX),
+                    kind: Some(CodeActionKind::QUICKFIX),
                     diagnostics: Some(vec![diag]),
                     edit: None,
                     command: None,
@@ -655,12 +655,12 @@ impl LanguageServer for Backend {
                 if s.nombre == nombre {
                     changes.push(TextEdit {
                         range: Range {
-                            inicio: Position {
-                                linea: s.linea,
+                            start: Position {
+                                line: s.linea,
                                 character: s.col_inicio,
                             },
                             end: Position {
-                                linea: s.linea,
+                                line: s.linea,
                                 character: s.col_fin,
                             },
                         },
@@ -673,12 +673,12 @@ impl LanguageServer for Backend {
                 if ref_name == &nombre {
                     changes.push(TextEdit {
                         range: Range {
-                            inicio: Position {
-                                linea: *l,
+                            start: Position {
+                                line: *l,
                                 character: *ci,
                             },
                             end: Position {
-                                linea: *l,
+                                line: *l,
                                 character: *cf,
                             },
                         },
@@ -794,7 +794,7 @@ impl LanguageServer for Backend {
                 };
                 CompletionItem {
                     label: fi.label.clone(),
-                    tipo,
+                    kind: tipo,
                     detail: Some(fi.detail.clone()),
                     documentation: if fi.documentation.is_empty() {
                         None
@@ -836,26 +836,26 @@ impl LanguageServer for Backend {
                 SimboloTipo::Rasgo => SymbolKind::INTERFACE,
             };
             symbols.push(DocumentSymbol {
-                nombre: s.nombre.clone(),
+                name: s.nombre.clone(),
                 detail: Some(format!("{:?}", s.tipo_simbolo)),
-                tipo,
+                kind: tipo,
                 range: Range {
-                    inicio: Position {
-                        linea: s.linea,
+                    start: Position {
+                        line: s.linea,
                         character: s.col_inicio,
                     },
                     end: Position {
-                        linea: s.linea,
+                        line: s.linea,
                         character: s.col_fin,
                     },
                 },
                 selection_range: Range {
-                    inicio: Position {
-                        linea: s.linea,
+                    start: Position {
+                        line: s.linea,
                         character: s.col_inicio,
                     },
                     end: Position {
-                        linea: s.linea,
+                        line: s.linea,
                         character: s.col_fin,
                     },
                 },
@@ -898,11 +898,11 @@ impl LanguageServer for Backend {
             };
             hints.push(InlayHint {
                 position: Position {
-                    linea: s.linea,
+                    line: s.linea,
                     character: s.col_fin,
                 },
                 label: InlayHintLabel::String(format!(": {}", tipo)),
-                tipo: Some(InlayHintKind::TYPE),
+                kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(InlayHintTooltip::String(format!(
                     "Tipo inferido para `{}`",
@@ -945,19 +945,19 @@ impl LanguageServer for Backend {
                 };
                 #[allow(deprecated)]
                 resultados.push(SymbolInformation {
-                    nombre: s.nombre.clone(),
-                    tipo,
+                    name: s.nombre.clone(),
+                    kind: tipo,
                     tags: None,
                     deprecated: None,
                     location: Location {
                         uri: uri.clone(),
                         range: Range {
-                            inicio: Position {
-                                linea: s.linea,
+                            start: Position {
+                                line: s.linea,
                                 character: s.col_inicio,
                             },
                             end: Position {
-                                linea: s.linea,
+                                line: s.linea,
                                 character: s.col_fin,
                             },
                         },
@@ -1089,7 +1089,7 @@ impl Backend {
                     diagnostics.push(Diagnostic {
                         range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                         severity: Some(severity),
-                        fuente: Some("forja".to_string()),
+                        source: Some("forja".to_string()),
                         message: mensaje,
                         ..Default::default()
                     });
@@ -1104,7 +1104,7 @@ impl Backend {
                 diagnostics.push(Diagnostic {
                     range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                     severity: Some(DiagnosticSeverity::ERROR),
-                    fuente: Some("forja".to_string()),
+                    source: Some("forja".to_string()),
                     message: err.mensaje.to_string(),
                     ..Default::default()
                 });
@@ -1126,8 +1126,8 @@ impl Backend {
                 diagnostics.push(Diagnostic {
                     range: calcular_rango_error_palabra(texto, d.linea, d.columna),
                     severity: Some(severity),
-                    fuente: Some("forja-lint".to_string()),
-                    codigo: Some(NumberOrString::String(format!(
+                    source: Some("forja-lint".to_string()),
+                    code: Some(NumberOrString::String(format!(
                         "L{}",
                         codigo_lint_lsp(d.regla)
                     ))),
@@ -1147,12 +1147,12 @@ impl Backend {
         if formateado != texto {
             vec![TextEdit {
                 range: Range {
-                    inicio: Position {
-                        linea: 0,
+                    start: Position {
+                        line: 0,
                         character: 0,
                     },
                     end: Position {
-                        linea: texto.lines().count() as u32,
+                        line: texto.lines().count() as u32,
                         character: 0,
                     },
                 },
@@ -1543,7 +1543,7 @@ fn generar_folding_ranges(fuente: &str) -> Vec<FoldingRange> {
                         start_character: Some(0),
                         end_line: i as u32,
                         end_character: Some(0),
-                        tipo: Some(FoldingRangeKind::Region),
+                        kind: Some(FoldingRangeKind::Region),
                         collapsed_text: None,
                     });
                 }
@@ -1712,12 +1712,12 @@ fn insertar_importacion(uri: &Url, texto: &str, modulo: &str) -> WorkspaceEdit {
     };
     let edit = TextEdit {
         range: Range {
-            inicio: Position {
-                linea: 0,
+            start: Position {
+                line: 0,
                 character: 0,
             },
             end: Position {
-                linea: 0,
+                line: 0,
                 character: 0,
             },
         },
@@ -1753,12 +1753,12 @@ fn insertar_mut(uri: &Url, texto: &str, nombre: &str) -> Option<WorkspaceEdit> {
                 let col = linea.len() - trimmed.len() + "variable ".len();
                 let edit = TextEdit {
                     range: Range {
-                        inicio: Position {
-                            linea: idx as u32,
+                        start: Position {
+                            line: idx as u32,
                             character: col as u32,
                         },
                         end: Position {
-                            linea: idx as u32,
+                            line: idx as u32,
                             character: col as u32,
                         },
                     },
@@ -1810,12 +1810,12 @@ fn reemplazar_tipo_en_linea(
     let col_fin = col_inicio + fin_tipo;
     let edit = TextEdit {
         range: Range {
-            inicio: Position {
-                linea: idx as u32,
+            start: Position {
+                line: idx as u32,
                 character: col_inicio as u32,
             },
             end: Position {
-                linea: idx as u32,
+                line: idx as u32,
                 character: col_fin as u32,
             },
         },
@@ -1914,12 +1914,12 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
             }
 
             return Range {
-                inicio: Position {
-                    linea: line_idx,
+                start: Position {
+                    line: line_idx,
                     character: start_col,
                 },
                 end: Position {
-                    linea: line_idx,
+                    line: line_idx,
                     character: end_col as u32,
                 },
             };
@@ -1927,12 +1927,12 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
     }
 
     Range {
-        inicio: Position {
-            linea: line_idx,
+        start: Position {
+            line: line_idx,
             character: start_col,
         },
         end: Position {
-            linea: line_idx,
+            line: line_idx,
             character: start_col + 1,
         },
     }
