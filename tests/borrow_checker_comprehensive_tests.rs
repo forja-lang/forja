@@ -2,8 +2,8 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::semantics::BorrowChecker;
 
-fn check(source: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
-    let mut lexer = Lexer::new(source);
+fn check(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
     let mut parser = Parser::new(tokens);
     let programa = parser.parse()?;
