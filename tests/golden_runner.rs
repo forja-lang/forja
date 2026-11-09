@@ -149,10 +149,10 @@ fn nombre_golden(nombre: &str) -> String {
 
 #[test]
 fn golden_del_corpus() {
-    let dir = dir_golden();
-    std::fs::create_dir_all(&dir).expect("crear tests/golden/");
+    let directorio = dir_golden();
+    std::fs::create_dir_all(&directorio).expect("crear tests/golden/");
 
-    let update = actualizar_golden();
+    let actualizar = actualizar_golden();
     let mut fallos: Vec<String> = Vec::new();
     let mut incluidos = 0usize;
     let mut excluidos = 0usize;
@@ -181,9 +181,9 @@ fn golden_del_corpus() {
             }
         }
 
-        let golden_path = dir.join(nombre_golden(&nombre));
+        let golden_path = directorio.join(nombre_golden(&nombre));
 
-        if update {
+        if actualizar {
             if let Err(e) = std::fs::write(&golden_path, &salida) {
                 fallos.push(format!("[{nombre}] no se pudo escribir el golden: {e}"));
             }
@@ -202,10 +202,10 @@ fn golden_del_corpus() {
         }
     }
 
-    if update {
+    if actualizar {
         eprintln!(
             "FORJA_UPDATE_GOLDEN=1: {incluidos} goldens escritos en {} ({excluidos} ejemplos excluidos)",
-            dir.display()
+            directorio.display()
         );
         return;
     }
@@ -221,7 +221,7 @@ fn golden_del_corpus() {
                 .then(|| nombre_golden(&nombre))
         })
         .collect();
-    if let Ok(entradas) = std::fs::read_dir(&dir) {
+    if let Ok(entradas) = std::fs::read_dir(&directorio) {
         for entrada in entradas.filter_map(|e| e.ok()) {
             let nombre = entrada.file_name().to_string_lossy().to_string();
             if nombre.ends_with(".out") && !vigentes.contains(&nombre) {
