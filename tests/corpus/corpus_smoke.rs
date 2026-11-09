@@ -2,8 +2,6 @@
 //! No compara salidas exactas (cada ejemplo evoluciona), pero exige que el
 //! programa compile y ejecute sin error, con salida no vacía.
 
-use std::path::Path;
-
 const MUESTRA: &[&str] = &[
     "01_hola.fa",
     "02_variables.fa",

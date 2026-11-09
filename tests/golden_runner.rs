@@ -105,10 +105,6 @@ fn dir_golden() -> PathBuf {
         .join("golden")
 }
 
-fn dir_ejemplos() -> PathBuf {
-    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("ejemplos")
-}
-
 /// Raíz del proyecto: los ejemplos importan `std/...`, así que la ejecución
 /// tiene que resolver imports contra el workspace (no contra el cwd del test).
 fn dir_ejemplos_raiz() -> PathBuf {

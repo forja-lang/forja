@@ -7,7 +7,7 @@ use forja::parser::Parser;
 
 #[test]
 fn todos_los_ejemplos_parsean() {
-    let mut archivos = forja_test_support::ejemplos_fa();
+    let archivos = forja_test_support::ejemplos_fa();
     assert!(
         archivos.len() > 200,
         "se esperaban 200+ ejemplos, hay {}",

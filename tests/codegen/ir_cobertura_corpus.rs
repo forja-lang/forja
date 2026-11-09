@@ -12,8 +12,6 @@
 //! (borrow checker, parser, variables inexistentes), ajenos a la emisión IR; se
 //! listan explícitamente para que un cambio en esa lista sea visible.
 
-use std::path::Path;
-
 /// Ejemplos que no compilan por errores ajenos a la emisión.
 /// Si alguno empieza a compilar, hay que quitarlo de la lista.
 ///
@@ -46,7 +44,7 @@ fn no_compila_esperado(nombre: &str) -> bool {
 fn corpus_completo_por_ir_sin_fallback() {
     let raiz = std::fs::canonicalize(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).unwrap();
     let raiz = raiz.as_path();
-    let mut rutas = forja_test_support::ejemplos_fa();
+    let rutas = forja_test_support::ejemplos_fa();
 
     let mut por_ir = 0usize;
     let mut no_compilan = 0usize;
@@ -168,7 +166,7 @@ fn ejecutar_bytecode(bc: Vec<forja::bytecode::Opcode>) -> Result<Vec<String>, St
 fn paridad_ast_ir_del_corpus() {
     let raiz = std::fs::canonicalize(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).unwrap();
     let raiz = raiz.as_path();
-    let mut rutas = forja_test_support::ejemplos_fa();
+    let rutas = forja_test_support::ejemplos_fa();
 
     let mut divergentes = Vec::new();
     let mut iguales = 0usize;
