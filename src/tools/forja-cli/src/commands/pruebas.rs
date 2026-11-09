@@ -8,9 +8,9 @@ pub(crate) fn cmd_test(args: &[String]) {
     rechazar_flags(args);
     let archivos: Vec<String> = if args.is_empty() {
         // Buscar todos los .fa en ejemplos/
-        let dir = Path::new("ejemplos");
-        if dir.is_dir() {
-            match std::fs::read_dir(dir) {
+        let directorio = Path::new("ejemplos");
+        if directorio.is_dir() {
+            match std::fs::read_dir(directorio) {
                 Ok(entries) => entries
                     .filter_map(|e| e.ok())
                     .filter(|e| e.path().extension().map(|ext| ext == "fa").unwrap_or(false))
@@ -70,8 +70,8 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         };
 
         // FASE 4: Type Checker
-        let mut type_checker = semantics::TypeChecker::new();
-        if let Err(errors) = type_checker.analizar(&programa) {
+        let mut verificador = semantics::TypeChecker::new();
+        if let Err(errors) = verificador.analizar(&programa) {
             for err in &errors {
                 eprintln!("{}", err);
             }
@@ -93,7 +93,7 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         let mut transpiler = transpiler::Transpiler::new();
         transpiler.saltar_main = true;
         let rust_code = match transpiler.transpilar(&programa) {
-            Ok(code) => code,
+            Ok(codigo) => codigo,
             Err(errors) => {
                 for err in &errors {
                     eprintln!("{}", err);
@@ -134,9 +134,9 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
                         println!("{}✅ ok{}", color::VERDE, color::RESET);
                         total_pasados += 1;
                     }
-                    Err(msg) => {
+                    Err(mensaje) => {
                         println!("{}❌ FAILED{}", color::ROJO, color::RESET);
-                        println!("    {}", msg);
+                        println!("    {}", mensaje);
                         total_fallidos += 1;
                     }
                 }
@@ -172,7 +172,7 @@ pub(crate) fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<()
     // Quitar #[test] porque rustc sin --test no reconoce funciones marcadas
     let rust_clean = rust_code
         .lines()
-        .filter(|line| line.trim() != "#[test]")
+        .filter(|linea| linea.trim() != "#[test]")
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -188,41 +188,41 @@ pub(crate) fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<()
         .map_err(|e| format!("Error escribiendo test.rs: {}", e))?;
 
     // Compilar con rustc
-    let output = std::process::Command::new("rustc")
+    let salida = std::process::Command::new("rustc")
         .arg(&rs_file)
         .arg("-o")
         .arg(tmp_dir.join("test.exe"))
         .output()
         .map_err(|e| format!("Error al ejecutar rustc: {}. ¿Está instalado?", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !salida.status.success() {
+        let stderr = String::from_utf8_lossy(&salida.stderr);
         return Err(format!("Error de compilación:\n{}", stderr));
     }
 
     // Ejecutar el binario de test
-    let output = std::process::Command::new(tmp_dir.join("test.exe"))
+    let salida = std::process::Command::new(tmp_dir.join("test.exe"))
         .output()
         .map_err(|e| format!("Error al ejecutar test: {}", e))?;
 
-    if output.status.success() {
+    if salida.status.success() {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut msg = String::new();
+        let stderr = String::from_utf8_lossy(&salida.stderr);
+        let stdout = String::from_utf8_lossy(&salida.stdout);
+        let mut mensaje = String::new();
         if !stdout.is_empty() {
-            msg.push_str(&stdout);
+            mensaje.push_str(&stdout);
         }
         if !stderr.is_empty() {
-            if !msg.is_empty() {
-                msg.push('\n');
+            if !mensaje.is_empty() {
+                mensaje.push('\n');
             }
-            msg.push_str(&stderr);
+            mensaje.push_str(&stderr);
         }
-        if msg.is_empty() {
-            msg = "Test falló (código de salida no cero)".to_string();
+        if mensaje.is_empty() {
+            mensaje = "Test falló (código de salida no cero)".to_string();
         }
-        Err(msg)
+        Err(mensaje)
     }
 }
