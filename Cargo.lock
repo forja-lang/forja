@@ -1599,7 +1599,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forja"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "criterion",
  "crossterm",
@@ -1634,7 +1634,7 @@ dependencies = [
 
 [[package]]
 name = "forja-android-rt"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "android_logger",
  "forja",
@@ -1646,11 +1646,11 @@ dependencies = [
 
 [[package]]
 name = "forja-bootstrap"
-version = "0.10.1"
+version = "0.10.2"
 
 [[package]]
 name = "forja-bytecode"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-syntax",
  "forja-types",
@@ -1659,7 +1659,7 @@ dependencies = [
 
 [[package]]
 name = "forja-cli"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
  "forja-driver",
@@ -1669,7 +1669,7 @@ dependencies = [
 
 [[package]]
 name = "forja-dap"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
  "serde",
@@ -1678,7 +1678,7 @@ dependencies = [
 
 [[package]]
 name = "forja-driver"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-bytecode",
  "forja-vm",
@@ -1688,21 +1688,21 @@ dependencies = [
 
 [[package]]
 name = "forja-errors"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-span",
 ]
 
 [[package]]
 name = "forja-fmt"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-syntax",
 ]
 
 [[package]]
 name = "forja-gui-core"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "log",
  "serde_json",
@@ -1710,7 +1710,7 @@ dependencies = [
 
 [[package]]
 name = "forja-gui-rt"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "chrono",
  "forja-gui-core",
@@ -1729,14 +1729,14 @@ dependencies = [
 
 [[package]]
 name = "forja-hir"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-syntax",
 ]
 
 [[package]]
 name = "forja-ir"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-bytecode",
  "forja-syntax",
@@ -1744,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "forja-lint"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-syntax",
  "serde_json",
@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "forja-lsp"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
  "tokio",
@@ -1761,7 +1761,7 @@ dependencies = [
 
 [[package]]
 name = "forja-native"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-bytecode",
  "forja-runtime",
@@ -1777,7 +1777,7 @@ dependencies = [
 
 [[package]]
 name = "forja-registry"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-native",
  "serde",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "forja-repl"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "crossterm",
  "forja",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "forja-rt"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
  "forja-gui-rt",
@@ -1806,14 +1806,14 @@ dependencies = [
 
 [[package]]
 name = "forja-runtime"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-bytecode",
 ]
 
 [[package]]
 name = "forja-session"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-errors",
  "forja-span",
@@ -1823,11 +1823,11 @@ dependencies = [
 
 [[package]]
 name = "forja-span"
-version = "0.10.1"
+version = "0.10.2"
 
 [[package]]
 name = "forja-syntax"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-errors",
  "forja-span",
@@ -1836,21 +1836,21 @@ dependencies = [
 
 [[package]]
 name = "forja-test-support"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
 ]
 
 [[package]]
 name = "forja-theme"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "xilem",
 ]
 
 [[package]]
 name = "forja-types"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-hir",
  "forja-syntax",
@@ -1858,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "forja-vm"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja-bytecode",
  "forja-hir",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "forja-wasm"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
  "serde",
@@ -1891,7 +1891,7 @@ dependencies = [
 
 [[package]]
 name = "forja-wasm-gui"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "forja",
  "js-sys",
