@@ -179,9 +179,14 @@ impl ModuloResolver {
 
                 // Resolver imports anidados
                 let mut final_decls = Vec::new();
+                let mut alias_modulos: std::collections::HashMap<
+                    String,
+                    std::collections::HashSet<String>,
+                > = std::collections::HashMap::new();
                 for decl in programa.declaraciones {
                     if let Declaracion::Importar(ref sub_ruta) = decl {
                         let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
+                        registrar_alias(&mut alias_modulos, sub_ruta, &sub);
                         final_decls.extend(sub.declaraciones);
                     } else if let Declaracion::ImportarExterna(ref ruta) = decl {
                         // Cargar la librería externa en el registro FFI
@@ -199,6 +204,9 @@ impl ModuloResolver {
                     } else {
                         final_decls.push(decl);
                     }
+                }
+                for decl in &mut final_decls {
+                    forja_hir::imports::reescribir_llamadas_de_modulo(decl, &alias_modulos);
                 }
                 programa.declaraciones = dedup_declaraciones(final_decls);
                 self.cache.insert(ruta_key.clone(), programa.clone());
@@ -276,9 +284,14 @@ impl ModuloResolver {
 
                 // Resolver imports anidados
                 let mut final_decls = Vec::new();
+                let mut alias_modulos: std::collections::HashMap<
+                    String,
+                    std::collections::HashSet<String>,
+                > = std::collections::HashMap::new();
                 for decl in programa.declaraciones {
                     if let Declaracion::Importar(ref sub_ruta) = decl {
                         let (sub, _) = self.resolver_con_id(sub_ruta)?;
+                        registrar_alias(&mut alias_modulos, sub_ruta, &sub);
                         final_decls.extend(sub.declaraciones);
                     } else if let Declaracion::ImportarExterna(ref ruta) = decl {
                         // Cargar la librería externa en el registro FFI
@@ -296,6 +309,9 @@ impl ModuloResolver {
                     } else {
                         final_decls.push(decl);
                     }
+                }
+                for decl in &mut final_decls {
+                    forja_hir::imports::reescribir_llamadas_de_modulo(decl, &alias_modulos);
                 }
                 programa.declaraciones = dedup_declaraciones(final_decls);
                 self.cache.insert(ruta_key.clone(), programa.clone());
@@ -480,10 +496,15 @@ impl ModuloResolver {
 
         // Resolver imports anidados (una stdlib puede importar otra)
         let mut final_decls = Vec::new();
+        let mut alias_modulos: std::collections::HashMap<
+            String,
+            std::collections::HashSet<String>,
+        > = std::collections::HashMap::new();
         for decl in programa.declaraciones {
             if let crate::ast::Declaracion::Importar(ref sub_ruta) = decl {
                 // Los módulos embebidos se resuelven recursivamente
                 let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
+                registrar_alias(&mut alias_modulos, sub_ruta, &sub);
                 final_decls.extend(sub.declaraciones);
             } else if let crate::ast::Declaracion::ImportarExterna(ref ruta) = decl {
                 // Cargar la librería externa en el registro FFI (módulos embebidos)
@@ -492,6 +513,9 @@ impl ModuloResolver {
             } else {
                 final_decls.push(decl);
             }
+        }
+        for decl in &mut final_decls {
+            forja_hir::imports::reescribir_llamadas_de_modulo(decl, &alias_modulos);
         }
         programa.declaraciones = dedup_declaraciones(final_decls);
 
@@ -507,3 +531,20 @@ impl ModuloResolver {
 }
 
 pub use crate::dedup::dedup_declaraciones;
+
+/// Registra qué nombres exporta un módulo importado, para poder reescribir
+/// `modulo.funcion(...)` dentro del propio módulo (no sólo en el archivo
+/// principal). Ver N14 en plans/PLAN_WEB_Y_GUI.md.
+fn registrar_alias(
+    alias_modulos: &mut std::collections::HashMap<String, std::collections::HashSet<String>>,
+    ruta: &str,
+    sub: &Programa,
+) {
+    let alias = ruta.rsplit('/').next().unwrap_or(ruta).to_string();
+    let mut hir = forja_hir::Hir::nuevo();
+    let id = hir.agregar_modulo(ruta, sub);
+    let destino = alias_modulos.entry(alias).or_default();
+    for nombre in hir.nombres(id) {
+        destino.insert(nombre.to_string());
+    }
+}

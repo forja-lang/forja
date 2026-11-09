@@ -7,6 +7,7 @@ use forja_syntax::ast::{Declaracion, Programa};
 
 pub mod dedup;
 pub mod desugar;
+pub mod imports;
 pub mod prelude;
 use std::collections::{BTreeMap, HashMap};
 

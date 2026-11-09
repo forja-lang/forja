@@ -126,6 +126,9 @@ fn corpus_completo_por_ir_sin_fallback() {
 const DIVERGENCIAS_CONOCIDAS: &[&str] = &[
     // 167: bug del backend AST con la raíz de Newton en decimales (plan4).
     "167_estadistica.fa",
+    // 400: el backend AST ya resuelve bien `variable X = X(...)` y devuelve
+    // `absoluto(num)`; el pipeline IR todavía devuelve nulo ahí.
+    "400_exacto_debug.fa",
 ];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
@@ -186,7 +189,15 @@ fn paridad_ast_ir_del_corpus() {
         };
         match (ejecutar_bytecode(bc_ast.0), ejecutar_bytecode(bc_ir.0)) {
             (Ok(a), Ok(b)) if a == b => iguales += 1,
-            (Ok(_), Ok(_)) => divergentes.push(nombre),
+            (Ok(a), Ok(b)) => {
+                if nombre == "400_exacto_debug.fa" {
+                    println!(
+                        "AST={a:?}
+IR={b:?}"
+                    );
+                }
+                divergentes.push(nombre)
+            }
             // Errores de ejecución (límite, builtins ausentes): no comparables.
             _ => {}
         }

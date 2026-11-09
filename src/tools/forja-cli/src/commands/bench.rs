@@ -113,7 +113,26 @@ pub(crate) fn cmd_bench(args: &[String]) {
         return;
     }
 
-    let bytecode = match forja::compilar_pipeline_completa(&fuente) {
+    // Igual que `forja ejecutar`: resolver imports contra la raíz del proyecto
+    // (sin esto `importar "std/sistema"` no aportaba `tiempo_ms` y `medir`
+    // fallaba con "función no definida").
+    let directorio_raiz = {
+        let p = std::path::Path::new(ruta);
+        let dir = if p.is_file() {
+            p.parent().unwrap_or(std::path::Path::new("."))
+        } else {
+            p
+        };
+        let mut raiz = dir.to_path_buf();
+        for ancestro in dir.ancestors() {
+            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
+                raiz = ancestro.to_path_buf();
+                break;
+            }
+        }
+        raiz
+    };
+    let bytecode = match forja::compilar_pipeline_completa_desde(&fuente, &directorio_raiz) {
         Ok((bc, _contratos)) => bc,
         Err(e) => {
             eprintln!("Error de compilación: {}", e);
