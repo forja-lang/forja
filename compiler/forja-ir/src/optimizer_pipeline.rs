@@ -158,7 +158,7 @@ impl PipelineAst {
     }
 
     /// Cantidad de passes configurados.
-    pub fn len(&self) -> usize {
+    pub fn longitud(&self) -> usize {
         self.passes.len()
     }
 
@@ -251,8 +251,8 @@ mod tests {
     use forja_syntax::lexer::Lexer;
     use forja_syntax::parser::Parser;
 
-    fn parsear(source: &str) -> Programa {
-        let mut lexer = Lexer::new(source);
+    fn parsear(fuente: &str) -> Programa {
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         parser.parse().unwrap()
