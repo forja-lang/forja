@@ -293,7 +293,7 @@ fn default_equivale_a_new() {
 fn bateria_por_target() {
     let mut fallos: Vec<String> = Vec::new();
 
-    for target in TARGETS {
+    for destino in TARGETS {
         for (nombre, fuente) in PROGRAMAS {
             let programa = match parsear(fuente) {
                 Ok(p) => p,
@@ -302,44 +302,44 @@ fn bateria_por_target() {
                     continue;
                 }
             };
-            let asm = match compilar_a_asm_con_target(&programa, *target) {
+            let asm = match compilar_a_asm_con_target(&programa, *destino) {
                 Ok(a) => a,
                 Err(e) => {
-                    fallos.push(format!("[{} / {nombre}] error: {e:?}", target.name()));
+                    fallos.push(format!("[{} / {nombre}] error: {e:?}", destino.name()));
                     continue;
                 }
             };
 
             if asm.trim().is_empty() {
-                fallos.push(format!("[{} / {nombre}] asm vacío", target.name()));
+                fallos.push(format!("[{} / {nombre}] asm vacío", destino.name()));
                 continue;
             }
             if !asm.contains("main:") {
                 fallos.push(format!(
                     "[{} / {nombre}] falta el label `main:`",
-                    target.name()
+                    destino.name()
                 ));
             }
 
             // Invariantes por arquitectura.
-            match target {
+            match destino {
                 TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                     if !asm.contains("rax") && !asm.contains("eax") {
                         fallos.push(format!(
                             "[{} / {nombre}] no emite registros x86 (rax/eax)",
-                            target.name()
+                            destino.name()
                         ));
                     }
                     if !asm.to_lowercase().contains(".intel_syntax") {
                         fallos.push(format!(
                             "[{} / {nombre}] falta `.intel_syntax`",
-                            target.name()
+                            destino.name()
                         ));
                     }
                     if asm.contains("stp x29") {
                         fallos.push(format!(
                             "[{} / {nombre}] mezcla instrucciones ARM64",
-                            target.name()
+                            destino.name()
                         ));
                     }
                 }
@@ -347,13 +347,13 @@ fn bateria_por_target() {
                     if !asm.contains("x0") && !asm.contains("w0") {
                         fallos.push(format!(
                             "[{} / {nombre}] no emite registros ARM64 (x0/w0)",
-                            target.name()
+                            destino.name()
                         ));
                     }
                     if asm.contains("rcx") || asm.contains(".intel_syntax") {
                         fallos.push(format!(
                             "[{} / {nombre}] mezcla sintaxis/registros x86",
-                            target.name()
+                            destino.name()
                         ));
                     }
                 }
@@ -361,7 +361,7 @@ fn bateria_por_target() {
                     if !asm.contains("a0") && !asm.contains("t0") {
                         fallos.push(format!(
                             "[{} / {nombre}] no emite registros RISC-V (a0/t0)",
-                            target.name()
+                            destino.name()
                         ));
                     }
                     for token in [
@@ -382,7 +382,7 @@ fn bateria_por_target() {
                         if asm.contains(token) {
                             fallos.push(format!(
                                 "[{} / {nombre}] RISC-V emite token ajeno `{token}`",
-                                target.name()
+                                destino.name()
                             ));
                         }
                     }
@@ -403,13 +403,13 @@ fn bateria_por_target() {
 /// compilador debe devolver un error de compilación con el nombre del constructo.
 #[test]
 fn constructos_no_soportados_fallan_en_compilacion() {
-    for target in TARGETS {
+    for destino in TARGETS {
         for (nombre, fuente, esperado) in PROGRAMAS_NO_SOPORTADOS {
             let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
-            match compilar_a_asm_con_target(&programa, *target) {
+            match compilar_a_asm_con_target(&programa, *destino) {
                 Ok(asm) => panic!(
                     "[{} / {nombre}] debió rechazarse, pero generó ASM ({} bytes)",
-                    target.name(),
+                    destino.name(),
                     asm.len()
                 ),
                 Err(errores) => {
@@ -421,13 +421,13 @@ fn constructos_no_soportados_fallan_en_compilacion() {
                     assert!(
                         mensaje.contains(esperado),
                         "[{} / {nombre}] error sin '{}': {mensaje}",
-                        target.name(),
+                        destino.name(),
                         esperado
                     );
                     assert!(
                         !mensaje.is_empty(),
                         "[{} / {nombre}] error vacío",
-                        target.name()
+                        destino.name()
                     );
                 }
             }
@@ -441,17 +441,17 @@ fn funciones_generan_label_por_target() {
     let programa =
         parsear("funcion suma(a, b) -> Entero {\n    retornar a + b\n}\nescribir(suma(2, 3))")
             .expect("parse");
-    for target in TARGETS {
-        let asm = compilar_a_asm_con_target(&programa, *target).expect("compila");
+    for destino in TARGETS {
+        let asm = compilar_a_asm_con_target(&programa, *destino).expect("compila");
         assert!(
             asm.contains("suma:"),
             "[{}] falta el label de `suma`",
-            target.name()
+            destino.name()
         );
         assert!(
             asm.contains("main:"),
             "[{}] falta el label `main`",
-            target.name()
+            destino.name()
         );
     }
 }
@@ -470,11 +470,11 @@ fn analisis_de_inlining_por_target() {
         "funcion vacia() {\n}\nvacia()",
         "funcion c() -> Entero {\n    variable p = nuevo Otra()\n    retornar 1\n}\nclase Otra {\n    v\n}\nescribir(c())",
     ];
-    for target in TARGETS {
+    for destino in TARGETS {
         for fuente in fuentes {
             let programa = parsear(fuente).expect("parse");
-            let asm = compilar_a_asm_con_target(&programa, *target)
-                .unwrap_or_else(|e| panic!("[{}] {e:?}", target.name()));
+            let asm = compilar_a_asm_con_target(&programa, *destino)
+                .unwrap_or_else(|e| panic!("[{}] {e:?}", destino.name()));
             assert!(asm.contains("main:"));
         }
     }
@@ -492,24 +492,24 @@ fn instanciacion_sin_constructor_no_llama_simbolo_inexistente() {
         parsear("clase P {\n    n\n    constructor() { este.n = 1 }\n}\nvariable p = nuevo P()\nescribir(p.n)")
             .expect("parse");
 
-    for target in TARGETS {
-        let asm = compilar_a_asm_con_target(&sin_ctor, *target).expect("compila");
+    for destino in TARGETS {
+        let asm = compilar_a_asm_con_target(&sin_ctor, *destino).expect("compila");
         assert!(
             !asm.contains("call Punto.nuevo"),
             "[{}] no debe llamar a `Punto.nuevo` sin constructor",
-            target.name()
+            destino.name()
         );
         assert!(
             asm.contains("malloc"),
             "[{}] debe reservar memoria para la instancia",
-            target.name()
+            destino.name()
         );
 
-        let asm2 = compilar_a_asm_con_target(&con_ctor, *target).expect("compila");
+        let asm2 = compilar_a_asm_con_target(&con_ctor, *destino).expect("compila");
         assert!(
             asm2.contains("P.nuevo"),
             "[{}] debe generar y llamar al constructor `P.nuevo`",
-            target.name()
+            destino.name()
         );
     }
 }
@@ -564,15 +564,15 @@ fn e2e_x86_64_linux_ensambla_y_ejecuta() {
         return;
     }
 
-    let dir = std::env::temp_dir().join("forja_asm_e2e");
-    fs::create_dir_all(&dir).unwrap();
+    let directorio = std::env::temp_dir().join("forja_asm_e2e");
+    fs::create_dir_all(&directorio).unwrap();
 
     for (nombre, fuente, esperado) in E2E_EJECUCION {
         let programa = parsear(fuente).expect("parse");
         let asm = compilar_a_asm_con_target(&programa, TargetArch::X86_64Linux).expect("compila");
-        let fuente_s = dir.join(format!("{nombre}.s"));
+        let fuente_s = directorio.join(format!("{nombre}.s"));
         fs::write(&fuente_s, asm).expect("escribir .s");
-        let exe = dir.join(nombre);
+        let exe = directorio.join(nombre);
 
         let status = Command::new("gcc")
             .arg("-O2")
@@ -623,8 +623,8 @@ fn cobertura_constructos_asm() {
     ];
     for fuente in programas {
         if let Ok(programa) = parsear(fuente) {
-            for target in TARGETS {
-                let _ = compilar_a_asm_con_target(&programa, *target);
+            for destino in TARGETS {
+                let _ = compilar_a_asm_con_target(&programa, *destino);
             }
         }
     }
@@ -643,20 +643,20 @@ fn e2e_riscv64_ensambla() {
         return;
     }
 
-    let dir = std::env::temp_dir().join("forja_asm_riscv64");
-    std::fs::create_dir_all(&dir).unwrap();
+    let directorio = std::env::temp_dir().join("forja_asm_riscv64");
+    std::fs::create_dir_all(&directorio).unwrap();
 
     let mut fallos = Vec::new();
     for (nombre, fuente) in PROGRAMAS {
         let programa = parsear(fuente).expect("parse");
         let asm = compilar_a_asm_con_target(&programa, TargetArch::RiscV64).expect("compila");
-        let ruta = dir.join(format!("{nombre}.s"));
+        let ruta = directorio.join(format!("{nombre}.s"));
         std::fs::write(&ruta, asm).expect("escribir .s");
 
         let salida = Command::new(cc)
             .arg("-c")
             .arg("-o")
-            .arg(dir.join(format!("{nombre}.o")))
+            .arg(directorio.join(format!("{nombre}.o")))
             .arg(&ruta)
             .output()
             .expect("ejecutar gcc cruzado");
@@ -684,9 +684,9 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
     use std::fs;
     use std::process::Command;
 
-    let target = TargetArch::detect();
-    if !matches!(target, TargetArch::X86_64Windows | TargetArch::X86_64Linux) {
-        eprintln!("host {target:?}: sin ejecución ASM nativa en tests; se omite");
+    let destino = TargetArch::detect();
+    if !matches!(destino, TargetArch::X86_64Windows | TargetArch::X86_64Linux) {
+        eprintln!("host {destino:?}: sin ejecución ASM nativa en tests; se omite");
         return;
     }
     if Command::new("gcc").arg("--version").output().is_err() {
@@ -694,8 +694,8 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
         return;
     }
 
-    let dir = std::env::temp_dir().join(format!("forja_asm_vm_diff_{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
+    let directorio = std::env::temp_dir().join(format!("forja_asm_vm_diff_{}", std::process::id()));
+    fs::create_dir_all(&directorio).unwrap();
     let exe_ext = if cfg!(target_os = "windows") {
         ".exe"
     } else {
@@ -708,13 +708,13 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
     for (nombre, fuente) in PROGRAMAS {
         let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
         // Se compila siempre (así la cobertura del backend ASM sigue completa).
-        let asm = compilar_a_asm_con_target(&programa, target)
+        let asm = compilar_a_asm_con_target(&programa, destino)
             .unwrap_or_else(|e| panic!("[{nombre}] compila a ASM: {e:?}"));
 
         // shortcut: la concatenación de textos del backend ASM revienta al
         // ejecutarse en Linux (el binario termina con error); en Windows y en
         // la VM funciona. Queda pendiente del backend ASM para x86-64 Linux.
-        if matches!(target, TargetArch::X86_64Linux) && *nombre == "texto_concatenacion" {
+        if matches!(destino, TargetArch::X86_64Linux) && *nombre == "texto_concatenacion" {
             eprintln!("[{nombre}] compilado pero omitido al ejecutar: concatenación ASM en Linux pendiente");
             omitidos += 1;
             continue;
@@ -724,8 +724,8 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
             .unwrap_or_else(|e| panic!("[{nombre}] ejecutar_vm falló: {e}"));
 
         comparados += 1;
-        let ruta_s = dir.join(format!("{nombre}.s"));
-        let exe = dir.join(format!("{nombre}{exe_ext}"));
+        let ruta_s = directorio.join(format!("{nombre}.s"));
+        let exe = directorio.join(format!("{nombre}{exe_ext}"));
         fs::write(&ruta_s, asm).expect("escribir .s");
         let link = Command::new("gcc")
             .arg("-O2")
@@ -758,7 +758,7 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
             ));
         }
     }
-    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(&directorio);
 
     assert_eq!(
         comparados + omitidos,
