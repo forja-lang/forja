@@ -70,7 +70,7 @@ pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
     }
 
     // Contar padding
-    let pad = if bytes[len - 1] == b'=' {
+    let relleno = if bytes[len - 1] == b'=' {
         if bytes[len - 2] == b'=' {
             2
         } else {
@@ -81,7 +81,7 @@ pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
     };
 
     let chunks = len / 4;
-    let out_len = chunks * 3 - pad;
+    let out_len = chunks * 3 - relleno;
     let mut out = Vec::with_capacity(out_len);
 
     for i in 0..chunks {
@@ -93,10 +93,10 @@ pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
 
         let n = ((c0 as u32) << 18) | ((c1 as u32) << 12) | ((c2 as u32) << 6) | (c3 as u32);
         out.push((n >> 16) as u8);
-        if pad < 2 || i < chunks - 1 {
+        if relleno < 2 || i < chunks - 1 {
             out.push((n >> 8) as u8);
         }
-        if pad == 0 || i < chunks - 1 {
+        if relleno == 0 || i < chunks - 1 {
             out.push(n as u8);
         }
     }
