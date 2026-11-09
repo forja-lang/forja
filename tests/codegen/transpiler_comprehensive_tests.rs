@@ -2,8 +2,8 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::transpiler::Transpiler;
 
-fn transpilar(source: &str) -> String {
-    let mut lexer = Lexer::new(source);
+fn transpilar(fuente: &str) -> String {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -17,40 +17,40 @@ fn transpilar(source: &str) -> String {
 
 #[test]
 fn test_tr_var_entero() {
-    let code = transpilar("variable x = 5");
-    assert!(code.contains("5") || code.contains("x"));
-    assert!(!code.is_empty());
+    let codigo = transpilar("variable x = 5");
+    assert!(codigo.contains("5") || codigo.contains("x"));
+    assert!(!codigo.is_empty());
 }
 
 #[test]
 fn test_tr_constante() {
-    let code = transpilar("constante x = 10");
-    assert!(code.contains("let x"));
-    assert!(!code.contains("mut"));
+    let codigo = transpilar("constante x = 10");
+    assert!(codigo.contains("let x"));
+    assert!(!codigo.contains("mut"));
 }
 
 #[test]
 fn test_tr_var_tipado() {
-    let code = transpilar("variable x: Entero = 5");
-    assert!(code.contains("i64"));
+    let codigo = transpilar("variable x: Entero = 5");
+    assert!(codigo.contains("i64"));
 }
 
 #[test]
 fn test_tr_var_texto() {
-    let code = transpilar("variable s = \"hola\"");
-    assert!(code.contains("String::from"));
+    let codigo = transpilar("variable s = \"hola\"");
+    assert!(codigo.contains("String::from"));
 }
 
 #[test]
 fn test_tr_var_decimal() {
-    let code = transpilar("variable pi = 3.14");
-    assert!(!code.is_empty());
+    let codigo = transpilar("variable pi = 3.14");
+    assert!(!codigo.is_empty());
 }
 
 #[test]
 fn test_tr_var_booleano() {
-    let code = transpilar("variable flag = verdadero");
-    assert!(code.contains("true"));
+    let codigo = transpilar("variable flag = verdadero");
+    assert!(codigo.contains("true"));
 }
 
 // ============================================================
@@ -59,8 +59,8 @@ fn test_tr_var_booleano() {
 
 #[test]
 fn test_tr_asignacion() {
-    let code = transpilar("variable x = 5\nx = 10");
-    assert!(code.contains("x = 10"));
+    let codigo = transpilar("variable x = 5\nx = 10");
+    assert!(codigo.contains("x = 10"));
 }
 
 // ============================================================
@@ -69,23 +69,23 @@ fn test_tr_asignacion() {
 
 #[test]
 fn test_tr_si() {
-    let code = transpilar("si (x > 0) { escribir(x) }");
-    assert!(code.contains("if"));
-    assert!(code.contains("println!"));
+    let codigo = transpilar("si (x > 0) { escribir(x) }");
+    assert!(codigo.contains("if"));
+    assert!(codigo.contains("println!"));
 }
 
 #[test]
 fn test_tr_si_sino() {
-    let code = transpilar("si (x > 0) { } sino { }");
-    assert!(code.contains("if"));
-    assert!(code.contains("else"));
+    let codigo = transpilar("si (x > 0) { } sino { }");
+    assert!(codigo.contains("if"));
+    assert!(codigo.contains("else"));
 }
 
 #[test]
 fn test_tr_si_anidado() {
-    let code = transpilar("si (x) { si (y) { } }");
-    assert!(code.contains("if"));
-    assert!(code.contains("&&") || code.contains("if"));
+    let codigo = transpilar("si (x) { si (y) { } }");
+    assert!(codigo.contains("if"));
+    assert!(codigo.contains("&&") || codigo.contains("if"));
 }
 
 // ============================================================
@@ -94,20 +94,20 @@ fn test_tr_si_anidado() {
 
 #[test]
 fn test_tr_mientras() {
-    let code = transpilar("mientras (x < 5) { x = x + 1 }");
-    assert!(code.contains("while"));
+    let codigo = transpilar("mientras (x < 5) { x = x + 1 }");
+    assert!(codigo.contains("while"));
 }
 
 #[test]
 fn test_tr_repetir() {
-    let code = transpilar("repetir (3) { escribir(\"x\") }");
-    assert!(code.contains("for") || code.contains("loop"));
+    let codigo = transpilar("repetir (3) { escribir(\"x\") }");
+    assert!(codigo.contains("for") || codigo.contains("loop"));
 }
 
 #[test]
 fn test_tr_para() {
-    let code = transpilar("para (variable i = 0; i < 3; i = i + 1) { }");
-    assert!(code.contains("for") || code.contains("while"));
+    let codigo = transpilar("para (variable i = 0; i < 3; i = i + 1) { }");
+    assert!(codigo.contains("for") || codigo.contains("while"));
 }
 
 // ============================================================
@@ -116,21 +116,21 @@ fn test_tr_para() {
 
 #[test]
 fn test_tr_funcion_simple() {
-    let code = transpilar("funcion f() { }");
-    assert!(code.contains("fn f"));
+    let codigo = transpilar("funcion f() { }");
+    assert!(codigo.contains("fn f"));
 }
 
 #[test]
 fn test_tr_funcion_parametros() {
-    let code = transpilar("funcion suma(a, b) { retornar a + b }");
-    assert!(code.contains("fn suma"));
-    assert!(code.contains("return"));
+    let codigo = transpilar("funcion suma(a, b) { retornar a + b }");
+    assert!(codigo.contains("fn suma"));
+    assert!(codigo.contains("return"));
 }
 
 #[test]
 fn test_tr_funcion_retorno() {
-    let code = transpilar("funcion f() -> Entero { retornar 42 }");
-    assert!(code.contains("-> i64"));
+    let codigo = transpilar("funcion f() -> Entero { retornar 42 }");
+    assert!(codigo.contains("-> i64"));
 }
 
 // ============================================================
@@ -139,20 +139,20 @@ fn test_tr_funcion_retorno() {
 
 #[test]
 fn test_tr_clase_simple() {
-    let code = transpilar("clase Punto { x y }");
-    assert!(code.contains("struct Punto"));
+    let codigo = transpilar("clase Punto { x y }");
+    assert!(codigo.contains("struct Punto"));
 }
 
 #[test]
 fn test_tr_instanciacion() {
-    let code = transpilar("clase Punto { x }\nvariable p = nuevo Punto()");
-    assert!(code.contains("Punto"));
+    let codigo = transpilar("clase Punto { x }\nvariable p = nuevo Punto()");
+    assert!(codigo.contains("Punto"));
 }
 
 #[test]
 fn test_tr_acceso_miembro() {
-    let code = transpilar("clase Punto { x }\nvariable p = nuevo Punto()\nescribir(p.x)");
-    assert!(code.contains("p.x"));
+    let codigo = transpilar("clase Punto { x }\nvariable p = nuevo Punto()\nescribir(p.x)");
+    assert!(codigo.contains("p.x"));
 }
 
 // ============================================================
@@ -161,14 +161,14 @@ fn test_tr_acceso_miembro() {
 
 #[test]
 fn test_tr_enum_simple() {
-    let code = transpilar("tipo Color = Rojo | Verde | Azul");
-    assert!(code.contains("enum Color"));
+    let codigo = transpilar("tipo Color = Rojo | Verde | Azul");
+    assert!(codigo.contains("enum Color"));
 }
 
 #[test]
 fn test_tr_enum_con_datos() {
-    let code = transpilar("tipo Res = Ok(Entero) | Error(Texto)");
-    assert!(code.contains("enum Res"));
+    let codigo = transpilar("tipo Res = Ok(Entero) | Error(Texto)");
+    assert!(codigo.contains("enum Res"));
 }
 
 // ============================================================
@@ -177,8 +177,8 @@ fn test_tr_enum_con_datos() {
 
 #[test]
 fn test_tr_match() {
-    let code = transpilar("coincidir (x) { caso 1 -> { escribir(\"uno\") } caso _ -> { } }");
-    assert!(code.contains("match"));
+    let codigo = transpilar("coincidir (x) { caso 1 -> { escribir(\"uno\") } caso _ -> { } }");
+    assert!(codigo.contains("match"));
 }
 
 // ============================================================
@@ -187,8 +187,8 @@ fn test_tr_match() {
 
 #[test]
 fn test_tr_hilo() {
-    let code = transpilar("hilo { escribir(\"test\") }");
-    assert!(code.contains("thread::spawn") || code.contains("std::thread"));
+    let codigo = transpilar("hilo { escribir(\"test\") }");
+    assert!(codigo.contains("thread::spawn") || codigo.contains("std::thread"));
 }
 
 // ============================================================
@@ -197,14 +197,14 @@ fn test_tr_hilo() {
 
 #[test]
 fn test_tr_arreglo() {
-    let code = transpilar("variable arr = [1, 2, 3]");
-    assert!(code.contains("vec!"));
+    let codigo = transpilar("variable arr = [1, 2, 3]");
+    assert!(codigo.contains("vec!"));
 }
 
 #[test]
 fn test_tr_mapa() {
-    let code = transpilar("variable m = {\"a\": 1}");
-    assert!(code.contains("HashMap") || code.contains("BTreeMap"));
+    let codigo = transpilar("variable m = {\"a\": 1}");
+    assert!(codigo.contains("HashMap") || codigo.contains("BTreeMap"));
 }
 
 // ============================================================
@@ -213,26 +213,26 @@ fn test_tr_mapa() {
 
 #[test]
 fn test_tr_aritmetica() {
-    let code = transpilar("variable x = 2 + 3 * 4");
-    assert!(code.contains("3 * 4") || code.contains("2 +"));
+    let codigo = transpilar("variable x = 2 + 3 * 4");
+    assert!(codigo.contains("3 * 4") || codigo.contains("2 +"));
 }
 
 #[test]
 fn test_tr_comparacion() {
-    let code = transpilar("variable x = 5 > 3");
-    assert!(code.contains("5 > 3") || code.contains("true") || code.contains("false"));
+    let codigo = transpilar("variable x = 5 > 3");
+    assert!(codigo.contains("5 > 3") || codigo.contains("true") || codigo.contains("false"));
 }
 
 #[test]
 fn test_tr_escribir() {
-    let code = transpilar("escribir(\"Hola\")");
-    assert!(code.contains("println!"));
+    let codigo = transpilar("escribir(\"Hola\")");
+    assert!(codigo.contains("println!"));
 }
 
 #[test]
 fn test_tr_concatenacion() {
-    let code = transpilar("escribir(\"Hola \" + \"Mundo\")");
-    assert!(code.contains("println!"));
+    let codigo = transpilar("escribir(\"Hola \" + \"Mundo\")");
+    assert!(codigo.contains("println!"));
 }
 
 // ============================================================
@@ -241,8 +241,8 @@ fn test_tr_concatenacion() {
 
 #[test]
 fn test_tr_rasgo() {
-    let code = transpilar("rasgo Volador { funcion volar() }");
-    assert!(code.contains("trait Volador"));
+    let codigo = transpilar("rasgo Volador { funcion volar() }");
+    assert!(codigo.contains("trait Volador"));
 }
 
 // ============================================================
@@ -251,6 +251,6 @@ fn test_tr_rasgo() {
 
 #[test]
 fn test_tr_programa_completo() {
-    let code = transpilar("variable x = 42\nvariable y = x * 2");
-    assert!(!code.is_empty());
+    let codigo = transpilar("variable x = 42\nvariable y = x * 2");
+    assert!(!codigo.is_empty());
 }
