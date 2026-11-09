@@ -47,16 +47,16 @@ pub fn native_log_escribir(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let line = format!("[{}] [{}] {}\n", timestamp, nivel, mensaje);
+    let linea = format!("[{}] [{}] {}\n", timestamp, nivel, mensaje);
     let ruta = LOG_FILE
         .get_or_init(|| Mutex::new(String::new()))
         .lock()
         .unwrap()
         .clone();
     if ruta.is_empty() {
-        eprint!("{}", line);
+        eprint!("{}", linea);
     } else if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&ruta) {
-        let _ = f.write_all(line.as_bytes());
+        let _ = f.write_all(linea.as_bytes());
     }
     Ok(ValorFast::nulo())
 }
