@@ -1438,15 +1438,16 @@ parsea!(
 
 #[test]
 fn importar_archivo_local() {
-    let dir = std::env::temp_dir().join(format!("forja_corpus_import_{}", std::process::id()));
-    std::fs::create_dir_all(dir.join("lib")).unwrap();
+    let directorio =
+        std::env::temp_dir().join(format!("forja_corpus_import_{}", std::process::id()));
+    std::fs::create_dir_all(directorio.join("lib")).unwrap();
     std::fs::write(
-        dir.join("calculos.fa"),
+        directorio.join("calculos.fa"),
         "funcion suma(a, b) { retornar a + b }\n",
     )
     .unwrap();
     std::fs::write(
-        dir.join("lib").join("otros.fa"),
+        directorio.join("lib").join("otros.fa"),
         "funcion resta(a, b) { retornar a - b }\n",
     )
     .unwrap();
@@ -1456,11 +1457,11 @@ fn importar_archivo_local() {
         ("importar \"calculos\"\nescribir(suma(1, 2))", "3"),
         ("importar lib/otros\nescribir(resta(5, 2))", "3"),
     ] {
-        let salida = forja_test_support::ejecutar_desde(fuente, &dir)
+        let salida = forja_test_support::ejecutar_desde(fuente, &directorio)
             .unwrap_or_else(|e| panic!("import falló: {e}\n{fuente}"));
         assert_eq!(salida, vec![esperado.to_string()], "fuente:\n{fuente}");
     }
-    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&directorio);
 }
 
 // ============================================================================
