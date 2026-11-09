@@ -691,9 +691,18 @@ impl Lowering {
         // se declaran como globals (las necesita la función); el resto vivirá en
         // un `alloca` de `@forja_init` y LLVM lo promoverá a registro.
         let usados_en_funciones = nombres_usados_en_funciones(decls);
+        // Si la stdlib inlineada y el programa declaran el mismo nombre, gana la
+        // última declaración (la del usuario): si no, el tipo sale del módulo
+        // equivocado (`variable x: Exacto` con `x` entero de la stdlib).
+        let mut ultima_declaracion: HashMap<&str, usize> = HashMap::new();
+        for (i, d) in decls.iter().enumerate() {
+            if let Declaracion::Variable { nombre, .. } = d {
+                ultima_declaracion.insert(nombre.as_str(), i);
+            }
+        }
         let mut globals_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
         let mut locales_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
-        for d in decls {
+        for (idx, d) in decls.iter().enumerate() {
             if let Declaracion::Variable {
                 nombre,
                 valor,
@@ -701,6 +710,9 @@ impl Lowering {
                 ..
             } = d
             {
+                if ultima_declaracion.get(nombre.as_str()).copied() != Some(idx) {
+                    continue; // sombra de una declaración posterior
+                }
                 let t = self.tipo_declarado(tipo).unwrap_or_else(|| {
                     valor
                         .as_ref()

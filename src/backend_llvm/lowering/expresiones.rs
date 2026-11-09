@@ -64,6 +64,12 @@ impl Lowering {
             // benchmark que lo ejercite. Mejor un error que un binario roto.
             // Upgrade: habilitar cuando `forja aot` corra 400_exacto.fa igual
             // que la VM (ver el bloque `forja_exacto_*` de runtime.c).
+            // shortcut: `Exacto` funciona en programas autocontenidos
+            // (literales, + - * /, comparaciones, a_texto, escribir). Con la
+            // stdlib inlineada (p. ej. `ejemplos/exactitud/400_exacto.fa`) hay
+            // una colisión de nombres de variables de nivel superior que
+            // todavía revienta. Upgrade: unificar el espacio de nombres al
+            // inlinear módulos.
             Expresion::LiteralExacto(coef, escala) => {
                 let (alto, bajo) = ((*coef >> 64) as i64, *coef as i64);
                 let r = self.r();
