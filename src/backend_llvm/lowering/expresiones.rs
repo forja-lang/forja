@@ -64,6 +64,16 @@ impl Lowering {
             // benchmark que lo ejercite. Mejor un error que un binario roto.
             // Upgrade: habilitar cuando `forja aot` corra 400_exacto.fa igual
             // que la VM (ver el bloque `forja_exacto_*` de runtime.c).
+            Expresion::LiteralExacto(coef, escala) => {
+                let (alto, bajo) = ((*coef >> 64) as i64, *coef as i64);
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_nuevo(i64 {}, i64 {}, i64 {})",
+                    r, alto, bajo, escala
+                ));
+                Ok(V::Exacto(r))
+            }
+            #[allow(unreachable_patterns)]
             Expresion::LiteralExacto(..) => Err(
                 "`Exacto` (BigDecimal) todavía no está habilitado en la ruta nativa: compilá con la VM o usá Decimal"
                     .into(),
@@ -88,6 +98,20 @@ impl Lowering {
                 OperadorUnario::Negar => {
                     let v = self.expr(expr)?;
                     match v {
+                        V::Exacto(r) => {
+                            // -e = 0 - e
+                            let cero = self.r();
+                            self.linea(&format!(
+                                "{} = call ptr @forja_exacto_desde_entero(i64 0)",
+                                cero
+                            ));
+                            let res = self.r();
+                            self.linea(&format!(
+                                "{} = call ptr @forja_exacto_restar(ptr {}, ptr {})",
+                                res, cero, r
+                            ));
+                            Ok(V::Exacto(res))
+                        }
                         V::Dec(r) => {
                             let d = self.r();
                             self.linea(&format!("{} = fneg double {}", d, r));
@@ -755,6 +779,18 @@ impl Lowering {
             }
             self.linea("call void @forja_nueva_linea()");
             return Ok(V::Int("0".into()));
+        }
+        // `absoluto` de un Exacto se resuelve con el builtin: la versión de la
+        // stdlib no está tipada y convertiría el Exacto a entero.
+        if nombre == "absoluto"
+            && argumentos
+                .first()
+                .map(|a| self.tipo_estatico(a) == T::Exacto)
+                .unwrap_or(false)
+        {
+            if let Some(v) = self.builtin(nombre, argumentos)? {
+                return Ok(v);
+            }
         }
         // Las funciones del programa (incluida la stdlib inlineada) tienen
         // prioridad sobre los builtins: `dividir` puede ser del usuario.
@@ -1646,12 +1682,18 @@ impl Lowering {
             V::Dec(r) => {
                 let d = self.r();
                 self.linea(&format!("{} = fmul double {}, 10000000000.0", d, r));
-                let i = self.r();
-                self.linea(&format!("{} = fptosi double {} to i128", i, d));
+                let ancho = self.r();
+                self.linea(&format!("{} = fptosi double {} to i128", ancho, d));
+                let alto = self.r();
+                self.linea(&format!("{} = lshr i128 {}, 64", alto, ancho));
+                let alto64 = self.r();
+                self.linea(&format!("{} = trunc i128 {} to i64", alto64, alto));
+                let bajo = self.r();
+                self.linea(&format!("{} = trunc i128 {} to i64", bajo, ancho));
                 let e = self.r();
                 self.linea(&format!(
-                    "{} = call ptr @forja_exacto_nuevo(i128 {}, i64 10)",
-                    e, i
+                    "{} = call ptr @forja_exacto_nuevo(i64 {}, i64 {}, i64 10)",
+                    e, alto64, bajo
                 ));
                 e
             }

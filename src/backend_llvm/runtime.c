@@ -571,9 +571,12 @@ typedef struct {
     uint32_t escala;
 } ParExacto;
 
-void *forja_exacto_nuevo(__int128 coef, int64_t escala) {
+/* El coeficiente viaja como dos i64: en la ABI de Windows un `__int128` como
+ * parámetro se pasa por referencia y el IR no siempre coincide. */
+void *forja_exacto_nuevo(int64_t alto, int64_t bajo, int64_t escala) {
     ForjaExacto *e = (ForjaExacto *)forja_alloc((int64_t)sizeof(ForjaExacto));
-    e->coef = coef;
+    unsigned __int128 u = ((unsigned __int128)(uint64_t)alto << 64) | (uint64_t)bajo;
+    e->coef = (__int128)u;
     e->escala = (uint32_t)escala;
     return e;
 }
@@ -604,27 +607,30 @@ static __int128 pow10_exacto(uint32_t n) {
 }
 
 void *forja_exacto_desde_entero(int64_t v) {
-    return forja_exacto_nuevo((__int128)v, 0);
+    return forja_exacto_nuevo(v < 0 ? -1 : 0, v, 0);
 }
 
 void *forja_exacto_sumar(void *pa, void *pb) {
     ForjaExacto a = *(ForjaExacto *)pa;
     ForjaExacto b = *(ForjaExacto *)pb;
     homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
-    return forja_exacto_nuevo(a.coef + b.coef, a.escala);
+    __int128 r = a.coef + b.coef;
+    return forja_exacto_nuevo((int64_t)(r >> 64), (int64_t)r, a.escala);
 }
 
 void *forja_exacto_restar(void *pa, void *pb) {
     ForjaExacto a = *(ForjaExacto *)pa;
     ForjaExacto b = *(ForjaExacto *)pb;
     homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
-    return forja_exacto_nuevo(a.coef - b.coef, a.escala);
+    __int128 r = a.coef - b.coef;
+    return forja_exacto_nuevo((int64_t)(r >> 64), (int64_t)r, a.escala);
 }
 
 void *forja_exacto_multiplicar(void *pa, void *pb) {
     ForjaExacto a = *(ForjaExacto *)pa;
     ForjaExacto b = *(ForjaExacto *)pb;
-    return forja_exacto_nuevo(a.coef * b.coef, (int64_t)a.escala + b.escala);
+    __int128 r = a.coef * b.coef;
+    return forja_exacto_nuevo((int64_t)(r >> 64), (int64_t)r, (int64_t)a.escala + b.escala);
 }
 
 void *forja_exacto_dividir(void *pa, void *pb) {
@@ -634,7 +640,8 @@ void *forja_exacto_dividir(void *pa, void *pb) {
     homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
     const uint32_t extra = 20;
     __int128 dividendo = a.coef * pow10_exacto(extra);
-    return forja_exacto_nuevo(dividendo / b.coef, extra);
+    __int128 r = dividendo / b.coef;
+    return forja_exacto_nuevo((int64_t)(r >> 64), (int64_t)r, extra);
 }
 
 int64_t forja_exacto_comparar(void *pa, void *pb) {

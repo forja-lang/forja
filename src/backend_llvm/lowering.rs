@@ -184,6 +184,8 @@ pub struct Lowering {
     consts: HashMap<String, String>,
     /// tipos inferidos por pre-escaneo (variables declaradas como `nulo`).
     tipos_pre: HashMap<String, T>,
+    /// tipos de las variables de nivel superior, visibles antes de emitirlas.
+    tipos_top: HashMap<String, T>,
     etiquetas: Vec<(String, String)>, // (romper, continuar)
     ret_actual: T,
     termina: bool,
@@ -228,7 +230,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_arreglo_rellenar", "ptr (i64, i64, i64)"),
     ("forja_imprimir_arreglo", "void (ptr)"),
     ("forja_imprimir_mapa", "void (ptr)"),
-    ("forja_exacto_nuevo", "ptr (i128, i64)"),
+    ("forja_exacto_nuevo", "ptr (i64, i64, i64)"),
     ("forja_exacto_desde_entero", "ptr (i64)"),
     ("forja_exacto_sumar", "ptr (ptr, ptr)"),
     ("forja_exacto_restar", "ptr (ptr, ptr)"),
@@ -277,6 +279,7 @@ impl Lowering {
             variantes: HashMap::new(),
             consts: HashMap::new(),
             tipos_pre: HashMap::new(),
+            tipos_top: HashMap::new(),
             etiquetas: Vec::new(),
             ret_actual: T::Int,
             termina: false,
@@ -704,6 +707,7 @@ impl Lowering {
                         .map(|v| self.tipo_estatico(v))
                         .unwrap_or(T::Int)
                 });
+                self.tipos_top.insert(nombre.clone(), t.clone());
                 if usados_en_funciones.contains(nombre) {
                     let _ = writeln!(
                         self.globals,
@@ -982,7 +986,9 @@ impl Lowering {
                 _ => {
                     let a = self.tipo_estatico(izquierda);
                     let b = self.tipo_estatico(derecha);
-                    if a == T::Dec || b == T::Dec {
+                    if a == T::Exacto || b == T::Exacto {
+                        T::Exacto
+                    } else if a == T::Dec || b == T::Dec {
                         T::Dec
                     } else if a == T::Texto || b == T::Texto {
                         T::Texto
@@ -995,6 +1001,7 @@ impl Lowering {
                 .vars
                 .get(nombre)
                 .map(|v| v.t.clone())
+                .or_else(|| self.tipos_top.get(nombre).cloned())
                 .or_else(|| {
                     // variante sin payload (`Rojo`): el tipo es el del enum
                     self.variantes

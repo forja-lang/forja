@@ -295,6 +295,32 @@ circulo de 3
 }
 
 #[test]
+fn exacto_decimal_de_precision_arbitraria() {
+    // Misma semantica que la VM: coeficiente i128 + escala, con el formato
+    // `1.50` (punto decimal, sin recortar ceros).
+    let fuente = r#"
+variable p: Exacto = 1999e-2
+escribir(p)
+variable t: Exacto = p * 3
+escribir(t)
+variable pi: Exacto = 314159265358979323846e-20
+escribir(pi)
+variable r: Exacto = 1 - 0.9
+escribir(r)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida,
+            "19.99
+59.97
+3.14159265358979323846
+0.1
+"
+        );
+    }
+}
+
+#[test]
 fn reservar_capacidad_de_arreglo() {
     let fuente = r#"
 variable v = []
