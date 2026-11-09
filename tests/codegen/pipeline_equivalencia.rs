@@ -118,11 +118,11 @@ fn comparar_contratos(etiqueta: &str, a: &[ContratoBytecode], b: &[ContratoBytec
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn pipeline_completa_equivale_a_desde() {
-    let root = std::path::Path::new(".");
+    let raiz = std::path::Path::new(".");
     for (nombre, fuente) in PROGRAMAS {
         let (bc_a, contratos_a) = forja::compilar_pipeline_completa(fuente)
             .unwrap_or_else(|e| panic!("pipeline completa falló en `{nombre}`: {e}"));
-        let (bc_b, contratos_b) = forja::compilar_pipeline_completa_desde(fuente, root)
+        let (bc_b, contratos_b) = forja::compilar_pipeline_completa_desde(fuente, raiz)
             .unwrap_or_else(|e| panic!("pipeline completa_desde falló en `{nombre}`: {e}"));
         comparar_bytecode(nombre, &bc_a, &bc_b);
         comparar_contratos(nombre, &contratos_a, &contratos_b);
