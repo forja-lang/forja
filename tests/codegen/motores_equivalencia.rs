@@ -128,8 +128,8 @@ const PROGRAMAS: &[(&str, &str, &[&str])] = &[
 
 /// Compila a bytecode con el pipeline de producción (optimizado: índices
 /// globales + fusión de codigos). Es lo que consume ForjaFast.
-fn bytecode(source: &str) -> Vec<forja::bytecode::Opcode> {
-    forja::compilar_pipeline_completa(source)
+fn bytecode(fuente: &str) -> Vec<forja::bytecode::Opcode> {
+    forja::compilar_pipeline_completa(fuente)
         .expect("el pipeline debe compilar el programa")
         .0
 }
@@ -139,9 +139,9 @@ fn bytecode(source: &str) -> Vec<forja::bytecode::Opcode> {
 ///
 /// Se conserva solo para verificar que `TieredJit` ingiere la ruta RAW sin error
 /// (antes la ejecutaba `ForjaDT`, hoy archivado; `ForjaFast` requiere índices).
-fn bytecode_raw(source: &str) -> Vec<forja::bytecode::Opcode> {
+fn bytecode_raw(fuente: &str) -> Vec<forja::bytecode::Opcode> {
     use forja::bytecode::GeneradorBytecode;
-    let tokens = forja::lexer::Lexer::new(source).tokenize().expect("lexer");
+    let tokens = forja::lexer::Lexer::new(fuente).tokenize().expect("lexer");
     let prog = forja::parser::Parser::new(tokens).parse().expect("parser");
     let mut gen = GeneradorBytecode::new();
     gen.generar(&prog).expect("generar bytecode")
