@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Versión del formato de caché. Si cambia, se invalida toda la caché.
-const CACHE_VERSION: u32 = 2;
+const VERSION_CACHE: u32 = 2;
 
 /// Entrada serializada en disco para un módulo cacheado.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -26,9 +26,9 @@ pub struct CachedModule {
 /// Caché incremental persistente en disco.
 pub struct IncrementalCache {
     /// Directorio raíz del proyecto
-    root_dir: PathBuf,
+    directorio_raiz: PathBuf,
     /// Directorio de caché: `.forja/cache/`
-    cache_dir: PathBuf,
+    directorio_cache: PathBuf,
     /// Caché en memoria (ruta → CachedModule)
     entries: HashMap<String, CachedModule>,
     /// Estadísticas
@@ -39,13 +39,13 @@ pub struct IncrementalCache {
 
 impl IncrementalCache {
     /// Crea o carga la caché incremental para un proyecto.
-    pub fn new(root_dir: &Path) -> Self {
-        let cache_dir = root_dir.join(".forja").join("cache");
-        let entries = Self::load_from_disk(&cache_dir);
+    pub fn new(directorio_raiz: &Path) -> Self {
+        let directorio_cache = directorio_raiz.join(".forja").join("cache");
+        let entries = Self::cargar_desde_disco(&directorio_cache);
 
         IncrementalCache {
-            root_dir: root_dir.to_path_buf(),
-            cache_dir,
+            directorio_raiz: directorio_raiz.to_path_buf(),
+            directorio_cache,
             entries,
             hits: 0,
             misses: 0,
@@ -55,9 +55,9 @@ impl IncrementalCache {
 
     /// Intenta obtener bytecode cacheado para un módulo.
     /// Retorna `Some(codigos)` si el hash del fuente coincide.
-    pub fn get(&mut self, module_path: &str, source_hash: u64) -> Option<Vec<Opcode>> {
-        if let Some(entry) = self.entries.get(module_path) {
-            if entry.source_hash == source_hash && entry.cache_version == CACHE_VERSION {
+    pub fn get(&mut self, ruta_modulo: &str, source_hash: u64) -> Option<Vec<Opcode>> {
+        if let Some(entry) = self.entries.get(ruta_modulo) {
+            if entry.source_hash == source_hash && entry.cache_version == VERSION_CACHE {
                 if let Some((codigos, _cab)) = deserializar_con_metadata(&entry.bytecode_bin) {
                     self.hits += 1;
                     return Some(codigos);
@@ -71,7 +71,7 @@ impl IncrementalCache {
     /// Guarda bytecode compilado en la caché.
     pub fn put(
         &mut self,
-        module_path: &str,
+        ruta_modulo: &str,
         source_hash: u64,
         codigos: &[Opcode],
         imports: &[String],
@@ -79,19 +79,19 @@ impl IncrementalCache {
         let bytecode_bin = serializar_con_metadata(codigos, &[]);
         let cached = CachedModule {
             source_hash,
-            cache_version: CACHE_VERSION,
+            cache_version: VERSION_CACHE,
             bytecode_bin,
             imports: imports.to_vec(),
         };
-        self.entries.insert(module_path.to_string(), cached);
+        self.entries.insert(ruta_modulo.to_string(), cached);
     }
 
     /// Invalida un módulo y todos sus dependientes transitivos.
-    pub fn invalidate(&mut self, module_path: &str) {
-        let mut stack = vec![module_path.to_string()];
+    pub fn invalidate(&mut self, ruta_modulo: &str) {
+        let mut pila = vec![ruta_modulo.to_string()];
         let mut visited = HashSet::new();
 
-        while let Some(path) = stack.pop() {
+        while let Some(path) = pila.pop() {
             if !visited.insert(path.clone()) {
                 continue;
             }
@@ -106,21 +106,21 @@ impl IncrementalCache {
                 .map(|(k, _)| k.clone())
                 .collect();
             for dep in dependents {
-                stack.push(dep);
+                pila.push(dep);
             }
         }
     }
 
     /// Devuelve los módulos que dependen (directa o transitivamente) de uno.
-    pub fn dependientes_de(&self, module_path: &str) -> Vec<String> {
+    pub fn dependientes_de(&self, ruta_modulo: &str) -> Vec<String> {
         let mut out = Vec::new();
-        let mut stack = vec![module_path.to_string()];
+        let mut pila = vec![ruta_modulo.to_string()];
         let mut visited = HashSet::new();
-        while let Some(path) = stack.pop() {
+        while let Some(path) = pila.pop() {
             for (k, e) in &self.entries {
                 if e.imports.contains(&path) && visited.insert(k.clone()) {
                     out.push(k.clone());
-                    stack.push(k.clone());
+                    pila.push(k.clone());
                 }
             }
         }
@@ -135,7 +135,7 @@ impl IncrementalCache {
             .entries
             .iter()
             .filter(|(path, entry)| {
-                let archivo = self.root_dir.join(path);
+                let archivo = self.directorio_raiz.join(path);
                 let nuevo_hash = crate::hash_fuente(archivo.to_str().unwrap_or(path));
                 nuevo_hash != 0 && nuevo_hash != entry.source_hash
             })
@@ -150,22 +150,22 @@ impl IncrementalCache {
 
     /// Persiste la caché a disco.
     pub fn save_to_disk(&self) -> Result<(), std::io::Error> {
-        std::fs::create_dir_all(&self.cache_dir)?;
+        std::fs::create_dir_all(&self.directorio_cache)?;
 
-        let manifest_path = self.cache_dir.join("manifest.json");
+        let ruta_manifiesto = self.directorio_cache.join("manifest.json");
         let json = serde_json::to_string_pretty(&self.entries).map_err(std::io::Error::other)?;
-        std::fs::write(&manifest_path, json)?;
+        std::fs::write(&ruta_manifiesto, json)?;
 
         Ok(())
     }
 
     /// Carga la caché desde disco.
-    fn load_from_disk(cache_dir: &Path) -> HashMap<String, CachedModule> {
-        let manifest_path = cache_dir.join("manifest.json");
-        if !manifest_path.exists() {
+    fn cargar_desde_disco(directorio_cache: &Path) -> HashMap<String, CachedModule> {
+        let ruta_manifiesto = directorio_cache.join("manifest.json");
+        if !ruta_manifiesto.exists() {
             return HashMap::new();
         }
-        match std::fs::read_to_string(&manifest_path) {
+        match std::fs::read_to_string(&ruta_manifiesto) {
             Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
             Err(_) => HashMap::new(),
         }
@@ -173,8 +173,8 @@ impl IncrementalCache {
 
     /// Limpia toda la caché.
     pub fn clear(&mut self) -> Result<(), std::io::Error> {
-        if self.cache_dir.exists() {
-            std::fs::remove_dir_all(&self.cache_dir)?;
+        if self.directorio_cache.exists() {
+            std::fs::remove_dir_all(&self.directorio_cache)?;
         }
         self.entries.clear();
         self.hits = 0;
@@ -214,43 +214,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cache_put_and_get() {
-        let tmp = std::env::temp_dir().join("forja_incr_cache_test");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+    fn guarda_y_obtiene() {
+        let temporal = std::env::temp_dir().join("forja_incr_cache_test");
+        let _ = std::fs::remove_dir_all(&temporal);
+        std::fs::create_dir_all(&temporal).unwrap();
 
-        let mut cache = IncrementalCache::new(&tmp);
+        let mut cache = IncrementalCache::new(&temporal);
         let ops = vec![Opcode::PushEntero(1), Opcode::Sumar];
         let hash = 12345u64;
 
         cache.put("test.fa", hash, &ops, &[]);
 
         // Get con hash correcto → hit
-        let result = cache.get("test.fa", hash);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().len(), 2);
+        let resultado = cache.get("test.fa", hash);
+        assert!(resultado.is_some());
+        assert_eq!(resultado.unwrap().len(), 2);
 
         // Get con hash incorrecto → miss
-        let result = cache.get("test.fa", 99999);
-        assert!(result.is_none());
+        let resultado = cache.get("test.fa", 99999);
+        assert!(resultado.is_none());
 
         // Estadísticas
         let stats = cache.stats();
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.misses, 1);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&temporal);
     }
 
     #[test]
-    fn test_cache_persistence() {
-        let tmp = std::env::temp_dir().join("forja_incr_cache_persist_test");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+    fn persiste_entre_sesiones() {
+        let temporal = std::env::temp_dir().join("forja_incr_cache_persist_test");
+        let _ = std::fs::remove_dir_all(&temporal);
+        std::fs::create_dir_all(&temporal).unwrap();
 
         // Guardar
         {
-            let mut cache = IncrementalCache::new(&tmp);
+            let mut cache = IncrementalCache::new(&temporal);
             let ops = vec![Opcode::PushEntero(42)];
             cache.put("mod.fa", 111, &ops, &[]);
             cache.save_to_disk().unwrap();
@@ -258,22 +258,22 @@ mod tests {
 
         // Cargar en nueva instancia
         {
-            let mut cache = IncrementalCache::new(&tmp);
-            let result = cache.get("mod.fa", 111);
-            assert!(result.is_some());
-            assert_eq!(result.unwrap().len(), 1);
+            let mut cache = IncrementalCache::new(&temporal);
+            let resultado = cache.get("mod.fa", 111);
+            assert!(resultado.is_some());
+            assert_eq!(resultado.unwrap().len(), 1);
         }
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&temporal);
     }
 
     #[test]
-    fn test_invalidate_transitive() {
-        let tmp = std::env::temp_dir().join("forja_incr_cache_inval_test");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+    fn invalida_de_forma_transitiva() {
+        let temporal = std::env::temp_dir().join("forja_incr_cache_inval_test");
+        let _ = std::fs::remove_dir_all(&temporal);
+        std::fs::create_dir_all(&temporal).unwrap();
 
-        let mut cache = IncrementalCache::new(&tmp);
+        let mut cache = IncrementalCache::new(&temporal);
         // base.fa es importado por lib.fa
         cache.put("base.fa", 100, &[Opcode::Sumar], &[]);
         cache.put("lib.fa", 200, &[Opcode::Restar], &["base.fa".to_string()]);
@@ -285,6 +285,6 @@ mod tests {
         assert!(cache.get("lib.fa", 200).is_none());
         assert_eq!(cache.invalidated, 2);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&temporal);
     }
 }
