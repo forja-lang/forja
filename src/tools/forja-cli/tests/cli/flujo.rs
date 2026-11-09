@@ -371,6 +371,17 @@ fn cli_medir_con_iteraciones_minimas() {
 
 // ── FFI real ────────────────────────────────────────────────────────────────
 
+/// Libc del sistema anfitrión: en macOS los símbolos viven en `libSystem`.
+fn libc_sistema() -> &'static str {
+    if cfg!(windows) {
+        "kernel32.dll"
+    } else if cfg!(target_os = "macos") {
+        "libSystem.B.dylib"
+    } else {
+        "libc.so.6"
+    }
+}
+
 #[test]
 fn cli_ffi_llama_funcion_del_sistema() {
     let dir = dir_prueba("ffi");
@@ -381,11 +392,14 @@ fn cli_ffi_llama_funcion_del_sistema() {
          variable pid = llamar_entero(f, [])\n\
          escribir(pid > 0)\n"
     } else {
-        "importar std/ffi\n\
-         importar externa \"libc.so.6\"\n\
-         variable f = obtener_funcion(\"libc.so.6\", \"getpid\")\n\
-         variable pid = llamar_entero(f, [])\n\
-         escribir(pid > 0)\n"
+        let lib = libc_sistema();
+        &format!(
+            "importar std/ffi\n\
+             importar externa \"{lib}\"\n\
+             variable f = obtener_funcion(\"{lib}\", \"getpid\")\n\
+             variable pid = llamar_entero(f, [])\n\
+             escribir(pid > 0)\n"
+        )
     };
     escribir(&dir, "ffi.fa", fuente);
     let o = correr(&dir, &["ejecutar", "ffi.fa"], None);
@@ -411,13 +425,16 @@ fn cli_ffi_enlace_automatico_de_funcion_externa() {
          escribir(lstrlenA(\"hola\"))\n\
          escribir(longitud(GetCommandLineA()) > 0)\n"
     } else {
-        "importar externa \"libc.so.6\"\n\
-         funcion externa getpid() -> Entero;\n\
-         funcion externa strlen(s: Texto) -> Entero;\n\
-         funcion externa getenv(nombre: Texto) -> Texto;\n\
-         escribir(getpid() > 0)\n\
-         escribir(strlen(\"hola\"))\n\
-         escribir(longitud(getenv(\"PATH\")) > 0)\n"
+        let lib = libc_sistema();
+        &format!(
+            "importar externa \"{lib}\"\n\
+             funcion externa getpid() -> Entero;\n\
+             funcion externa strlen(s: Texto) -> Entero;\n\
+             funcion externa getenv(nombre: Texto) -> Texto;\n\
+             escribir(getpid() > 0)\n\
+             escribir(strlen(\"hola\"))\n\
+             escribir(longitud(getenv(\"PATH\")) > 0)\n"
+        )
     };
     escribir(&dir, "ffi_auto.fa", fuente);
     let o = correr(&dir, &["ejecutar", "ffi_auto.fa"], None);

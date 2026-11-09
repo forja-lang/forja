@@ -5085,6 +5085,10 @@ escribir(a[0])",
             miembro: "x".into(),
         };
         assert!(c.inferir_tipo_de_expr(&miembro).is_some());
+        // Windows tiene shadow space: fuerza las ramas `ss > 0` de
+        // `compilar_texto_operando`, que en Linux nunca se ejecutan.
+        let mut cw = CompilerAsm::with_target(TargetArch::X86_64Windows);
+        cw.compilar_texto_operando(&Expresion::LiteralNumero(1));
         let _ = CompilerAsm::tipo_asm_simple_de_expr(
             &Expresion::Unaria {
                 operador: crate::ast::OperadorUnario::No,
