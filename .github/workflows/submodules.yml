@@ -1,0 +1,38 @@
+name: Actualizar submódulos
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: submodules-main
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Actualizar punteros a la rama configurada
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git submodule sync --recursive
+          git submodule update --remote --merge --recursive
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "✅ Submódulos al día"
+            exit 0
+          fi
+          mapfile -t paths < <(git config -f .gitmodules --get-regexp path | awk '{print $2}')
+          git add .gitmodules "${paths[@]}"
+          git commit -m "chore: actualizar punteros de submódulos"
+          git push

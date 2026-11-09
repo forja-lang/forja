@@ -35,7 +35,7 @@ source "$SCRIPT_DIR/toolchain-android.sh"
 # ── 3. Parse arguments and build ─────────────────────────────────────────
 TARGET="${1:-all}"
 PROFILE="${2:-release}"
-FEATURES="${3:-gui}"
+FEATURES="${3:-}"
 
 build_target() {
     local target="$1"
@@ -45,7 +45,11 @@ build_target() {
     echo "  Perfil:   ${PROFILE}"
     echo "  Features:  ${FEATURES}"
     echo "=========================================="
-    cargo build --target "$target" --features "$FEATURES" --profile "$PROFILE"
+    if [ -n "$FEATURES" ]; then
+        cargo build --target "$target" --features "$FEATURES" --profile "$PROFILE"
+    else
+        cargo build --target "$target" --profile "$PROFILE"
+    fi
 }
 
 if [ "$TARGET" = "all" ]; then
