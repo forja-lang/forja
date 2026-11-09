@@ -511,7 +511,8 @@ impl ConstructorDesdeAst {
             }
 
             Expresion::Closure { parametros, cuerpo } => {
-                let (func, capturadas) = self.compilar_closure(constructor_ir, parametros, cuerpo);
+                let (funcion, capturadas) =
+                    self.compilar_closure(constructor_ir, parametros, cuerpo);
                 // los valores capturados se leen del ámbito envolvente en
                 // el punto de creación (captura por valor).
                 let mut valores = Vec::with_capacity(capturadas.len());
@@ -521,13 +522,13 @@ impl ConstructorDesdeAst {
                         None => constructor_ir.emitir_const_nulo(),
                     });
                 }
-                constructor_ir.emitir_crear_clausura(func, valores)
+                constructor_ir.emitir_crear_clausura(funcion, valores)
             }
 
             // `hilo {... }`. Las variables capturadas se pasan como
             // argumentos (copia) a la función del hilo.
             Expresion::Hilo { cuerpo } => {
-                let (func, capturadas) = self.compilar_hilo(constructor_ir, cuerpo);
+                let (funcion, capturadas) = self.compilar_hilo(constructor_ir, cuerpo);
                 let mut valores = Vec::with_capacity(capturadas.len());
                 for cap in &capturadas {
                     valores.push(match self.mem_de_variable(cap) {
@@ -535,7 +536,7 @@ impl ConstructorDesdeAst {
                         None => constructor_ir.emitir_const_nulo(),
                     });
                 }
-                constructor_ir.emitir_crear_hilo(func, valores)
+                constructor_ir.emitir_crear_hilo(funcion, valores)
             }
 
             Expresion::CanalNuevo(capacidad) => match capacidad {
@@ -656,8 +657,8 @@ impl ConstructorDesdeAst {
             } => {
                 let obj = self.expresion_a_ir(constructor_ir, objeto);
                 let val = self.expresion_a_ir(constructor_ir, valor);
-                let field = constructor_ir.simbolos.internar(campo);
-                constructor_ir.emitir_fijar_campo(obj, field, val);
+                let campo = constructor_ir.simbolos.internar(campo);
+                constructor_ir.emitir_fijar_campo(obj, campo, val);
                 val
             }
 
@@ -748,10 +749,10 @@ impl ConstructorDesdeAst {
                 }
                 Expresion::AccesoMiembro { objeto, miembro } => {
                     let obj = self.expresion_a_ir(constructor_ir, objeto);
-                    let field = constructor_ir.simbolos.internar(miembro);
-                    let old = constructor_ir.emitir_obtener_campo(obj, field);
+                    let campo = constructor_ir.simbolos.internar(miembro);
+                    let old = constructor_ir.emitir_obtener_campo(obj, campo);
                     let newv = self.emitir_compuesta_ir(constructor_ir, old, operador, valor, None);
-                    constructor_ir.emitir_fijar_campo(obj, field, newv);
+                    constructor_ir.emitir_fijar_campo(obj, campo, newv);
                     newv
                 }
                 Expresion::Index { objeto, indice } => {
@@ -1021,8 +1022,8 @@ impl ConstructorDesdeAst {
             } => {
                 let obj = self.expresion_a_ir(constructor_ir, objeto);
                 let val = self.expresion_a_ir(constructor_ir, valor);
-                let field = constructor_ir.simbolos.internar(miembro);
-                constructor_ir.emitir_fijar_campo(obj, field, val);
+                let campo = constructor_ir.simbolos.internar(miembro);
+                constructor_ir.emitir_fijar_campo(obj, campo, val);
             }
 
             Declaracion::AsignacionIndex {
@@ -1096,8 +1097,8 @@ impl ConstructorDesdeAst {
                 {
                     let obj = self.expresion_a_ir(constructor_ir, objeto);
                     let val = self.expresion_a_ir(constructor_ir, valor);
-                    let field = constructor_ir.simbolos.internar(campo);
-                    constructor_ir.emitir_fijar_campo(obj, field, val);
+                    let campo = constructor_ir.simbolos.internar(campo);
+                    constructor_ir.emitir_fijar_campo(obj, campo, val);
                     return;
                 }
                 // etapa 3: `arr[i] = v` / `mapa[k] = v` llega como
@@ -1450,11 +1451,11 @@ impl ConstructorDesdeAst {
         }
 
         constructor_ir.terminar_con_retorno(None);
-        let func = constructor_ir.construir_funcion(name_sym, TipoIr::Vacio, vec![]);
+        let funcion = constructor_ir.construir_funcion(name_sym, TipoIr::Vacio, vec![]);
         self.simbolos = constructor_ir.simbolos.clone();
 
         let mut funciones = Vec::with_capacity(1 + funciones_usuario.len());
-        funciones.push(func);
+        funciones.push(funcion);
         funciones.extend(funciones_usuario);
 
         ProgramaIr {
@@ -1557,14 +1558,14 @@ impl ConstructorDesdeAst {
             self.declaracion_a_ir(&mut constructor_ir, decl);
         }
         constructor_ir.terminar_con_retorno(None);
-        let func = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
+        let funcion = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
         host.simbolos = constructor_ir.simbolos.clone();
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.mapa_variables = vars_previas;
         self.next_local = next_local_previo;
         self.in_function = in_function_previo;
-        (func, capturadas)
+        (funcion, capturadas)
     }
 
     /// Nombres usados en `cuerpo` que no se declaran dentro (parámetros +
@@ -1631,14 +1632,14 @@ impl ConstructorDesdeAst {
             self.declaracion_a_ir(&mut constructor_ir, d);
         }
         constructor_ir.terminar_con_retorno(None);
-        let func = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
+        let funcion = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
         host.simbolos = constructor_ir.simbolos.clone();
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.mapa_variables = vars_previas;
         self.next_local = next_local_previo;
         self.in_function = in_function_previo;
-        (func, capturadas)
+        (funcion, capturadas)
     }
 
     fn compilar_funcion(
@@ -1675,13 +1676,13 @@ impl ConstructorDesdeAst {
         }
         constructor_ir.terminar_con_retorno(None);
         let ret = tipo_retorno.map(Self::tipo_a_ir).unwrap_or(TipoIr::Vacio);
-        let func = constructor_ir.construir_funcion(name_sym, ret, params_ir);
+        let funcion = constructor_ir.construir_funcion(name_sym, ret, params_ir);
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.in_function = false;
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
-        func
+        funcion
     }
 
     /// compila un método como función `Clase.metodo`, con `este` en el
@@ -1725,13 +1726,13 @@ impl ConstructorDesdeAst {
             .as_ref()
             .map(Self::tipo_a_ir)
             .unwrap_or(TipoIr::Vacio);
-        let func = constructor_ir.construir_funcion(name_sym, ret, params_ir);
+        let funcion = constructor_ir.construir_funcion(name_sym, ret, params_ir);
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.in_function = false;
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
-        func
+        funcion
     }
 }
 
@@ -1745,8 +1746,8 @@ impl Default for ConstructorDesdeAst {
 mod tests {
     use super::*;
 
-    fn parsear_fuente(source: &str) -> Programa {
-        let mut lexer = forja_syntax::lexer::Lexer::new(source);
+    fn parsear_fuente(fuente: &str) -> Programa {
+        let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = forja_syntax::parser::Parser::new(tokens);
         parser.parse().unwrap()
