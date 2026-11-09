@@ -15,7 +15,7 @@ impl CopyPropagation {
     }
 
     pub fn propagar(&mut self, programa: &Programa) -> Programa {
-        let new_decls: Vec<Declaracion> = programa
+        let declaraciones_nuevas: Vec<Declaracion> = programa
             .declaraciones
             .iter()
             .flat_map(|d| self.propagar_decl(d))
@@ -25,7 +25,7 @@ impl CopyPropagation {
             nombres: Vec::new(),
             indice_nombres: std::collections::HashMap::new(),
             span: None,
-            declaraciones: new_decls,
+            declaraciones: declaraciones_nuevas,
         }
     }
 
@@ -68,7 +68,7 @@ impl CopyPropagation {
     fn propagar_block(&mut self, decls: &[Declaracion]) -> Vec<Declaracion> {
         // Mapa: variable → nombre de la fuente de la que es copia
         let mut copies: HashMap<String, String> = HashMap::new();
-        let mut result = Vec::new();
+        let mut resultado = Vec::new();
 
         for decl in decls {
             match decl {
@@ -79,7 +79,7 @@ impl CopyPropagation {
                 } => {
                     // variable b = a → registrar copia
                     copies.insert(nombre.clone(), src.clone());
-                    result.push(decl.clone());
+                    resultado.push(decl.clone());
                 }
                 Declaracion::Variable {
                     valor: Some(expr), ..
@@ -90,7 +90,7 @@ impl CopyPropagation {
                     if let Declaracion::Variable { valor, .. } = &mut new_decl {
                         *valor = Some(new_expr);
                     }
-                    result.push(new_decl);
+                    resultado.push(new_decl);
                 }
                 Declaracion::Asignacion { nombre, valor, .. } => {
                     // Si se asigna a una variable que es copia, invalidar la copia
@@ -103,14 +103,14 @@ impl CopyPropagation {
                     if let Declaracion::Asignacion { valor, .. } = &mut new_decl {
                         **valor = new_val;
                     }
-                    result.push(new_decl);
+                    resultado.push(new_decl);
                 }
                 _ => {
-                    result.push(decl.clone());
+                    resultado.push(decl.clone());
                 }
             }
         }
-        result
+        resultado
     }
 
     fn reemplazar_copias_expr(
