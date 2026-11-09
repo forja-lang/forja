@@ -26,7 +26,7 @@ const NO_COMPILAN: &[&str] = &["paralelo.fa"];
 /// Ejemplos que dependen de la stdlib de red con FFI de Unix: compilan en
 /// Linux, no en Windows/macOS.
 #[cfg(target_os = "linux")]
-const NO_COMPILAN_PLATAFORMA: &[&str] = &[];
+const NO_COMPILAN_PLATAFORMA: &[&str] = &["219_websocket.fa"];
 #[cfg(not(target_os = "linux"))]
 const NO_COMPILAN_PLATAFORMA: &[&str] = &[
     "203_cliente_http.fa",

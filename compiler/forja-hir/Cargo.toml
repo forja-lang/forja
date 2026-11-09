@@ -1,6 +1,6 @@
 [package]
 name = "forja-hir"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "HIR y resolución de nombres de Forja"
 authors = ["forja-lang"]

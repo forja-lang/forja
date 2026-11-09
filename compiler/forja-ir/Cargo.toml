@@ -1,6 +1,6 @@
 [package]
 name = "forja-ir"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "IR SSA y registros de Forja"
 authors = ["forja-lang"]

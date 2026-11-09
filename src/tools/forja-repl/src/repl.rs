@@ -29,6 +29,9 @@ pub struct REPL {
     verificar_contratos: bool,
     /// Aritmética rápida en la VM del REPL.
     matematica_rapida: bool,
+    /// Líneas de salida ya impresas. El source acumulado se re-ejecuta en cada
+    /// entrada, así que sólo se muestran las líneas nuevas.
+    output_mostrado: usize,
 }
 
 impl REPL {
@@ -128,6 +131,7 @@ impl REPL {
             historial,
             verificar_contratos: cfg.contratos,
             matematica_rapida: cfg.matematica_rapida,
+            output_mostrado: 0,
         }
     }
 
@@ -139,6 +143,9 @@ impl REPL {
             match readline {
                 Ok(line) => {
                     let line = line.trim().to_string();
+                    // Sin esto, ↑/↓ sólo repite lo que estaba en el archivo al
+                    // arrancar: la sesión actual nunca entra en la historia.
+                    let _ = self.rl.add_history_entry(line.as_str());
                     self.registrar_en_historial(&line);
                     if line.is_empty() {
                         continue;
@@ -193,6 +200,7 @@ impl REPL {
                             "limpiar" | "reset" => {
                                 self.buffer.clear();
                                 self.source_acumulado.clear();
+                                self.output_mostrado = 0;
                                 println!("{}", error::ok("Todo reiniciado"));
                                 continue;
                             }
@@ -215,6 +223,7 @@ impl REPL {
                                     Some(modo) => {
                                         self.vm_mode = modo.to_string();
                                         self.source_acumulado.clear();
+                                        self.output_mostrado = 0;
                                         println!("Motor: {}", color::verde(modo));
                                     }
                                     None => println!(
@@ -446,48 +455,34 @@ impl REPL {
         let full_source = format!("{}{}", self.source_acumulado, source);
         let (bytecode, contratos_vm) = forja::compilar_pipeline_completa(&full_source)?;
 
-        match self.vm_mode.as_str() {
-            "vm" => {
-                // Usar VM persistente si ya existe, o crear una nueva
-                let (show, contratos, rapida) = (
-                    self.show_bytecode,
-                    self.verificar_contratos,
-                    self.matematica_rapida,
-                );
-                let vm = self.vm_fast.get_or_insert_with(|| {
-                    let mut v = forja_driver::vm_fast::ForjaFast::new();
-                    v.show_bytecode = show;
-                    v.verificar_contratos = contratos;
-                    v.set_fast_math(rapida);
-                    v
-                });
-                vm.show_bytecode = show;
-                vm.verificar_contratos = contratos;
-                vm.set_fast_math(rapida);
-                vm.contratos = contratos_vm.clone();
-                vm.cargar_bytecode(bytecode);
-                vm.ejecutar().map_err(|e| format!("{}", e))?;
-                let out = vm.obtener_output().to_vec();
-                for line in out {
-                    println!("{}", line);
-                }
-            }
-            _ => {
-                let mut vm = forja_driver::vm_fast::ForjaFast::new();
-                vm.show_bytecode = self.show_bytecode;
-                vm.verificar_contratos = self.verificar_contratos;
-                vm.set_fast_math(self.matematica_rapida);
-                vm.contratos = contratos_vm;
-                vm.cargar_bytecode(bytecode);
-                vm.reset();
-                vm.ejecutar().map_err(|e| format!("{}", e))?;
-                let out = vm.obtener_output().to_vec();
-                for line in out {
-                    println!("{}", line);
-                }
-            }
+        // VM nueva por entrada: la persistencia de variables la da recompilar
+        // el source acumulado. Reusar la VM dejaba índices del heap apuntando a
+        // la corrida anterior (panic de índice fuera de rango en la 3ª línea).
+        let mut vm = forja_driver::vm_fast::ForjaFast::new();
+        vm.show_bytecode = self.show_bytecode;
+        vm.verificar_contratos = self.verificar_contratos;
+        vm.set_fast_math(self.matematica_rapida);
+        vm.contratos = contratos_vm;
+        vm.reset();
+        vm.cargar_bytecode(bytecode);
+        let resultado = vm.ejecutar().map_err(|e| format!("{e}"));
+        let salida = vm.obtener_output();
+        self.vm_fast = Some(vm);
+
+        // La salida vieja se re-imprime en cada corrida: se descarta.
+        for linea in self.salida_nueva(salida) {
+            println!("{linea}");
         }
+        resultado?;
         Ok(source.to_string())
+    }
+
+    /// Devuelve sólo las líneas de salida que todavía no se mostraron.
+    fn salida_nueva(&mut self, salida: Vec<String>) -> Vec<String> {
+        let desde = self.output_mostrado.min(salida.len());
+        let nuevas = salida[desde..].to_vec();
+        self.output_mostrado = salida.len();
+        nuevas
     }
 
     /// Lista de comandos del REPL (todos con `/`).
@@ -864,6 +859,7 @@ impl REPL {
         };
         self.vm_fast = None;
         self.source_acumulado.clear();
+        self.output_mostrado = 0;
 
         let bytecode = preguntar(
             "Mostrar bytecode",
@@ -1007,6 +1003,27 @@ variable n = 7
             let source = repl.compilar_y_ejecutar(linea).unwrap();
             repl.source_acumulado.push_str(&source);
         }
+    }
+
+    #[test]
+    fn la_salida_nueva_solo_trae_la_cola() {
+        let mut repl = REPL::nuevo("vm", None);
+        let linea = |s: &str| s.to_string();
+
+        // Primera corrida: todo es nuevo.
+        assert_eq!(repl.salida_nueva(vec![linea("hola")]), vec![linea("hola")]);
+        // El source completo se re-ejecuta: sólo se muestra lo agregado.
+        assert_eq!(
+            repl.salida_nueva(vec![linea("hola"), linea("adios")]),
+            vec![linea("adios")]
+        );
+        // Sin salida nueva no imprime nada.
+        assert!(repl
+            .salida_nueva(vec![linea("hola"), linea("adios")])
+            .is_empty());
+        // /limpiar vuelve a empezar (output_mostrado = 0).
+        repl.output_mostrado = 0;
+        assert_eq!(repl.salida_nueva(vec![linea("otra")]), vec![linea("otra")]);
     }
 
     #[test]

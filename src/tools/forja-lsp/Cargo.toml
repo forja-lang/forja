@@ -1,6 +1,6 @@
 [package]
 name = "forja-lsp"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "Servidor LSP de Forja"
 license = "GPL-3.0-or-later"

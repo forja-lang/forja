@@ -1,6 +1,6 @@
 [package]
 name = "forja-native"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "Primitivas y registro nativo de Forja"
 authors = ["forja-lang"]

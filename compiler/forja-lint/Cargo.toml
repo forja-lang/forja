@@ -1,6 +1,6 @@
 [package]
 name = "forja-lint"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "Linter configurable de Forja"
 license = "GPL-3.0-or-later"
