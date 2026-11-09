@@ -20,7 +20,7 @@ fn salida(fuente: &str) -> Vec<String> {
 
 #[test]
 fn propagacion_encadenada_con_dos_niveles_de_question() {
-    let out = salida(
+    let salida = salida(
         r#"
 funcion interno(n: Entero) -> Resultado<Entero, Texto> {
     si (n < 0) { retornar Error("negativo") }
@@ -43,13 +43,13 @@ coincidir (medio(-1)) {
 }
 "#,
     );
-    assert_eq!(out, vec!["ok 13", "err negativo"]);
+    assert_eq!(salida, vec!["ok 13", "err negativo"]);
 }
 
 #[test]
 fn question_propaga_el_error_original() {
     // El error que llega al final es el del primer fallo, no uno nuevo.
-    let out = salida(
+    let salida = salida(
         r#"
 funcion falla() -> Resultado<Entero, Texto> { retornar Error("causa raíz") }
 funcion envuelve() -> Resultado<Entero, Texto> {
@@ -62,13 +62,13 @@ coincidir (envuelve()) {
 }
 "#,
     );
-    assert_eq!(out, vec!["err causa raíz"]);
+    assert_eq!(salida, vec!["err causa raíz"]);
 }
 
 #[test]
 #[ignore = "el `?` dentro de una función genérica choca con el borrow checker; el arreglo está en WIP"]
 fn question_en_funcion_generica() {
-    let out = salida(
+    let salida = salida(
         r#"
 funcion identidad<T>(valor: T) -> T { retornar valor }
 
@@ -83,12 +83,12 @@ coincidir (usar(42)) {
 }
 "#,
     );
-    assert_eq!(out, vec!["ok 42"]);
+    assert_eq!(salida, vec!["ok 42"]);
 }
 
 #[test]
 fn question_en_metodo() {
-    let out = salida(
+    let salida = salida(
         r#"
 clase Lector {
     variable valor: Entero
@@ -112,12 +112,12 @@ coincidir (l2.leer()) {
 }
 "#,
     );
-    assert_eq!(out, vec!["ok 10", "err sin datos"]);
+    assert_eq!(salida, vec!["ok 10", "err sin datos"]);
 }
 
 #[test]
 fn opcion_con_question_propaga_ausencia() {
-    let out = salida(
+    let salida = salida(
         r#"
 funcion buscar(n: Entero) -> Opcion<Entero> {
     si (n == 7) { retornar Nada() }
@@ -139,13 +139,13 @@ coincidir (usar(7)) {
 }
 "#,
     );
-    assert_eq!(out, vec!["algo 31", "nada"]);
+    assert_eq!(salida, vec!["algo 31", "nada"]);
 }
 
 #[test]
 fn error_de_funcion_nativa_se_propaga() {
     // `std/json` usa `?` y `Resultado` internamente.
-    let out = salida(
+    let salida = salida(
         r#"
 importar "std/json"
 coincidir (parsear("{ no es json }")) {
@@ -154,5 +154,5 @@ coincidir (parsear("{ no es json }")) {
 }
 "#,
     );
-    assert_eq!(out, vec!["err"]);
+    assert_eq!(salida, vec!["err"]);
 }
