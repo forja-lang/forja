@@ -21,7 +21,7 @@ pub fn native_proceso_ejecutar(
     } else {
         String::new()
     };
-    let dir = if args.len() > 2 {
+    let directorio = if args.len() > 2 {
         obtener_texto(vm, args[2])?
     } else {
         String::new()
@@ -37,38 +37,38 @@ pub fn native_proceso_ejecutar(
         c
     };
 
-    if !dir.is_empty() {
-        command.current_dir(&dir);
+    if !directorio.is_empty() {
+        command.current_dir(&directorio);
     }
 
     if !stdin_input.is_empty() {
         command.stdin(std::process::Stdio::piped());
     }
 
-    let output = match command.output() {
+    let salida = match command.output() {
         Ok(o) => o,
         Err(e) => return Err(ErrFast::TipoInv(format!("_proceso_ejecutar: {}", e))),
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let code = output.status.code().unwrap_or(-1) as i64;
+    let stdout = String::from_utf8_lossy(&salida.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&salida.stderr).to_string();
+    let codigo = salida.status.code().unwrap_or(-1) as i64;
 
-    // Build result object: SalidaProceso { stdout, stderr, codigo_salida }
+    // Build resultado object: SalidaProceso { stdout, stderr, codigo_salida }
     let sym = vm.tabla_simbolos().internar("SalidaProceso");
-    let shape_id = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::new(sym, shape_id);
+    let id_forma = vm.registro_formas().obtener_o_crear(sym);
+    let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
     obj.campos_vec = vec![
         {
-            let idx = vm.alloc_str(Arc::from(stdout.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(stdout.as_str()));
+            ValorFast::texto(indice)
         },
         {
-            let idx = vm.alloc_str(Arc::from(stderr.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(stderr.as_str()));
+            ValorFast::texto(indice)
         },
-        ValorFast::entero(code),
+        ValorFast::entero(codigo),
     ];
-    let idx = vm.alloc_obj(obj);
-    Ok(ValorFast::objeto(idx))
+    let indice = vm.alloc_obj(obj);
+    Ok(ValorFast::objeto(indice))
 }
