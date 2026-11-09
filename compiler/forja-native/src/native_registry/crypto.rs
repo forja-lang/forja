@@ -56,8 +56,8 @@ pub fn native_random_bytes(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     match crate::crypto::random_bytes(n) {
         Ok(bytes) => {
             let s = String::from_utf8_lossy(&bytes).to_string();
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -98,12 +98,12 @@ pub fn native_aes256_cbc_encrypt(
     if iv.len() != 16 {
         return Err(ErrFast::TipoInv("AES-256: IV debe ser 16 bytes".into()));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let iv_arr: [u8; 16] = iv.as_bytes().try_into().unwrap();
-    let result = crate::crypto::aes256_cbc_encrypt(&key, &iv_arr, datos.as_bytes());
-    let s = String::from_utf8_lossy(&result).to_string();
-    let idx = vm.alloc_str(Arc::from(s.as_str()));
-    Ok(ValorFast::texto(idx))
+    let resultado = crate::crypto::aes256_cbc_encrypt(&clave, &iv_arr, datos.as_bytes());
+    let s = String::from_utf8_lossy(&resultado).to_string();
+    let indice = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 pub fn native_aes256_cbc_decrypt(
@@ -124,13 +124,13 @@ pub fn native_aes256_cbc_decrypt(
     if iv.len() != 16 {
         return Err(ErrFast::TipoInv("AES-256: IV debe ser 16 bytes".into()));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let iv_arr: [u8; 16] = iv.as_bytes().try_into().unwrap();
-    match crate::crypto::aes256_cbc_decrypt(&key, &iv_arr, datos.as_bytes()) {
+    match crate::crypto::aes256_cbc_decrypt(&clave, &iv_arr, datos.as_bytes()) {
         Ok(dec) => {
             let s = String::from_utf8_lossy(&dec).to_string();
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -159,12 +159,13 @@ pub fn native_aes256_gcm_encrypt(
             "AES-256-GCM: nonce debe ser 12 bytes".into(),
         ));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    let result = crate::crypto::aes256_gcm_encrypt(&key, &non, datos.as_bytes(), ad.as_bytes());
-    let s = String::from_utf8_lossy(&result).to_string();
-    let idx = vm.alloc_str(Arc::from(s.as_str()));
-    Ok(ValorFast::texto(idx))
+    let resultado =
+        crate::crypto::aes256_gcm_encrypt(&clave, &non, datos.as_bytes(), ad.as_bytes());
+    let s = String::from_utf8_lossy(&resultado).to_string();
+    let indice = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 pub fn native_aes256_gcm_decrypt(
@@ -190,13 +191,13 @@ pub fn native_aes256_gcm_decrypt(
             "AES-256-GCM: nonce debe ser 12 bytes".into(),
         ));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    match crate::crypto::aes256_gcm_decrypt(&key, &non, cifrado.as_bytes(), ad.as_bytes()) {
+    match crate::crypto::aes256_gcm_decrypt(&clave, &non, cifrado.as_bytes(), ad.as_bytes()) {
         Ok(dec) => {
             let s = String::from_utf8_lossy(&dec).to_string();
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -217,12 +218,12 @@ pub fn native_chacha20_xor(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     if nonce.len() != 12 {
         return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into()));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    let result = crate::crypto::chacha20_xor(&key, &non, datos.as_bytes());
-    let s = String::from_utf8_lossy(&result).to_string();
-    let idx = vm.alloc_str(Arc::from(s.as_str()));
-    Ok(ValorFast::texto(idx))
+    let resultado = crate::crypto::chacha20_xor(&clave, &non, datos.as_bytes());
+    let s = String::from_utf8_lossy(&resultado).to_string();
+    let indice = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 pub fn native_chacha20_poly1305_encrypt(
@@ -244,13 +245,13 @@ pub fn native_chacha20_poly1305_encrypt(
     if nonce.len() != 12 {
         return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into()));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    let result =
-        crate::crypto::chacha20_poly1305_encrypt(&key, &non, datos.as_bytes(), ad.as_bytes());
-    let s = String::from_utf8_lossy(&result).to_string();
-    let idx = vm.alloc_str(Arc::from(s.as_str()));
-    Ok(ValorFast::texto(idx))
+    let resultado =
+        crate::crypto::chacha20_poly1305_encrypt(&clave, &non, datos.as_bytes(), ad.as_bytes());
+    let s = String::from_utf8_lossy(&resultado).to_string();
+    let indice = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 pub fn native_chacha20_poly1305_decrypt(
@@ -272,13 +273,14 @@ pub fn native_chacha20_poly1305_decrypt(
     if nonce.len() != 12 {
         return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into()));
     }
-    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    match crate::crypto::chacha20_poly1305_decrypt(&key, &non, cifrado.as_bytes(), ad.as_bytes()) {
+    match crate::crypto::chacha20_poly1305_decrypt(&clave, &non, cifrado.as_bytes(), ad.as_bytes())
+    {
         Ok(dec) => {
             let s = String::from_utf8_lossy(&dec).to_string();
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -293,12 +295,16 @@ pub fn native_pbkdf2(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
     let password = obtener_texto(vm, args[0])?;
     let salt = obtener_texto(vm, args[1])?;
     let iterations = obtener_entero(args[2])? as u32;
-    let dk_len = obtener_entero(args[3])? as usize;
-    let result =
-        crate::crypto::pbkdf2_hmac_sha256(password.as_bytes(), salt.as_bytes(), iterations, dk_len);
-    let s = String::from_utf8_lossy(&result).to_string();
-    let idx = vm.alloc_str(Arc::from(s.as_str()));
-    Ok(ValorFast::texto(idx))
+    let largo_dk = obtener_entero(args[3])? as usize;
+    let resultado = crate::crypto::pbkdf2_hmac_sha256(
+        password.as_bytes(),
+        salt.as_bytes(),
+        iterations,
+        largo_dk,
+    );
+    let s = String::from_utf8_lossy(&resultado).to_string();
+    let indice = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 pub fn native_hash_password(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
@@ -310,8 +316,8 @@ pub fn native_hash_password(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     let password = obtener_texto(vm, args[0])?;
     match crate::crypto::hash_password(&password) {
         Ok(hash) => {
-            let idx = vm.alloc_str(Arc::from(hash.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(hash.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -340,13 +346,13 @@ pub fn native_scrypt(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
     let salt = obtener_texto(vm, args[1])?;
     let n = obtener_entero(args[2])? as usize;
     let r = obtener_entero(args[3])? as usize;
-    let dk_len = if args.len() > 4 {
+    let largo_dk = if args.len() > 4 {
         obtener_entero(args[4])? as usize
     } else {
         32
     };
-    let result = crate::crypto::scrypt(password.as_bytes(), salt.as_bytes(), n, r, 1, dk_len);
-    let s = String::from_utf8_lossy(&result).to_string();
-    let idx = vm.alloc_str(Arc::from(s.as_str()));
-    Ok(ValorFast::texto(idx))
+    let resultado = crate::crypto::scrypt(password.as_bytes(), salt.as_bytes(), n, r, 1, largo_dk);
+    let s = String::from_utf8_lossy(&resultado).to_string();
+    let indice = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(indice))
 }
