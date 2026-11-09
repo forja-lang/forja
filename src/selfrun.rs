@@ -10,19 +10,19 @@ const FBC_MAGIC: &[u8; 4] = b"FBC\0";
 pub fn try_selfrun() -> Option<()> {
     let exe_path = std::env::current_exe().ok()?;
 
-    let mut file = fs::File::open(&exe_path).ok()?;
+    let mut archivo = fs::File::open(&exe_path).ok()?;
 
     // Leer tamaño del archivo
-    let file_len = file.metadata().ok()?.len();
+    let file_len = archivo.metadata().ok()?.len();
 
     if file_len < 8 {
         return None;
     }
 
     // Leer los últimos 8 bytes (size + magic)
-    file.seek(SeekFrom::End(-8)).ok()?;
+    archivo.seek(SeekFrom::End(-8)).ok()?;
     let mut footer = [0u8; 8];
-    file.read_exact(&mut footer).ok()?;
+    archivo.read_exact(&mut footer).ok()?;
 
     // Verificar magic header FBC\0
     if &footer[4..8] != FBC_MAGIC {
@@ -38,9 +38,9 @@ pub fn try_selfrun() -> Option<()> {
 
     // Leer bytecode (ubicado justo antes del footer, al final del archivo)
     let bc_start = file_len - 8 - bc_size;
-    file.seek(SeekFrom::Start(bc_start)).ok()?;
+    archivo.seek(SeekFrom::Start(bc_start)).ok()?;
     let mut bytecode_data = vec![0u8; bc_size as usize];
-    file.read_exact(&mut bytecode_data).ok()?;
+    archivo.read_exact(&mut bytecode_data).ok()?;
 
     // Deserializar bytecode
     let codigos = match crate::bytecode::deserializar_bytecode(&bytecode_data) {
@@ -80,11 +80,11 @@ pub fn try_selfrun() -> Option<()> {
 
     // Salida mediante I/O con buffer para máximo rendimiento
     let stdout = std::io::stdout();
-    let mut handle = BufWriter::new(stdout.lock());
+    let mut manejador = BufWriter::new(stdout.lock());
     for line in vm.obtener_output() {
-        let _ = writeln!(handle, "{}", line);
+        let _ = writeln!(manejador, "{}", line);
     }
-    let _ = handle.flush();
+    let _ = manejador.flush();
 
     // Gestión de errores de runtime
     if let Err(e) = exec_res {
@@ -131,10 +131,10 @@ pub fn shadow_copy() {
         match fs::copy(&exe_path, &temp_exe) {
             Ok(_) => {
                 // Ejecutar la copia pasando todos los argumentos originales y el path original en env var
-                let args: Vec<String> = env::args().skip(1).collect();
+                let argumentos: Vec<String> = env::args().skip(1).collect();
                 let status_res = Command::new(&temp_exe)
                     .env("FORJA_ORIGINAL_EXE", &exe_path)
-                    .args(&args)
+                    .args(&argumentos)
                     .status();
 
                 // Intentar limpiar el ejecutable temporal al terminar
