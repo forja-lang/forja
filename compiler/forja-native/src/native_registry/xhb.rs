@@ -7,40 +7,43 @@ impl NativeRegistry {
     }
 }
 pub fn parse_xml_attrs(s: &str) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    let mut chars = s.char_indices().peekable();
-    while let Some((_, ch)) = chars.next() {
+    let mut mapa = std::collections::HashMap::new();
+    let mut caracteres = s.char_indices().peekable();
+    while let Some((_, ch)) = caracteres.next() {
         if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-            let start = chars.peek().map(|(i, _)| i - ch.len_utf8()).unwrap_or(0);
-            let mut end = start + ch.len_utf8();
-            while let Some(&(i, c)) = chars.peek() {
+            let inicio = caracteres
+                .peek()
+                .map(|(i, _)| i - ch.len_utf8())
+                .unwrap_or(0);
+            let mut fin = inicio + ch.len_utf8();
+            while let Some(&(i, c)) = caracteres.peek() {
                 if c == '=' || c.is_whitespace() {
                     break;
                 }
-                end = i + c.len_utf8();
-                chars.next();
+                fin = i + c.len_utf8();
+                caracteres.next();
             }
-            let key = &s[start..end];
-            while let Some(&(_, c)) = chars.peek() {
+            let clave = &s[inicio..fin];
+            while let Some(&(_, c)) = caracteres.peek() {
                 if c.is_whitespace() || c == '=' {
-                    chars.next();
+                    caracteres.next();
                 } else {
                     break;
                 }
             }
-            if let Some(&(_, quote)) = chars.peek() {
+            if let Some(&(_, quote)) = caracteres.peek() {
                 if quote == '"' || quote == '\'' {
-                    chars.next();
-                    let val_start = chars.peek().map(|(i, _)| *i).unwrap_or(0);
+                    caracteres.next();
+                    let val_start = caracteres.peek().map(|(i, _)| *i).unwrap_or(0);
                     let mut val_end = val_start;
-                    while let Some(&(i, c)) = chars.peek() {
+                    while let Some(&(i, c)) = caracteres.peek() {
                         if c == quote {
                             val_end = i;
-                            chars.next();
+                            caracteres.next();
                             break;
                         }
                         val_end = i + c.len_utf8();
-                        chars.next();
+                        caracteres.next();
                     }
                     let val_str = &s[val_start..val_end];
                     let unescaped = val_str
@@ -49,24 +52,24 @@ pub fn parse_xml_attrs(s: &str) -> std::collections::HashMap<String, String> {
                         .replace("&lt;", "<")
                         .replace("&gt;", ">")
                         .replace("&apos;", "'");
-                    map.insert(key.to_string(), unescaped);
+                    mapa.insert(clave.to_string(), unescaped);
                 }
             }
         }
     }
-    map
+    mapa
 }
 
 pub fn attrs_to_map(
     vm: &mut dyn Host,
     attrs: &std::collections::HashMap<String, String>,
 ) -> ValorFast {
-    let mut map = std::collections::HashMap::new();
+    let mut mapa = std::collections::HashMap::new();
     for (k, v) in attrs {
         let v_idx = vm.alloc_str(std::sync::Arc::from(v.as_str()));
-        map.insert(k.clone(), ValorFast::texto(v_idx));
+        mapa.insert(k.clone(), ValorFast::texto(v_idx));
     }
-    let map_idx = vm.alloc_map(map);
+    let map_idx = vm.alloc_map(mapa);
     ValorFast::mapa(map_idx)
 }
 
@@ -92,12 +95,12 @@ pub fn native_xhb_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
     let mut version = "1.3".to_string();
     let mut date = "".to_string();
 
-    let mut pos = 0;
-    while let Some(open) = xml[pos..].find('<') {
-        let tag_start = pos + open + 1;
+    let mut posicion = 0;
+    while let Some(open) = xml[posicion..].find('<') {
+        let tag_start = posicion + open + 1;
         if let Some(close) = xml[tag_start..].find('>') {
             let tag_content = &xml[tag_start..tag_start + close];
-            pos = tag_start + close + 1;
+            posicion = tag_start + close + 1;
 
             if tag_content.starts_with("?xml") || tag_content.starts_with("!--") {
                 continue;
@@ -210,8 +213,8 @@ pub fn native_xhb_serializar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     let map_idx = args[0].indice_mapa() as usize;
     let doc_map = vm.map_heap().get(map_idx).cloned().unwrap_or_default();
 
-    let mut out = String::new();
-    out.push_str("<?xml version=\"1.0\"?>\n");
+    let mut salida = String::new();
+    salida.push_str("<?xml version=\"1.0\"?>\n");
 
     let mut version = "1.3".to_string();
     let mut date = "".to_string();
@@ -235,9 +238,9 @@ pub fn native_xhb_serializar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     }
 
     if date.is_empty() {
-        out.push_str(&format!("<homebank v=\"{}\">\n", xml_escape(&version)));
+        salida.push_str(&format!("<homebank v=\"{}\">\n", xml_escape(&version)));
     } else {
-        out.push_str(&format!(
+        salida.push_str(&format!(
             "<homebank v=\"{}\" d=\"{}\">\n",
             xml_escape(&version),
             xml_escape(&date)
@@ -304,28 +307,28 @@ pub fn native_xhb_serializar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
                         if item.es_mapa() {
                             let item_map_idx = item.indice_mapa() as usize;
                             if let Some(item_map) = vm.map_heap().get(item_map_idx) {
-                                out.push_str(&format!("<{}", tag_name));
+                                salida.push_str(&format!("<{}", tag_name));
                                 for &attr in attr_order {
                                     if let Some(&val) = item_map.get(attr) {
-                                        let str_val = val_to_str(vm, val);
-                                        out.push_str(&format!(
+                                        let texto_valor = val_to_str(vm, val);
+                                        salida.push_str(&format!(
                                             " {}=\"{}\"",
                                             attr,
-                                            xml_escape(&str_val)
+                                            xml_escape(&texto_valor)
                                         ));
                                     }
                                 }
                                 for (k, v) in item_map {
                                     if !attr_order.contains(&k.as_str()) {
-                                        let str_val = val_to_str(vm, *v);
-                                        out.push_str(&format!(
+                                        let texto_valor = val_to_str(vm, *v);
+                                        salida.push_str(&format!(
                                             " {}=\"{}\"",
                                             k,
-                                            xml_escape(&str_val)
+                                            xml_escape(&texto_valor)
                                         ));
                                     }
                                 }
-                                out.push_str("/>\n");
+                                salida.push_str("/>\n");
                             }
                         }
                     }
@@ -334,27 +337,35 @@ pub fn native_xhb_serializar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
                 let prop_map_idx = sec_val.indice_mapa() as usize;
                 if let Some(prop_map) = vm.map_heap().get(prop_map_idx) {
                     if !prop_map.is_empty() {
-                        out.push_str("<properties");
+                        salida.push_str("<properties");
                         for &attr in attr_order {
                             if let Some(&val) = prop_map.get(attr) {
-                                let str_val = val_to_str(vm, val);
-                                out.push_str(&format!(" {}=\"{}\"", attr, xml_escape(&str_val)));
+                                let texto_valor = val_to_str(vm, val);
+                                salida.push_str(&format!(
+                                    " {}=\"{}\"",
+                                    attr,
+                                    xml_escape(&texto_valor)
+                                ));
                             }
                         }
                         for (k, v) in prop_map {
                             if !attr_order.contains(&k.as_str()) {
-                                let str_val = val_to_str(vm, *v);
-                                out.push_str(&format!(" {}=\"{}\"", k, xml_escape(&str_val)));
+                                let texto_valor = val_to_str(vm, *v);
+                                salida.push_str(&format!(
+                                    " {}=\"{}\"",
+                                    k,
+                                    xml_escape(&texto_valor)
+                                ));
                             }
                         }
-                        out.push_str("/>\n");
+                        salida.push_str("/>\n");
                     }
                 }
             }
         }
     }
 
-    out.push_str("</homebank>\n");
-    let out_idx = vm.alloc_str(std::sync::Arc::from(out.as_str()));
+    salida.push_str("</homebank>\n");
+    let out_idx = vm.alloc_str(std::sync::Arc::from(salida.as_str()));
     Ok(ValorFast::texto(out_idx))
 }
