@@ -21,7 +21,7 @@ pub fn native_quic_conectar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
             "_quic_conectar requiere host y puerto".into(),
         ));
     }
-    // Retorna ID de handle QUIC simbólico (1)
+    // Retorna ID de manejador QUIC simbólico (1)
     Ok(ValorFast::entero(1))
 }
 
@@ -52,8 +52,8 @@ pub fn native_quic_stream_recibir(
     vm: &mut dyn Host,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let idx = vm.alloc_str(Arc::from("HTTP/3 QUIC Stream OK"));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from("HTTP/3 QUIC Stream OK"));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Cierra una conexión QUIC.
@@ -73,8 +73,8 @@ pub fn native_json_stringificar(
     }
     let val = args[0];
     let resultado = json_stringificar_valor(vm, val);
-    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
-    let arr = vec![ValorFast::entero(0), ValorFast::texto(idx)];
+    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    let arr = vec![ValorFast::entero(0), ValorFast::texto(indice)];
     let aidx = vm.alloc_arr(arr);
     Ok(ValorFast::arreglo(aidx))
 }
@@ -94,9 +94,9 @@ pub fn native_json_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
             arr.push(valor);
         }
         Err(e) => {
-            let idx = vm.alloc_str(Arc::from(e.to_string().as_str()));
+            let indice = vm.alloc_str(Arc::from(e.to_string().as_str()));
             arr.push(ValorFast::entero(1));
-            arr.push(ValorFast::texto(idx));
+            arr.push(ValorFast::texto(indice));
         }
     }
     let aidx = vm.alloc_arr(arr);
@@ -115,21 +115,21 @@ fn json_valor_a_forja(vm: &mut dyn Host, v: &serde_json::Value) -> ValorFast {
             }
         }
         serde_json::Value::String(s) => {
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            ValorFast::texto(indice)
         }
         serde_json::Value::Array(a) => {
             let vals: Vec<ValorFast> = a.iter().map(|x| json_valor_a_forja(vm, x)).collect();
-            let idx = vm.alloc_arr(vals);
-            ValorFast::arreglo(idx)
+            let indice = vm.alloc_arr(vals);
+            ValorFast::arreglo(indice)
         }
         serde_json::Value::Object(o) => {
             let mut mapa = std::collections::HashMap::with_capacity(o.len());
             for (k, x) in o {
                 mapa.insert(k.clone(), json_valor_a_forja(vm, x));
             }
-            let idx = vm.alloc_map(mapa);
-            ValorFast::mapa(idx)
+            let indice = vm.alloc_map(mapa);
+            ValorFast::mapa(indice)
         }
     }
 }
@@ -185,40 +185,40 @@ pub fn json_stringificar_valor(vm: &dyn Host, val: ValorFast) -> String {
 }
 
 pub fn json_escapar_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    json_escapar_string_inner_to(s, &mut out);
-    out.push('"');
-    out
+    let mut salida = String::with_capacity(s.len() + 2);
+    salida.push('"');
+    json_escapar_string_inner_to(s, &mut salida);
+    salida.push('"');
+    salida
 }
 
 pub fn json_escapar_string_inner(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    json_escapar_string_inner_to(s, &mut out);
-    out
+    let mut salida = String::with_capacity(s.len());
+    json_escapar_string_inner_to(s, &mut salida);
+    salida
 }
 
-pub fn json_escapar_string_inner_to(s: &str, out: &mut String) {
+pub fn json_escapar_string_inner_to(s: &str, salida: &mut String) {
     for c in s.chars() {
         match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
+            '"' => salida.push_str("\\\""),
+            '\\' => salida.push_str("\\\\"),
+            '\n' => salida.push_str("\\n"),
+            '\r' => salida.push_str("\\r"),
+            '\t' => salida.push_str("\\t"),
             c if c.is_control() => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
+                salida.push_str(&format!("\\u{:04x}", c as u32));
             }
-            c => out.push(c),
+            c => salida.push(c),
         }
     }
 }
 
 /// Realiza una solicitud HTTP/3 nativa sobre QUIC.
 pub fn native_h3_solicitud(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let mut map = std::collections::HashMap::new();
-    map.insert("codigo".to_string(), ValorFast::entero(200));
-    map.insert(
+    let mut mapa = std::collections::HashMap::new();
+    mapa.insert("codigo".to_string(), ValorFast::entero(200));
+    mapa.insert(
         "status".to_string(),
         ValorFast::texto(vm.alloc_str(Arc::from("OK"))),
     );
@@ -229,13 +229,13 @@ pub fn native_h3_solicitud(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<Val
         ValorFast::texto(vm.alloc_str(Arc::from("h3=\":443\""))),
     );
     let c_idx = vm.alloc_map(cabeceras);
-    map.insert("cabeceras".to_string(), ValorFast::mapa(c_idx));
+    mapa.insert("cabeceras".to_string(), ValorFast::mapa(c_idx));
 
-    map.insert(
+    mapa.insert(
         "cuerpo".to_string(),
         ValorFast::texto(vm.alloc_str(Arc::from("<h1>HTTP/3 sobre QUIC OK</h1>"))),
     );
 
-    let midx = vm.alloc_map(map);
+    let midx = vm.alloc_map(mapa);
     Ok(ValorFast::mapa(midx))
 }
