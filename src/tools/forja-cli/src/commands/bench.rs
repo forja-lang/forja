@@ -25,7 +25,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
     let vm_selected = cfg.motor;
     let max_archivo = cfg.max_archivo_mb;
 
-    let source = match forja::leer_archivo_con_limite(path, max_archivo) {
+    let fuente = match forja::leer_archivo_con_limite(path, max_archivo) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error al leer '{}': {}", path, e);
@@ -34,17 +34,17 @@ pub(crate) fn cmd_bench(args: &[String]) {
     };
 
     let source_auto = !cfg.estricto
-        && !source.contains("requiere")
-        && !source.contains("asegura")
-        && !source.contains("importar")
-        && !source.contains("gui")
-        && !source.contains("entrada(");
+        && !fuente.contains("requiere")
+        && !fuente.contains("asegura")
+        && !fuente.contains("importar")
+        && !fuente.contains("gui")
+        && !fuente.contains("entrada(");
     if asm_mode || source_auto {
         // Ruta LLVM nativa de Forja (clang -O3).
         let t_compile = std::time::Instant::now();
-        if let Ok(exe) = compilar_llvm_nativo(&source) {
+        if let Ok(exe) = compilar_llvm_nativo(&fuente) {
             let compile_ms = t_compile.elapsed().as_secs_f64() * 1000.0;
-            let dir = std::path::Path::new(path)
+            let directorio = std::path::Path::new(path)
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or(std::path::Path::new("."));
@@ -52,12 +52,12 @@ pub(crate) fn cmd_bench(args: &[String]) {
             let mut hot_ns = 0.0;
             for _ in 0..iters.max(1) {
                 let t = std::time::Instant::now();
-                let out = Command::new(&exe)
-                    .current_dir(dir)
+                let corrida = Command::new(&exe)
+                    .current_dir(directorio)
                     .output()
                     .expect("ejecutar LLVM");
                 hot_ns += t.elapsed().as_secs_f64() * 1_000_000_000.0;
-                salida = String::from_utf8_lossy(&out.stdout)
+                salida = String::from_utf8_lossy(&corrida.stdout)
                     .lines()
                     .map(str::to_string)
                     .collect();
@@ -70,16 +70,16 @@ pub(crate) fn cmd_bench(args: &[String]) {
                 hot / 1_000_000.0
             );
             println!();
-            for line in salida {
-                println!("  {}", line);
+            for linea in salida {
+                println!("  {}", linea);
             }
             return;
         }
         // Benchmark ASM de respaldo.
 
         let t0 = std::time::Instant::now();
-        match ejecutar_asm(&source, path) {
-            Ok(output) => {
+        match ejecutar_asm(&fuente, path) {
+            Ok(salida) => {
                 let compile_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
                 println!(
                     "  {:<14} compilar {:>9.2} ms",
@@ -91,7 +91,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
                 let mut hot_ns_total = 0.0;
                 for _ in 0..iters {
                     let t_hot = std::time::Instant::now();
-                    let _ = ejecutar_asm(&source, path);
+                    let _ = ejecutar_asm(&fuente, path);
                     hot_ns_total += t_hot.elapsed().as_secs_f64() * 1_000_000_000.0;
                 }
                 let hot_ns = hot_ns_total / iters as f64;
@@ -101,8 +101,8 @@ pub(crate) fn cmd_bench(args: &[String]) {
                     hot_ns / 1_000_000.0
                 );
                 println!();
-                for line in output {
-                    println!("  {}", line);
+                for linea in salida {
+                    println!("  {}", linea);
                 }
             }
             Err(e) => {
@@ -113,7 +113,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
         return;
     }
 
-    let bytecode = match forja::compilar_pipeline_completa(&source) {
+    let bytecode = match forja::compilar_pipeline_completa(&fuente) {
         Ok((bc, _contratos)) => bc,
         Err(e) => {
             eprintln!("Error de compilación: {}", e);
