@@ -10,11 +10,11 @@
 //! * **Límites**: cuerpo de hasta 64 MB, nombre/versión validados y límite de
 //!   peticiones por IP (cubo de fichas, `FORJA_REGISTRY_RATE`, 20 req/s).
 //! * **Auditoría**: cada publicación/yank (y cada rechazo) se anota en
-//!   `<dir>/audit.log` como JSON Lines.
+//!   `<directorio>/audit.log` como JSON Lines.
 //!
 //! Uso desde el CLI:
 //! ```text
-//! forja registry-serve --dir ~/.forja/registry-server --port 8787 [--token X]
+//! forja registry-serve --directorio ~/.forja/registry-server --port 8787 [--token X]
 //! ```
 //!
 //! Producción: el TLS se termina en un **proxy** (nginx/Caddy/Cloudflare) delante
@@ -44,7 +44,7 @@ struct Estado {
 }
 
 impl Estado {
-    fn nuevo(dir: &Path) -> Self {
+    fn nuevo(directorio: &Path) -> Self {
         Estado {
             cubos: std::collections::HashMap::new(),
             tasa: std::env::var("FORJA_REGISTRY_RATE")
@@ -52,7 +52,7 @@ impl Estado {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20.0),
             rafaga: 40.0,
-            auditoria: Some(dir.join("audit.log")),
+            auditoria: Some(directorio.join("audit.log")),
         }
     }
 
@@ -106,16 +106,16 @@ struct Peticion {
 /// Servidor en ejecución; se detiene al hacer `drop`.
 pub struct ServidorRemoto {
     pub addr: SocketAddr,
-    stop: Arc<AtomicBool>,
-    handle: Option<std::thread::JoinHandle<()>>,
+    parada: Arc<AtomicBool>,
+    manejador_hilo: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for ServidorRemoto {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
+        self.parada.store(true, Ordering::SeqCst);
         // Despertar al accept no bloqueante.
         let _ = TcpStream::connect(self.addr);
-        if let Some(h) = self.handle.take() {
+        if let Some(h) = self.manejador_hilo.take() {
             let _ = h.join();
         }
     }
@@ -123,13 +123,13 @@ impl Drop for ServidorRemoto {
 
 /// Arranca el servidor en `addr` (usar `127.0.0.1:0` para puerto efímero).
 pub fn iniciar(
-    dir: impl AsRef<Path>,
+    directorio: impl AsRef<Path>,
     addr: &str,
     token: Option<String>,
 ) -> Result<ServidorRemoto, String> {
-    let dir = dir.as_ref().to_path_buf();
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("no se pudo crear {}: {}", dir.display(), e))?;
+    let directorio = directorio.as_ref().to_path_buf();
+    std::fs::create_dir_all(&directorio)
+        .map_err(|e| format!("no se pudo crear {}: {}", directorio.display(), e))?;
     let listener =
         TcpListener::bind(addr).map_err(|e| format!("no se pudo escuchar en {}: {}", addr, e))?;
     listener
@@ -138,11 +138,11 @@ pub fn iniciar(
     let real = listener
         .local_addr()
         .map_err(|e| format!("local_addr: {}", e))?;
-    let stop = Arc::new(AtomicBool::new(false));
-    let stop_hilo = stop.clone();
-    let mut estado = Estado::nuevo(&dir);
-    let handle = std::thread::spawn(move || {
-        while !stop_hilo.load(Ordering::SeqCst) {
+    let parada = Arc::new(AtomicBool::new(false));
+    let parada_hilo = parada.clone();
+    let mut estado = Estado::nuevo(&directorio);
+    let manejador_hilo = std::thread::spawn(move || {
+        while !parada_hilo.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((mut stream, peer)) => {
                     // El listener es no bloqueante y en Windows el socket
@@ -156,7 +156,13 @@ pub fn iniciar(
                         estado.auditar(peer.ip(), "-", "-", 429);
                         continue;
                     }
-                    let _ = atender(&mut stream, &dir, token.as_deref(), &mut estado, peer.ip());
+                    let _ = atender(
+                        &mut stream,
+                        &directorio,
+                        token.as_deref(),
+                        &mut estado,
+                        peer.ip(),
+                    );
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(20));
@@ -167,8 +173,8 @@ pub fn iniciar(
     });
     Ok(ServidorRemoto {
         addr: real,
-        stop,
-        handle: Some(handle),
+        parada,
+        manejador_hilo: Some(manejador_hilo),
     })
 }
 
@@ -176,7 +182,7 @@ fn leer_peticion(stream: &mut TcpStream) -> Result<Peticion, String> {
     const MAX_CABECERAS: usize = 64 * 1024;
     const MAX_CUERPO: usize = 64 * 1024 * 1024;
     let mut buf = Vec::with_capacity(8192);
-    let mut tmp = [0u8; 8192];
+    let mut buffer = [0u8; 8192];
     let header_end = loop {
         if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
             break pos + 4;
@@ -184,11 +190,11 @@ fn leer_peticion(stream: &mut TcpStream) -> Result<Peticion, String> {
         if buf.len() > MAX_CABECERAS {
             return Err("cabeceras demasiado grandes".to_string());
         }
-        let n = stream.read(&mut tmp).map_err(|e| e.to_string())?;
+        let n = stream.read(&mut buffer).map_err(|e| e.to_string())?;
         if n == 0 {
             return Err("conexión cerrada antes de las cabeceras".to_string());
         }
-        buf.extend_from_slice(&tmp[..n]);
+        buf.extend_from_slice(&buffer[..n]);
     };
     let cabeceras = String::from_utf8_lossy(&buf[..header_end]).to_string();
     let mut lineas = cabeceras.lines();
@@ -196,30 +202,30 @@ fn leer_peticion(stream: &mut TcpStream) -> Result<Peticion, String> {
     let mut partes = primera.split_whitespace();
     let metodo = partes.next().unwrap_or("").to_string();
     let ruta = partes.next().unwrap_or("/").to_string();
-    let mut content_length = 0usize;
+    let mut largo_contenido = 0usize;
     let mut autorizacion = None;
     for linea in lineas {
         if let Some((clave, valor)) = linea.split_once(':') {
             let clave = clave.trim().to_ascii_lowercase();
             let valor = valor.trim();
             match clave.as_str() {
-                "content-length" => content_length = valor.parse().unwrap_or(0),
+                "content-length" => largo_contenido = valor.parse().unwrap_or(0),
                 "authorization" => autorizacion = Some(valor.to_string()),
                 _ => {}
             }
         }
     }
-    if content_length > MAX_CUERPO {
+    if largo_contenido > MAX_CUERPO {
         return Err("cuerpo demasiado grande".to_string());
     }
-    while buf.len() < header_end + content_length {
-        let n = stream.read(&mut tmp).map_err(|e| e.to_string())?;
+    while buf.len() < header_end + largo_contenido {
+        let n = stream.read(&mut buffer).map_err(|e| e.to_string())?;
         if n == 0 {
             break;
         }
-        buf.extend_from_slice(&tmp[..n]);
+        buf.extend_from_slice(&buffer[..n]);
     }
-    let fin = (header_end + content_length).min(buf.len());
+    let fin = (header_end + largo_contenido).min(buf.len());
     Ok(Peticion {
         metodo,
         ruta,
@@ -273,18 +279,19 @@ fn autorizado(pet: &Peticion, token: Option<&str>) -> bool {
     }
 }
 
-fn index_path(dir: &Path) -> PathBuf {
-    dir.join("index.json")
+fn ruta_indice(directorio: &Path) -> PathBuf {
+    directorio.join("index.json")
 }
 
-fn tarball_path(dir: &Path, nombre: &str, version: &str) -> PathBuf {
-    dir.join("tarballs")
+fn ruta_tar(directorio: &Path, nombre: &str, version: &str) -> PathBuf {
+    directorio
+        .join("tarballs")
         .join(format!("{}-{}.fapkg", nombre, version))
 }
 
 fn atender(
     stream: &mut TcpStream,
-    dir: &Path,
+    directorio: &Path,
     token: Option<&str>,
     estado: &mut Estado,
     ip: std::net::IpAddr,
@@ -305,7 +312,7 @@ fn atender(
 
     match (pet.metodo.as_str(), segmentos.as_slice()) {
         ("GET", ["api", "v1", "index"]) => {
-            let index = Index::cargar(&index_path(dir)).unwrap_or_else(|_| Index::nuevo());
+            let index = Index::cargar(&ruta_indice(directorio)).unwrap_or_else(|_| Index::nuevo());
             let cuerpo = serde_json::to_vec(&index).map_err(|e| e.to_string())?;
             responder(stream, 200, "application/json", &cuerpo);
         }
@@ -328,8 +335,8 @@ fn atender(
                         return Ok(());
                     }
                 };
-            let index_path = index_path(dir);
-            let mut index = Index::cargar(&index_path).unwrap_or_else(|_| Index::nuevo());
+            let ruta_indice = ruta_indice(directorio);
+            let mut index = Index::cargar(&ruta_indice).unwrap_or_else(|_| Index::nuevo());
             if index
                 .paquetes
                 .get(*nombre)
@@ -356,7 +363,7 @@ fn atender(
                 return Ok(());
             }
 
-            let ruta = tarball_path(dir, nombre, version);
+            let ruta = ruta_tar(directorio, nombre, version);
             if let Some(parent) = ruta.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
@@ -386,7 +393,7 @@ fn atender(
                     yanked: false,
                 },
             );
-            index.guardar(&index_path)?;
+            index.guardar(&ruta_indice)?;
             responder(
                 stream,
                 201,
@@ -400,7 +407,7 @@ fn atender(
                 responder(stream, 400, "text/plain", b"nombre o version invalidos");
                 return Ok(());
             }
-            match std::fs::read(tarball_path(dir, nombre, version)) {
+            match std::fs::read(ruta_tar(directorio, nombre, version)) {
                 Ok(datos) => responder(stream, 200, "application/octet-stream", &datos),
                 Err(_) => responder(stream, 404, "text/plain", b"no encontrado"),
             }
@@ -411,8 +418,8 @@ fn atender(
                 estado.auditar(ip, &pet.metodo, &pet.ruta, 401);
                 return Ok(());
             }
-            let index_path = index_path(dir);
-            let mut index = Index::cargar(&index_path)?;
+            let ruta_indice = ruta_indice(directorio);
+            let mut index = Index::cargar(&ruta_indice)?;
             let encontrado = index
                 .paquetes
                 .get_mut(*nombre)
@@ -420,7 +427,7 @@ fn atender(
             match encontrado {
                 Some(v) => {
                     v.yanked = true;
-                    index.guardar(&index_path)?;
+                    index.guardar(&ruta_indice)?;
                     responder(stream, 200, "application/json", b"{\"yanked\":true}");
                     estado.auditar(ip, &pet.metodo, &pet.ruta, 200);
                 }
