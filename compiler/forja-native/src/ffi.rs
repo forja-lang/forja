@@ -41,20 +41,20 @@ pub fn esta_cargada(ruta: &str) -> bool {
 }
 
 /// Carga una librería compartida (.dll/.so/.dylib) en el registro global.
-/// Si ya está cargada, retorna el handle existente.
+/// Si ya está cargada, retorna el manejador existente.
 /// Internamente usa LoadLibraryW (Windows) o dlopen (Unix).
 pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
     let mut reg = registry()
         .lock()
         .map_err(|e| format!("Error de lock: {}", e))?;
 
-    // Si ya está cargada, devolver la dirección del handle como id
-    if let Some(&handle) = reg.get(ruta) {
-        return Ok(handle.0 as i64);
+    // Si ya está cargada, devolver la dirección del manejador como id
+    if let Some(&manejador) = reg.get(ruta) {
+        return Ok(manejador.0 as i64);
     }
 
     // Cargar la librería con API del sistema
-    let handle: *mut c_void = unsafe {
+    let manejador: *mut c_void = unsafe {
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::ffi::OsStrExt;
@@ -83,8 +83,8 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
         }
     };
 
-    let id = handle as i64;
-    reg.insert(ruta.to_string(), LibHandle(handle));
+    let id = manejador as i64;
+    reg.insert(ruta.to_string(), LibHandle(manejador));
     Ok(id)
 }
 
@@ -95,7 +95,7 @@ pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
         .lock()
         .map_err(|e| format!("Error de lock: {}", e))?;
 
-    let handle = reg.get(ruta).ok_or_else(|| {
+    let manejador = reg.get(ruta).ok_or_else(|| {
         format!(
             "Librería '{}' no está cargada. Usá 'importar externa \"{}\"' primero.",
             ruta, ruta
@@ -107,13 +107,13 @@ pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
         {
             let c_name =
                 CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
-            GetProcAddress(handle.0, c_name.as_ptr())
+            GetProcAddress(manejador.0, c_name.as_ptr())
         }
         #[cfg(not(target_os = "windows"))]
         {
             let c_name =
                 CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
-            dlsym(handle.0, c_name.as_ptr())
+            dlsym(manejador.0, c_name.as_ptr())
         }
     };
 
@@ -142,15 +142,15 @@ pub fn liberar_libreria(ruta: &str) -> Result<(), String> {
     let mut reg = registry()
         .lock()
         .map_err(|e| format!("Error de lock: {}", e))?;
-    if let Some(handle) = reg.remove(ruta) {
+    if let Some(manejador) = reg.remove(ruta) {
         unsafe {
             #[cfg(target_os = "windows")]
             {
-                FreeLibrary(handle.0 as *mut _);
+                FreeLibrary(manejador.0 as *mut _);
             }
             #[cfg(not(target_os = "windows"))]
             {
-                dlclose(handle.0);
+                dlclose(manejador.0);
             }
         }
         Ok(())
@@ -189,11 +189,30 @@ extern "system" {
     fn GetLastError() -> u32;
 }
 
-#[cfg(not(target_os = "windows"))]
+// wasm32 no tiene cargador dinámico: los stubs hacen fallar `importar externa`
+// con un error claro en vez de romper el enlazado del .wasm.
+#[cfg(target_arch = "wasm32")]
+unsafe fn dlopen(_nombre: *const c_char, _flags: i32) -> *mut c_void {
+    std::ptr::null_mut()
+}
+#[cfg(target_arch = "wasm32")]
+unsafe fn dlsym(_manejador: *mut c_void, _simbolo: *const c_char) -> *mut c_void {
+    std::ptr::null_mut()
+}
+#[cfg(target_arch = "wasm32")]
+unsafe fn dlclose(_manejador: *mut c_void) -> i32 {
+    0
+}
+#[cfg(target_arch = "wasm32")]
+unsafe fn dlerror() -> *mut c_char {
+    std::ptr::null_mut()
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
 extern "C" {
-    fn dlopen(filename: *const c_char, flags: i32) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-    fn dlclose(handle: *mut c_void) -> i32;
+    fn dlopen(nombre: *const c_char, flags: i32) -> *mut c_void;
+    fn dlsym(manejador: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    fn dlclose(manejador: *mut c_void) -> i32;
     fn dlerror() -> *mut c_char;
 }
 
@@ -266,7 +285,7 @@ pub fn native_ffi_llamar_entero(
     // puntero nativo (32 bits en wasm32); convertimos a usize + *const ()
     // para que el transmute sea válido en todas las arquitecturas.
     let fn_ptr: *const () = fn_ptr_val as usize as *const ();
-    let result: i64 = unsafe {
+    let resultado: i64 = unsafe {
         match call_args.len() {
             0 => {
                 let f: extern "C" fn() -> i64 = std::mem::transmute(fn_ptr);
@@ -306,7 +325,7 @@ pub fn native_ffi_llamar_entero(
         }
     };
 
-    Ok(ValorFast::entero(result))
+    Ok(ValorFast::entero(resultado))
 }
 
 /// _ffi_llamar_texto(fn_ptr, args) -> Texto
@@ -382,15 +401,15 @@ pub fn native_ffi_llamar_texto(
 pub fn buscar_funcion_cargada(nombre: &str) -> Option<i64> {
     let reg = registry().lock().ok()?;
     let c_name = CString::new(nombre).ok()?;
-    for handle in reg.values() {
+    for manejador in reg.values() {
         let fn_ptr: *mut c_void = unsafe {
             #[cfg(target_os = "windows")]
             {
-                GetProcAddress(handle.0, c_name.as_ptr())
+                GetProcAddress(manejador.0, c_name.as_ptr())
             }
             #[cfg(not(target_os = "windows"))]
             {
-                dlsym(handle.0, c_name.as_ptr())
+                dlsym(manejador.0, c_name.as_ptr())
             }
         };
         if !fn_ptr.is_null() {
