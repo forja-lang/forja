@@ -66,11 +66,11 @@ impl Sha256 {
         }
         self.update(&bit_len);
 
-        let mut result = [0u8; 32];
+        let mut resultado = [0u8; 32];
         for (i, &h) in self.h.iter().enumerate() {
-            result[i * 4..(i + 1) * 4].copy_from_slice(&h.to_be_bytes());
+            resultado[i * 4..(i + 1) * 4].copy_from_slice(&h.to_be_bytes());
         }
-        result
+        resultado
     }
 
     pub fn digest(data: &[u8]) -> [u8; 32] {
@@ -204,11 +204,11 @@ impl Sha1 {
         }
         self.update(&bit_len);
 
-        let mut result = [0u8; 20];
+        let mut resultado = [0u8; 20];
         for (i, &h) in self.h.iter().enumerate() {
-            result[i * 4..(i + 1) * 4].copy_from_slice(&h.to_be_bytes());
+            resultado[i * 4..(i + 1) * 4].copy_from_slice(&h.to_be_bytes());
         }
-        result
+        resultado
     }
 
     pub fn digest(data: &[u8]) -> [u8; 20] {
@@ -373,11 +373,11 @@ impl Sha512 {
         self.buf[120..128].copy_from_slice(&bit_len);
         self.len += 16;
         sha512_compress(&mut self.h, &self.buf);
-        let mut result = [0u8; 64];
+        let mut resultado = [0u8; 64];
         for (i, &h) in self.h.iter().enumerate() {
-            result[i * 8..(i + 1) * 8].copy_from_slice(&h.to_be_bytes());
+            resultado[i * 8..(i + 1) * 8].copy_from_slice(&h.to_be_bytes());
         }
-        result
+        resultado
     }
 
     pub fn digest(data: &[u8]) -> [u8; 64] {
@@ -573,14 +573,14 @@ impl Sha384 {
 
 /// HMAC-SHA256: autenticación de mensajes con clave
 /// RFC 2104: HMAC(K, m) = SHA256((K' ⊕ opad) || SHA256((K' ⊕ ipad) || m))
-pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    // 1. Preparar K': si key > 64 bytes, reducir con SHA256; si no, padding con ceros
+pub fn hmac_sha256(clave: &[u8], data: &[u8]) -> [u8; 32] {
+    // 1. Preparar K': si clave > 64 bytes, reducir con SHA256; si no, padding con ceros
     let mut k = [0u8; 64];
-    if key.len() > 64 {
-        let hashed = Sha256::digest(key);
+    if clave.len() > 64 {
+        let hashed = Sha256::digest(clave);
         k[..32].copy_from_slice(&hashed);
     } else {
-        k[..key.len()].copy_from_slice(key);
+        k[..clave.len()].copy_from_slice(clave);
     }
 
     // 2. ipad = K' ⊕ 0x36, opad = K' ⊕ 0x5C
