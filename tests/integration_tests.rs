@@ -4,8 +4,8 @@ use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
 /// Helper: ejecuta código Forja en la VM y devuelve output
-fn ejecutar(source: &str) -> Result<Vec<String>, String> {
-    let mut lexer = Lexer::new(source);
+fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
     let mut parser = Parser::new(tokens);
@@ -31,68 +31,68 @@ fn ejecutar(source: &str) -> Result<Vec<String>, String> {
 
 #[test]
 fn test_e2e_cuando() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable x = 35
          cuando (x > 30) {
              escribir(\"Caliente\")
          }",
     )
     .unwrap();
-    assert_eq!(out, vec!["Caliente"]);
+    assert_eq!(salida, vec!["Caliente"]);
 }
 
 #[test]
 fn test_e2e_hola_mundo() {
-    let out = ejecutar("escribir(\"Hola, mundo!\")").unwrap();
-    assert_eq!(out, vec!["Hola, mundo!"]);
+    let salida = ejecutar("escribir(\"Hola, mundo!\")").unwrap();
+    assert_eq!(salida, vec!["Hola, mundo!"]);
 }
 
 #[test]
 fn test_e2e_aritmetica() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable x = 2 + 3
          escribir(x)",
     )
     .unwrap();
-    assert_eq!(out, vec!["5"]);
+    assert_eq!(salida, vec!["5"]);
 }
 
 #[test]
 fn test_e2e_aritmetica_compleja() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable x = (2 + 3) * 4
          escribir(x)",
     )
     .unwrap();
-    assert_eq!(out, vec!["20"]);
+    assert_eq!(salida, vec!["20"]);
 }
 
 #[test]
 fn test_e2e_variable_mutable() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable x = 5
          x = 10
          escribir(x)",
     )
     .unwrap();
-    assert_eq!(out, vec!["10"]);
+    assert_eq!(salida, vec!["10"]);
 }
 
 #[test]
 fn test_e2e_si_verdadero() {
-    let out = ejecutar("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
-    assert_eq!(out, vec!["si"]);
+    let salida = ejecutar("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
+    assert_eq!(salida, vec!["si"]);
 }
 
 #[test]
 fn test_e2e_si_falso() {
-    let out = ejecutar("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
-    assert_eq!(out, vec!["no"]);
+    let salida = ejecutar("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
+    assert_eq!(salida, vec!["no"]);
 }
 
 #[test]
 fn test_e2e_mientras() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable x = 0
          mientras (x < 3) {
              escribir(x)
@@ -100,34 +100,34 @@ fn test_e2e_mientras() {
          }",
     )
     .unwrap();
-    assert_eq!(out, vec!["0", "1", "2"]);
+    assert_eq!(salida, vec!["0", "1", "2"]);
 }
 
 #[test]
 fn test_e2e_repetir() {
-    let out = ejecutar("repetir (3) { escribir(\"hola\") }").unwrap();
-    assert_eq!(out, vec!["hola", "hola", "hola"]);
+    let salida = ejecutar("repetir (3) { escribir(\"hola\") }").unwrap();
+    assert_eq!(salida, vec!["hola", "hola", "hola"]);
 }
 
 #[test]
 fn test_e2e_para() {
-    let out = ejecutar("para (variable i = 0; i < 3; i = i + 1) { escribir(i) }").unwrap();
-    assert_eq!(out, vec!["0", "1", "2"]);
+    let salida = ejecutar("para (variable i = 0; i < 3; i = i + 1) { escribir(i) }").unwrap();
+    assert_eq!(salida, vec!["0", "1", "2"]);
 }
 
 #[test]
 fn test_e2e_comparacion() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "escribir(5 > 3)
          escribir(2 > 10)",
     )
     .unwrap();
-    assert_eq!(out, vec!["verdadero", "falso"]);
+    assert_eq!(salida, vec!["verdadero", "falso"]);
 }
 
 #[test]
 fn test_e2e_funcion_simple() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "funcion suma(a, b) {
              retornar a + b
          }
@@ -135,12 +135,12 @@ fn test_e2e_funcion_simple() {
          escribir(r)",
     )
     .unwrap();
-    assert_eq!(out, vec!["7"]);
+    assert_eq!(salida, vec!["7"]);
 }
 
 #[test]
 fn test_e2e_funcion_saludo() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "funcion saludar(nombre) {
              escribir(nombre)
          }
@@ -148,34 +148,34 @@ fn test_e2e_funcion_saludo() {
          saludar(\"Pedro\")",
     )
     .unwrap();
-    assert_eq!(out, vec!["Ana", "Pedro"]);
+    assert_eq!(salida, vec!["Ana", "Pedro"]);
 }
 
 #[test]
 fn test_e2e_clase_sin_constructor() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "clase Punto { x y }
          variable p = nuevo Punto()
          escribir(p.x)",
     )
     .unwrap();
-    assert_eq!(out, vec!["nulo"]);
+    assert_eq!(salida, vec!["nulo"]);
 }
 
 #[test]
 fn test_e2e_multiples_prints() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "escribir(\"a\")
          escribir(\"b\")
          escribir(\"c\")",
     )
     .unwrap();
-    assert_eq!(out, vec!["a", "b", "c"]);
+    assert_eq!(salida, vec!["a", "b", "c"]);
 }
 
 #[test]
 fn test_e2e_si_anidado() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable nota = 85
          si (nota >= 90) {
              escribir(\"Excelente\")
@@ -188,28 +188,28 @@ fn test_e2e_si_anidado() {
          }",
     )
     .unwrap();
-    assert_eq!(out, vec!["Buen trabajo"]);
+    assert_eq!(salida, vec!["Buen trabajo"]);
 }
 
 #[test]
 fn test_e2e_concatenacion_texto() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable saludo = \"Hola\"
          variable nombre = \"Mundo\"
          escribir(saludo + \" \" + nombre)",
     )
     .unwrap();
-    assert_eq!(out, vec!["Hola Mundo"]);
+    assert_eq!(salida, vec!["Hola Mundo"]);
 }
 
 #[test]
 fn test_e2e_decimales() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable pi = 3.14
          escribir(pi)",
     )
     .unwrap();
-    assert_eq!(out, vec!["3.14"]);
+    assert_eq!(salida, vec!["3.14"]);
 }
 
 // ============================================================
@@ -218,108 +218,108 @@ fn test_e2e_decimales() {
 
 #[test]
 fn test_string_length() {
-    let out = ejecutar("escribir(\"hola\".longitud())").unwrap();
-    assert_eq!(out, vec!["4"]);
+    let salida = ejecutar("escribir(\"hola\".longitud())").unwrap();
+    assert_eq!(salida, vec!["4"]);
 }
 
 #[test]
 fn test_string_to_upper() {
-    let out = ejecutar("escribir(\"hola\".a_mayusculas())").unwrap();
-    assert_eq!(out, vec!["HOLA"]);
+    let salida = ejecutar("escribir(\"hola\".a_mayusculas())").unwrap();
+    assert_eq!(salida, vec!["HOLA"]);
 }
 
 #[test]
 fn test_string_to_lower() {
-    let out = ejecutar("escribir(\"HOLA\".a_minusculas())").unwrap();
-    assert_eq!(out, vec!["hola"]);
+    let salida = ejecutar("escribir(\"HOLA\".a_minusculas())").unwrap();
+    assert_eq!(salida, vec!["hola"]);
 }
 
 #[test]
 fn test_string_trim() {
-    let out = ejecutar("escribir(\"  hola  \".recortar())").unwrap();
-    assert_eq!(out, vec!["hola"]);
+    let salida = ejecutar("escribir(\"  hola  \".recortar())").unwrap();
+    assert_eq!(salida, vec!["hola"]);
 }
 
 #[test]
 fn test_string_contains_true() {
-    let out = ejecutar("escribir(\"hello world\".contiene(\"world\"))").unwrap();
-    assert_eq!(out, vec!["verdadero"]);
+    let salida = ejecutar("escribir(\"hello world\".contiene(\"world\"))").unwrap();
+    assert_eq!(salida, vec!["verdadero"]);
 }
 
 #[test]
 fn test_string_contains_false() {
-    let out = ejecutar("escribir(\"hello world\".contiene(\"xyz\"))").unwrap();
-    assert_eq!(out, vec!["falso"]);
+    let salida = ejecutar("escribir(\"hello world\".contiene(\"xyz\"))").unwrap();
+    assert_eq!(salida, vec!["falso"]);
 }
 
 #[test]
 fn test_string_reverse() {
-    let out = ejecutar("escribir(\"rust\".invertir())").unwrap();
-    assert_eq!(out, vec!["tsur"]);
+    let salida = ejecutar("escribir(\"rust\".invertir())").unwrap();
+    assert_eq!(salida, vec!["tsur"]);
 }
 
 #[test]
 fn test_string_starts_with() {
-    let out = ejecutar("escribir(\"hola mundo\".empieza_con(\"hola\"))").unwrap();
-    assert_eq!(out, vec!["verdadero"]);
+    let salida = ejecutar("escribir(\"hola mundo\".empieza_con(\"hola\"))").unwrap();
+    assert_eq!(salida, vec!["verdadero"]);
     let out2 = ejecutar("escribir(\"hola mundo\".empieza_con(\"xyz\"))").unwrap();
     assert_eq!(out2, vec!["falso"]);
 }
 
 #[test]
 fn test_string_ends_with() {
-    let out = ejecutar("escribir(\"hola mundo\".termina_con(\"mundo\"))").unwrap();
-    assert_eq!(out, vec!["verdadero"]);
+    let salida = ejecutar("escribir(\"hola mundo\".termina_con(\"mundo\"))").unwrap();
+    assert_eq!(salida, vec!["verdadero"]);
     let out2 = ejecutar("escribir(\"hola mundo\".termina_con(\"xyz\"))").unwrap();
     assert_eq!(out2, vec!["falso"]);
 }
 
 #[test]
 fn test_string_char_at() {
-    let out = ejecutar("escribir(\"hola\".caracter_en(0))").unwrap();
-    assert_eq!(out, vec!["h"]);
+    let salida = ejecutar("escribir(\"hola\".caracter_en(0))").unwrap();
+    assert_eq!(salida, vec!["h"]);
     let out2 = ejecutar("escribir(\"hola\".caracter_en(3))").unwrap();
     assert_eq!(out2, vec!["a"]);
 }
 
 #[test]
 fn test_string_index_of() {
-    let out = ejecutar("escribir(\"hello world\".indice_de(\"world\"))").unwrap();
-    assert_eq!(out, vec!["6"]);
+    let salida = ejecutar("escribir(\"hello world\".indice_de(\"world\"))").unwrap();
+    assert_eq!(salida, vec!["6"]);
     let out2 = ejecutar("escribir(\"hello\".indice_de(\"xyz\"))").unwrap();
     assert_eq!(out2, vec!["-1"]);
 }
 
 #[test]
 fn test_string_substr() {
-    let out = ejecutar("escribir(\"hello world\".subcadena(6, 5))").unwrap();
-    assert_eq!(out, vec!["world"]);
+    let salida = ejecutar("escribir(\"hello world\".subcadena(6, 5))").unwrap();
+    assert_eq!(salida, vec!["world"]);
 }
 
 #[test]
 fn test_string_replace() {
-    let out = ejecutar("escribir(\"hola mundo\".reemplazar(\"mundo\", \"forja\"))").unwrap();
-    assert_eq!(out, vec!["hola forja"]);
+    let salida = ejecutar("escribir(\"hola mundo\".reemplazar(\"mundo\", \"forja\"))").unwrap();
+    assert_eq!(salida, vec!["hola forja"]);
 }
 
 #[test]
 fn test_string_parse_entero() {
-    let out = ejecutar("escribir(\"42\".a_entero())").unwrap();
-    assert_eq!(out, vec!["42"]);
+    let salida = ejecutar("escribir(\"42\".a_entero())").unwrap();
+    assert_eq!(salida, vec!["42"]);
 }
 
 #[test]
 fn test_string_parse_flotante() {
-    let out = ejecutar("escribir(\"3.14\".a_flotante())").unwrap();
-    assert_eq!(out, vec!["3.14"]);
+    let salida = ejecutar("escribir(\"3.14\".a_flotante())").unwrap();
+    assert_eq!(salida, vec!["3.14"]);
 }
 
 #[test]
 fn test_array_join() {
-    let out =
+    let salida =
         ejecutar("variable arr = [\"a\", \"b\", \"c\"]\nescribir(arr.unir_elementos(\", \"))")
             .unwrap();
-    assert_eq!(out, vec!["a, b, c"]);
+    assert_eq!(salida, vec!["a, b, c"]);
 }
 
 // ============================================================
@@ -328,38 +328,38 @@ fn test_array_join() {
 
 #[test]
 fn test_array_literal() {
-    let out = ejecutar("variable arr = [1, 2, 3]\nescribir(arr)").unwrap();
-    assert_eq!(out, vec!["[1,2,3]"]);
+    let salida = ejecutar("variable arr = [1, 2, 3]\nescribir(arr)").unwrap();
+    assert_eq!(salida, vec!["[1,2,3]"]);
 }
 
 #[test]
 fn test_array_get() {
-    let out = ejecutar("variable arr = [10, 20, 30]\nescribir(arr[1])").unwrap();
-    assert_eq!(out, vec!["20"]);
+    let salida = ejecutar("variable arr = [10, 20, 30]\nescribir(arr[1])").unwrap();
+    assert_eq!(salida, vec!["20"]);
 }
 
 #[test]
 fn test_array_set() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable arr = [1, 2, 3]
          arr[1] = 99
          escribir(arr[1])",
     )
     .unwrap();
-    assert_eq!(out, vec!["99"]);
+    assert_eq!(salida, vec!["99"]);
 }
 
 #[test]
 fn test_array_out_of_bounds() {
     // Ahora retorna Nulo para índice fuera de rango
-    let out = ejecutar("variable arr = [1, 2]\nescribir(arr[99])").unwrap();
-    assert_eq!(out, vec!["nulo"]);
+    let salida = ejecutar("variable arr = [1, 2]\nescribir(arr[99])").unwrap();
+    assert_eq!(salida, vec!["nulo"]);
 }
 
 #[test]
 fn test_array_empty() {
-    let out = ejecutar("variable arr = []\nescribir(arr)").unwrap();
-    assert_eq!(out, vec!["[]"]);
+    let salida = ejecutar("variable arr = []\nescribir(arr)").unwrap();
+    assert_eq!(salida, vec!["[]"]);
 }
 
 // ============================================================
@@ -368,30 +368,30 @@ fn test_array_empty() {
 
 #[test]
 fn test_mapa_literal() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable m = {\"nombre\": \"Ana\", \"edad\": 30}
          escribir(m[\"nombre\"])",
     )
     .unwrap();
-    assert_eq!(out, vec!["Ana"]);
+    assert_eq!(salida, vec!["Ana"]);
 }
 
 #[test]
 fn test_mapa_get_edad() {
-    let out = ejecutar(
+    let salida = ejecutar(
         "variable m = {\"x\": 10, \"y\": 20}
          escribir(m[\"y\"])",
     )
     .unwrap();
-    assert_eq!(out, vec!["20"]);
+    assert_eq!(salida, vec!["20"]);
 }
 
 // ============================================================
 // Formatter Integration Tests
 // ============================================================
 
-fn assert_format_roundtrip(source: &str) {
-    let mut lexer1 = Lexer::new(source);
+fn assert_format_roundtrip(fuente: &str) {
+    let mut lexer1 = Lexer::new(fuente);
     let tokens1 = lexer1
         .tokenize()
         .unwrap_or_else(|e| panic!("Lexer error: {:?}", e));
@@ -490,7 +490,7 @@ fn test_fmt_multiple_assignment_and_hilo() {
 
 #[test]
 fn test_red_validaciones() {
-    let code = r#"
+    let codigo = r#"
 importar std/red
 
 variable ipv4_valida = validar_ipv4("192.168.1.1")
@@ -502,13 +502,13 @@ escribir(ipv6_valida)
 escribir(mac_valida)
 "#;
     let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
-    assert_eq!(out, vec!["verdadero", "verdadero", "verdadero"]);
+    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    assert_eq!(salida, vec!["verdadero", "verdadero", "verdadero"]);
 }
 
 #[test]
 fn test_quic_e2e() {
-    let code = r#"
+    let codigo = r#"
 importar std/quic
 
 variable res_conn = quic_conectar("ejemplo.com", 443)
@@ -530,13 +530,13 @@ coincidir (res_conn) {
 }
 "#;
     let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
-    assert_eq!(out, vec!["HTTP/3 QUIC Stream OK"]);
+    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    assert_eq!(salida, vec!["HTTP/3 QUIC Stream OK"]);
 }
 
 #[test]
 fn test_h3_e2e() {
-    let code = r#"
+    let codigo = r#"
 importar std/cliente_h3
 
 variable res = h3_obtener("https://cloudflare.com")
@@ -549,25 +549,25 @@ coincidir (res) {
 }
 "#;
     let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
-    assert_eq!(out, vec!["HTTP/3.0", "200"]);
+    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    assert_eq!(salida, vec!["HTTP/3.0", "200"]);
 }
 
 #[test]
 fn test_mapa_sintaxis_punto() {
-    let code = r#"
+    let codigo = r#"
 variable m = {"nombre": "Forja", "version": 1}
 escribir(m.nombre)
 escribir(m.version)
 "#;
     let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
-    assert_eq!(out, vec!["Forja", "1"]);
+    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    assert_eq!(salida, vec!["Forja", "1"]);
 }
 
 #[test]
 fn test_metodos_primitivos_oo() {
-    let code = r#"
+    let codigo = r#"
 variable txt = "hola mundo"
 escribir(txt.longitud())
 escribir(txt.a_mayusculas())
@@ -576,42 +576,42 @@ escribir(txt.contiene("mundo"))
 variable arr = [10, 20]
 escribir(arr.longitud())
 "#;
-    let out = ejecutar(code).unwrap();
-    assert_eq!(out, vec!["10", "HOLA MUNDO", "verdadero", "2"]);
+    let salida = ejecutar(codigo).unwrap();
+    assert_eq!(salida, vec!["10", "HOLA MUNDO", "verdadero", "2"]);
 }
 
 #[test]
 fn test_interpolacion_cadenas_llaves() {
-    let code = r#"
+    let codigo = r#"
 variable nombre = "Mundo"
 variable msg = "Hola ${nombre}!"
 escribir(msg)
 "#;
     let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
-    assert_eq!(out, vec!["Hola Mundo!"]);
+    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    assert_eq!(salida, vec!["Hola Mundo!"]);
 }
 
 /// `${...}` funciona igual en VM y JIT, y las llaves sin `$` son
 /// literales (la sintaxis `{expr}` antigua ya no interpola).
 #[test]
 fn test_interpolacion_vm_jit_y_llaves_literales() {
-    let code = r#"
+    let codigo = r#"
 variable nombre = "Forja"
 variable a = "Hola ${nombre}"
 variable b = "Hola {nombre}"
 escribir(a)
 escribir(b)
 "#;
-    let vm = forja::ejecutar_vm(code).expect("VM");
-    let jit = forja::ejecutar_jit(code).expect("JIT");
+    let vm = forja::ejecutar_vm(codigo).expect("VM");
+    let jit = forja::ejecutar_jit(codigo).expect("JIT");
     assert_eq!(vm, vec!["Hola Forja", "Hola {nombre}"]);
     assert_eq!(jit, vm);
 }
 
 #[test]
 fn test_struct_literal_init() {
-    let code = r#"
+    let codigo = r#"
 clase Persona {
     nombre
     edad
@@ -622,8 +622,8 @@ escribir(p.nombre)
 escribir(p.edad)
 "#;
     let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
-    assert_eq!(out, vec!["Ana", "25"]);
+    let salida = forja::ejecutar_con_opciones_desde(codigo, root_dir, true, None).unwrap();
+    assert_eq!(salida, vec!["Ana", "25"]);
 }
 
 // ─── closures como valor con captura de entorno ─────────────────────
