@@ -13,12 +13,12 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 
     // Validar longitud de hex strings (40 chars = 20 bytes)
     if info_hash_hex.len() != 40 {
-        let idx = vm.alloc_str(Arc::from(""));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(indice));
     }
     if peer_id_hex.len() != 40 {
-        let idx = vm.alloc_str(Arc::from(""));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(indice));
     }
 
     // Decodificar hex a bytes
@@ -26,8 +26,8 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     let peer_id = hex_a_bytes(&peer_id_hex);
 
     if info_hash.len() != 20 || peer_id.len() != 20 {
-        let idx = vm.alloc_str(Arc::from(""));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(indice));
     }
 
     // Construir handshake: 19 + "BitTorrent protocol" + 8 reserved + info_hash + peer_id
@@ -60,22 +60,25 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     // Enviar handshake (raw bytes)
     if let Err(_e) = stream.write_all(&handshake) {
         // Error al enviar, retornar vacío
-        let idx = vm.alloc_str(Arc::from(""));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(indice));
     }
 
     // Recibir respuesta de exactamente 68 bytes
-    let mut buf = [0u8; 68];
-    match stream.read_exact(&mut buf) {
+    let mut buffer = [0u8; 68];
+    match stream.read_exact(&mut buffer) {
         Ok(()) => {
-            let hex_str = buf.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-            let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-            Ok(ValorFast::texto(idx))
+            let hex_texto = buffer
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
+            let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(_e) => {
             // Timeout o desconexión, retornar vacío
-            let idx = vm.alloc_str(Arc::from(""));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(indice))
         }
     }
 }
@@ -116,23 +119,23 @@ pub fn native_bt_recibir_mensaje(
     // Leer 4 bytes de longitud (big-endian)
     let mut len_buf = [0u8; 4];
     if let Err(_e) = stream.read_exact(&mut len_buf) {
-        let idx = vm.alloc_str(Arc::from(""));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(indice));
     }
 
     let payload_len = u32::from_be_bytes(len_buf) as usize;
 
     if payload_len == 0 {
         // Keepalive
-        let idx = vm.alloc_str(Arc::from("keepalive"));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from("keepalive"));
+        return Ok(ValorFast::texto(indice));
     }
 
     // Leer payload
     let mut payload = vec![0u8; payload_len];
     if let Err(_e) = stream.read_exact(&mut payload) {
-        let idx = vm.alloc_str(Arc::from(""));
-        return Ok(ValorFast::texto(idx));
+        let indice = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(indice));
     }
 
     // Construir mensaje completo: 4 bytes de longitud + payload, retornar como hex
@@ -140,12 +143,12 @@ pub fn native_bt_recibir_mensaje(
     msg_bytes.extend_from_slice(&len_buf);
     msg_bytes.extend_from_slice(&payload);
 
-    let hex_str = msg_bytes
+    let hex_texto = msg_bytes
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Envía un mensaje del protocolo BitTorrent.
@@ -187,12 +190,12 @@ pub fn native_bt_enviar_mensaje(
     let mut stream = stream_arc.lock().unwrap();
 
     // Construir mensaje: 4 bytes de longitud (big-endian) + payload
-    let mut msg = Vec::with_capacity(4 + payload_len);
-    msg.extend_from_slice(&(payload_len as u32).to_be_bytes());
-    msg.extend_from_slice(&payload);
+    let mut mensaje = Vec::with_capacity(4 + payload_len);
+    mensaje.extend_from_slice(&(payload_len as u32).to_be_bytes());
+    mensaje.extend_from_slice(&payload);
 
-    match stream.write_all(&msg) {
-        Ok(()) => Ok(ValorFast::entero(msg.len() as i64)),
+    match stream.write_all(&mensaje) {
+        Ok(()) => Ok(ValorFast::entero(mensaje.len() as i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
 }
@@ -218,12 +221,12 @@ pub fn native_bt_verificar_pieza(
     let hash = crate::hash::Sha1::digest(&data);
     let computed_hex = crate::hash::hex_encode(&hash);
 
-    let result = if computed_hex == expected_hash_hex {
+    let resultado = if computed_hex == expected_hash_hex {
         "true"
     } else {
         "false"
     };
 
-    let idx = vm.alloc_str(Arc::from(result));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(resultado));
+    Ok(ValorFast::texto(indice))
 }
