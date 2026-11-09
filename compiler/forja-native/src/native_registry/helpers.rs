@@ -36,10 +36,10 @@ pub fn native_a_caracter(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     let ch = char::from_u32(codigo as u32).ok_or_else(|| {
         ErrFast::TipoInv(format!("a_caracter: código Unicode inválido: {}", codigo))
     })?;
-    let mut buf = [0u8; 4];
-    let s = ch.encode_utf8(&mut buf);
-    let idx = vm.alloc_str(Arc::from(s));
-    Ok(ValorFast::texto(idx))
+    let mut buffer = [0u8; 4];
+    let s = ch.encode_utf8(&mut buffer);
+    let indice = vm.alloc_str(Arc::from(s));
+    Ok(ValorFast::texto(indice))
 }
 
 pub fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
@@ -85,15 +85,15 @@ pub fn crear_valor_socket(vm: &mut dyn Host, socket_idx: u32) -> ValorFast {
             rasgos: Vec::new(),
         }
     });
-    let shape_id = vm.registro_formas().obtener_o_crear(sym_socket);
-    let mut obj = forja_runtime::ObjVal::new(sym_socket, shape_id);
+    let id_forma = vm.registro_formas().obtener_o_crear(sym_socket);
+    let mut obj = forja_runtime::ObjVal::new(sym_socket, id_forma);
     obj.campos_vec.push(ValorFast::entero(socket_idx as i64));
     let obj_idx = vm.alloc_obj(obj);
-    vm.formas_objeto_mut()[obj_idx as usize] = shape_id;
+    vm.formas_objeto_mut()[obj_idx as usize] = id_forma;
     ValorFast::objeto(obj_idx)
 }
 
-/// Resuelve una dirección de host:puerto a SocketAddr
+/// Resuelve una dirección de anfitrion:puerto a SocketAddr
 pub fn resolver_direccion(direccion: &str, puerto: u16) -> Result<std::net::SocketAddr, String> {
     let addr_str = format!("{}:{}", direccion, puerto);
     if let Ok(addr) = addr_str.parse::<std::net::SocketAddr>() {
