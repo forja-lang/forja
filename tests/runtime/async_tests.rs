@@ -4,8 +4,8 @@ use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
 /// Helper: ejecuta código Forja usando ForjaFast y retorna el output
-fn output_fast(source: &str) -> Vec<String> {
-    let mut lexer = Lexer::new(source);
+fn output_fast(fuente: &str) -> Vec<String> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -17,8 +17,8 @@ fn output_fast(source: &str) -> Vec<String> {
     vm.cargar_bytecode(bc);
     vm.set_max_inst(50000);
     vm.ejecutar().unwrap();
-    let out = vm.output.lock().unwrap().clone();
-    out
+    let salida = vm.output.lock().unwrap().clone();
+    salida
 }
 
 // ============================================================
@@ -27,7 +27,7 @@ fn output_fast(source: &str) -> Vec<String> {
 
 #[test]
 fn test_async_funcion_simple() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion asincrona foo() -> Entero {
             retornar 42
@@ -40,12 +40,12 @@ fn test_async_funcion_simple() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["42"]);
+    assert_eq!(salida, vec!["42"]);
 }
 
 #[test]
 fn test_async_con_parametros() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion asincrona suma(a: Entero, b: Entero) -> Entero {
             retornar a + b
@@ -57,12 +57,12 @@ fn test_async_con_parametros() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["7"]);
+    assert_eq!(salida, vec!["7"]);
 }
 
 #[test]
 fn test_async_multiples_llamadas() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion asincrona suma(a: Entero, b: Entero) -> Entero {
             retornar a + b
@@ -76,12 +76,12 @@ fn test_async_multiples_llamadas() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["10"]);
+    assert_eq!(salida, vec!["10"]);
 }
 
 #[test]
 fn test_async_hilo_con_retorno() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable h = hilo {
@@ -99,7 +99,7 @@ fn test_async_hilo_con_retorno() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["10"]);
+    assert_eq!(salida, vec!["10"]);
 }
 
 // ============================================================
@@ -108,7 +108,7 @@ fn test_async_hilo_con_retorno() {
 
 #[test]
 fn test_canal_basico() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -121,12 +121,12 @@ fn test_canal_basico() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["42"]);
+    assert_eq!(salida, vec!["42"]);
 }
 
 #[test]
 fn test_canal_string() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -139,12 +139,12 @@ fn test_canal_string() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["hola"]);
+    assert_eq!(salida, vec!["hola"]);
 }
 
 #[test]
 fn test_canal_multiple_mensajes() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -161,7 +161,7 @@ fn test_canal_multiple_mensajes() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["60"]);
+    assert_eq!(salida, vec!["60"]);
 }
 
 /// `try_recibir` es no bloqueante pero **sí** entrega el mensaje cuando
@@ -169,7 +169,7 @@ fn test_canal_multiple_mensajes() {
 /// comprobar nada).
 #[test]
 fn test_canal_try_recibir_entrega_mensaje() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -183,12 +183,12 @@ fn test_canal_try_recibir_entrega_mensaje() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["7", "vacio"]);
+    assert_eq!(salida, vec!["7", "vacio"]);
 }
 
 #[test]
 fn test_canal_try_recibir() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -200,7 +200,7 @@ fn test_canal_try_recibir() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["vacio"]);
+    assert_eq!(salida, vec!["vacio"]);
 }
 
 // ============================================================
@@ -209,7 +209,7 @@ fn test_canal_try_recibir() {
 
 #[test]
 fn test_async_hilo_y_canal() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             variable tx, rx = canal()
@@ -223,12 +223,12 @@ fn test_async_hilo_y_canal() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["15"]);
+    assert_eq!(salida, vec!["15"]);
 }
 
 #[test]
 fn test_async_funcion_dentro_de_hilo() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion cuadrado(x: Entero) -> Entero {
             retornar x * x
@@ -243,7 +243,7 @@ fn test_async_funcion_dentro_de_hilo() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["49"]);
+    assert_eq!(salida, vec!["49"]);
 }
 
 // ============================================================
@@ -252,7 +252,7 @@ fn test_async_funcion_dentro_de_hilo() {
 
 #[test]
 fn test_async_hilo_sin_retorno() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion main() {
             hilo {
@@ -264,12 +264,12 @@ fn test_async_hilo_sin_retorno() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["desde hilo", "fin"]);
+    assert_eq!(salida, vec!["desde hilo", "fin"]);
 }
 
 #[test]
 fn test_async_funcion_asincrona_sin_retorno_explicito() {
-    let out = output_fast(
+    let salida = output_fast(
         r#"
         funcion asincrona foo() -> Entero {
             retornar 99
@@ -281,5 +281,5 @@ fn test_async_funcion_asincrona_sin_retorno_explicito() {
         main()
         "#,
     );
-    assert_eq!(out, vec!["99"]);
+    assert_eq!(salida, vec!["99"]);
 }
