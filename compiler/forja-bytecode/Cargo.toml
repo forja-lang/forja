@@ -1,6 +1,6 @@
 [package]
 name = "forja-bytecode"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 description = "Opcodes, generador y serialización de bytecode de Forja"
 authors = ["forja-lang"]
