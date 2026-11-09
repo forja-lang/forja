@@ -2,9 +2,9 @@
 
 #[test]
 fn el_yaml_por_defecto_tiene_todas_las_claves() {
-    let dir = std::env::temp_dir().join(format!("forja_cfg_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let ruta = dir.join("forja.yaml");
+    let directorio = std::env::temp_dir().join(format!("forja_cfg_{}", std::process::id()));
+    std::fs::create_dir_all(&directorio).unwrap();
+    let ruta = directorio.join("forja.yaml");
     forja::config::escribir(&ruta, &forja::config::Config::default()).unwrap();
 
     let texto = std::fs::read_to_string(&ruta).unwrap();
@@ -50,14 +50,14 @@ motor: rapido"
 {texto}"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&directorio);
 }
 
 #[test]
 fn escribir_y_leer_conserva_los_valores() {
-    let dir = std::env::temp_dir().join(format!("forja_cfg_rt_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let ruta = dir.join("forja.yaml");
+    let directorio = std::env::temp_dir().join(format!("forja_cfg_rt_{}", std::process::id()));
+    std::fs::create_dir_all(&directorio).unwrap();
+    let ruta = directorio.join("forja.yaml");
 
     let cfg = forja::config::Config {
         motor: "jit".to_string(),
@@ -70,5 +70,5 @@ fn escribir_y_leer_conserva_los_valores() {
 
     let leido = forja::config::leer_de(&ruta).expect("el YAML escrito debe leerse");
     assert_eq!(leido, cfg);
-    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&directorio);
 }
