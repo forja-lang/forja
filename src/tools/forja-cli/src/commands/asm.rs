@@ -18,7 +18,7 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
     let target_str: Option<String> = opcion(&forja::config::actual().arquitectura);
     let output_path: Option<String> = args.get(1).cloned();
 
-    let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let fuente = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
@@ -27,7 +27,7 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
     };
 
     // Determinar target
-    let target = if let Some(ref ts) = target_str {
+    let destino = if let Some(ref ts) = target_str {
         match compiler_asm::TargetArch::desde_str(ts) {
             Some(t) => t,
             None => {
@@ -57,11 +57,11 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
         format!("{}.{}", input_stem, ext)
     });
 
-    let mut lexer = lexer::Lexer::new(&source);
+    let mut lexer = lexer::Lexer::new(&fuente);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
-            mostrar_errores(&source, &errors, error::json_mode());
+            mostrar_errores(&fuente, &errors, error::json_mode());
             process::exit(1);
         }
     };
@@ -70,13 +70,13 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
     let programa = match parser.parse() {
         Ok(p) => p,
         Err(errors) => {
-            mostrar_errores(&source, &errors, error::json_mode());
+            mostrar_errores(&fuente, &errors, error::json_mode());
             process::exit(1);
         }
     };
 
-    let asm_code = match compiler_asm::compilar_a_asm_con_target(&programa, target) {
-        Ok(code) => code,
+    let asm_code = match compiler_asm::compilar_a_asm_con_target(&programa, destino) {
+        Ok(codigo) => codigo,
         Err(errors) => {
             for err in errors {
                 eprintln!("{}", err);
@@ -91,7 +91,7 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
         Ok(_) => println!(
             "✅ Assembly generado: {} (target: {})",
             asm_path.display(),
-            target.name()
+            destino.name()
         ),
         Err(e) => {
             eprintln!("Error escribiendo '{}': {}", asm_path.display(), e);
@@ -101,15 +101,15 @@ pub(crate) fn cmd_build_asm(args: &[String]) {
 
     // Compilar con gcc: sólo tiene sentido si el target es el de la máquina anfitriona.
     let anfitrion = compiler_asm::TargetArch::detect();
-    if target != anfitrion {
+    if destino != anfitrion {
         println!(
             "ℹ️  Target cruzado ({}): no se compila con el gcc del host.",
-            target.name()
+            destino.name()
         );
         println!("   Compilá el assembly con el toolchain cruzado:");
         println!(
             "   {} -O2 -o {} {}",
-            compilador_cruzado(target),
+            compilador_cruzado(destino),
             output_path,
             asm_path.display()
         );
