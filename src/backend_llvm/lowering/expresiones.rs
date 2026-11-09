@@ -821,10 +821,23 @@ impl Lowering {
                                 ));
                                 return Ok(V::Nulo);
                             }
+                            // shortcut: por un canal nativo viaja un i64; el
+                            // receptor no puede saber si era Texto o Entero
+                            // (V es estático), así que `recibir` devuelve Entero
+                            // y un texto recibido hay que tratarlo con `a_texto`
+                            // no aplica. Upgrade: slot con tag por valor.
                             "recibir" => {
                                 let r = self.r();
                                 self.linea(&format!(
                                     "{} = call i64 @forja_canal_recibir(ptr {})",
+                                    r, c
+                                ));
+                                return Ok(V::Int(r));
+                            }
+                            "try_recibir" | "intentar_recibir" => {
+                                let r = self.r();
+                                self.linea(&format!(
+                                    "{} = call i64 @forja_canal_intentar(ptr {})",
                                     r, c
                                 ));
                                 return Ok(V::Int(r));
@@ -1094,6 +1107,12 @@ impl Lowering {
                     r, x, cant
                 ));
                 V::Arreglo(r)
+            }
+            "esperar" | "dormir" => {
+                let a0 = self.arg(nombre, args, 0)?;
+                let ms = self.como(&a0, T::Int);
+                self.linea(&format!("call void @forja_esperar(i64 {})", ms));
+                V::Nulo
             }
             "absoluto" => {
                 let v = self.arg(nombre, args, 0)?;
@@ -1868,6 +1887,45 @@ impl Lowering {
             args.extend(argumentos.iter().cloned());
             return self.llamada(metodo, &args);
         }
+        // Canal tipado con un nombre de clase que no declaramos
+        // (`CanalEmisor`/`CanalReceptor` de std/concurrencia): es un canal.
+        let estatico = self.tipo_estatico(objeto);
+        let clase_desconocida = match &estatico {
+            T::Clase(n) => !self.clases.contains_key(n),
+            _ => false,
+        };
+        if clase_desconocida
+            && matches!(
+                metodo,
+                "enviar" | "recibir" | "try_recibir" | "intentar_recibir"
+            )
+        {
+            let cargado = self.expr(objeto)?;
+            let c = self.como(&cargado, T::Canal);
+            if metodo == "enviar" {
+                let v = match argumentos.first() {
+                    Some(a) => self.expr(a)?,
+                    None => return Err("`enviar` necesita un argumento".into()),
+                };
+                let x = self.como_slot(&v);
+                self.linea(&format!(
+                    "call void @forja_canal_enviar(ptr {}, i64 {})",
+                    c, x
+                ));
+                return Ok(V::Nulo);
+            }
+            if metodo == "try_recibir" || metodo == "intentar_recibir" {
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call i64 @forja_canal_intentar(ptr {})",
+                    r, c
+                ));
+                return Ok(V::Int(r));
+            }
+            let r = self.r();
+            self.linea(&format!("{} = call i64 @forja_canal_recibir(ptr {})", r, c));
+            return Ok(V::Int(r));
+        }
         // Canal: `e.enviar(v)` / `r.recibir()`.
         if let V::Canal(c) = self.expr(objeto)? {
             match metodo {
@@ -1888,9 +1946,17 @@ impl Lowering {
                     self.linea(&format!("{} = call i64 @forja_canal_recibir(ptr {})", r, c));
                     return Ok(V::Int(r));
                 }
+                "try_recibir" | "intentar_recibir" => {
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_canal_intentar(ptr {})",
+                        r, c
+                    ));
+                    return Ok(V::Int(r));
+                }
                 otro => {
                     return Err(format!(
-                        "el canal no tiene el método `{otro}` (sólo enviar/recibir)"
+                        "el canal no tiene el método `{otro}` (sólo enviar/recibir/try_recibir)"
                     ))
                 }
             }
@@ -1988,5 +2054,7 @@ fn es_builtin(nombre: &str) -> bool {
             | "empujar"
             | "dividir"
             | "recortar"
+            | "esperar"
+            | "dormir"
     )
 }

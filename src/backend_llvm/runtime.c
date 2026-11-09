@@ -477,6 +477,22 @@ int64_t forja_canal_recibir(void *pc) {
     return n->valor;
 }
 
+/* Intenta recibir sin bloquear: 0 si no hay nada (la VM devuelve nulo). */
+int64_t forja_canal_intentar(void *pc) {
+    ForjaCanal *c = (ForjaCanal *)pc;
+    if (!c) return 0;
+    int64_t valor = 0;
+    forja_mutex_lock(&c->mutex);
+    ForjaNodo *n = c->cabeza;
+    if (n) {
+        c->cabeza = n->sig;
+        if (!c->cabeza) c->cola = NULL;
+        valor = n->valor;
+    }
+    forja_mutex_unlock(&c->mutex);
+    return valor;
+}
+
 /* Lanza `fn(entorno, indice)` en un hilo del sistema. */
 typedef void (*ForjaHiloFn)(void *entorno, int64_t indice);
 
@@ -722,4 +738,16 @@ char *forja_recortar(const char *s) {
     memcpy(r, s, n);
     r[n] = '\0';
     return r;
+}
+
+/* `esperar(ms)`: duerme el hilo actual. */
+void forja_esperar(int64_t ms) {
+#ifdef _WIN32
+    Sleep((DWORD)(ms > 0 ? ms : 0));
+#else
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+#endif
 }

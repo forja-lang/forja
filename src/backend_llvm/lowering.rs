@@ -253,6 +253,8 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_canal_nuevo", "ptr ()"),
     ("forja_canal_enviar", "void (ptr, i64)"),
     ("forja_canal_recibir", "i64 (ptr)"),
+    ("forja_canal_intentar", "i64 (ptr)"),
+    ("forja_esperar", "void (i64)"),
     ("forja_hilo_lanzar", "void (ptr, ptr)"),
     ("exit", "void (i32)"),
 ];
