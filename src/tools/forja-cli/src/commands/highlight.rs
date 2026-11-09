@@ -9,11 +9,11 @@ pub(crate) fn cmd_portable() {
         process::exit(1);
     };
 
-    let dir = exe.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    let marca = dir.join("forja.portable");
+    let directorio = exe.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let marca = directorio.join("forja.portable");
 
     if marca.exists() {
-        println!("Modo portable ya activo en {}", dir.display());
+        println!("Modo portable ya activo en {}", directorio.display());
         println!("Config, manifiesto de instalación y reportes viven en esa carpeta.");
         println!("Para desactivarlo, borrá el archivo {}", marca.display());
         return;
@@ -25,7 +25,7 @@ pub(crate) fn cmd_portable() {
         process::exit(1);
     }
 
-    println!("Modo portable activado en {}", dir.display());
+    println!("Modo portable activado en {}", directorio.display());
     println!("El estado de Forja queda en esa carpeta; `forja actualizar` reemplaza solo los archivos que cambiaron.");
     println!("Para desactivarlo, borrá {}", marca.display());
 }
@@ -36,8 +36,8 @@ pub(crate) fn cmd_highlight(args: &[String]) {
         eprintln!("Uso: forja highlight|color|colorear <archivo.fa>");
         return;
     }
-    let path = &args[0];
-    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+    let ruta = &args[0];
+    let fuente = match forja::leer_archivo_con_limite(ruta, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
@@ -53,9 +53,9 @@ pub(crate) fn cmd_highlight(args: &[String]) {
     let co = |s: &str| format!("{}{}{}", color::GRIS, s, color::RESET);
     let nu = |s: &str| format!("{}{}{}", color::AZUL, s, color::RESET);
 
-    let chars: Vec<char> = source.chars().collect();
+    let chars: Vec<char> = fuente.chars().collect();
     let mut pos = 0;
-    let len = chars.len();
+    let longitud = chars.len();
 
     let keywords = [
         "importar",
@@ -105,43 +105,45 @@ pub(crate) fn cmd_highlight(args: &[String]) {
 
     let tipos = ["Entero", "Decimal", "Texto", "Booleano", "Exacto"];
 
-    let mut output = String::new();
+    let mut salida = String::new();
 
-    while pos < len {
+    while pos < longitud {
         let ch = chars[pos];
 
         // 1. Comentarios de línea
-        if ch == '/' && pos + 1 < len && chars[pos + 1] == '/' {
-            let start = pos;
-            while pos < len && chars[pos] != '\n' {
+        if ch == '/' && pos + 1 < longitud && chars[pos + 1] == '/' {
+            let inicio = pos;
+            while pos < longitud && chars[pos] != '\n' {
                 pos += 1;
             }
-            let comment: String = chars[start..pos].iter().collect();
-            output.push_str(&co(&comment));
+            let comment: String = chars[inicio..pos].iter().collect();
+            salida.push_str(&co(&comment));
             continue;
         }
 
         // 2. Comentarios de bloque
-        if ch == '/' && pos + 1 < len && chars[pos + 1] == '*' {
-            let start = pos;
+        if ch == '/' && pos + 1 < longitud && chars[pos + 1] == '*' {
+            let inicio = pos;
             pos += 2;
-            while pos < len && !(chars[pos] == '*' && pos + 1 < len && chars[pos + 1] == '/') {
+            while pos < longitud
+                && !(chars[pos] == '*' && pos + 1 < longitud && chars[pos + 1] == '/')
+            {
                 pos += 1;
             }
-            if pos < len {
+            if pos < longitud {
                 pos += 2;
             }
-            let comment: String = chars[start..pos].iter().collect();
-            output.push_str(&co(&comment));
+            let comment: String = chars[inicio..pos].iter().collect();
+            salida.push_str(&co(&comment));
             continue;
         }
 
         // 3. Cadenas de texto (Strings)
         if ch == '"' {
-            let start = pos;
+            let inicio = pos;
             pos += 1;
             let mut escape = false;
-            while pos < len {
+            while pos < longitud {
                 let curr = chars[pos];
                 if escape {
                     escape = false;
@@ -153,17 +155,17 @@ pub(crate) fn cmd_highlight(args: &[String]) {
                 }
                 pos += 1;
             }
-            let string_lit: String = chars[start..pos].iter().collect();
-            output.push_str(&st(&string_lit));
+            let string_lit: String = chars[inicio..pos].iter().collect();
+            salida.push_str(&st(&string_lit));
             continue;
         }
 
         // 4. Caracteres literales
         if ch == '\'' {
-            let start = pos;
+            let inicio = pos;
             pos += 1;
             let mut escape = false;
-            while pos < len {
+            while pos < longitud {
                 let curr = chars[pos];
                 if escape {
                     escape = false;
@@ -175,22 +177,22 @@ pub(crate) fn cmd_highlight(args: &[String]) {
                 }
                 pos += 1;
             }
-            let char_lit: String = chars[start..pos].iter().collect();
-            output.push_str(&st(&char_lit));
+            let char_lit: String = chars[inicio..pos].iter().collect();
+            salida.push_str(&st(&char_lit));
             continue;
         }
 
         // 5. Identificadores y Palabras Clave
         if ch.is_alphabetic() || ch == '_' {
-            let start = pos;
-            while pos < len && (chars[pos].is_alphanumeric() || chars[pos] == '_') {
+            let inicio = pos;
+            while pos < longitud && (chars[pos].is_alphanumeric() || chars[pos] == '_') {
                 pos += 1;
             }
-            let ident: String = chars[start..pos].iter().collect();
+            let ident: String = chars[inicio..pos].iter().collect();
 
             // Ver si el siguiente token no-espacio es '('
             let mut next_pos = pos;
-            while next_pos < len
+            while next_pos < longitud
                 && (chars[next_pos] == ' '
                     || chars[next_pos] == '\t'
                     || chars[next_pos] == '\r'
@@ -198,31 +200,31 @@ pub(crate) fn cmd_highlight(args: &[String]) {
             {
                 next_pos += 1;
             }
-            let es_funcion = next_pos < len && chars[next_pos] == '(';
+            let es_funcion = next_pos < longitud && chars[next_pos] == '(';
 
             if keywords.contains(&ident.as_str()) {
-                output.push_str(&kw(&ident));
+                salida.push_str(&kw(&ident));
             } else if tipos.contains(&ident.as_str()) {
-                output.push_str(&ty(&ident));
+                salida.push_str(&ty(&ident));
             } else if es_funcion {
-                output.push_str(&fn_(&ident));
+                salida.push_str(&fn_(&ident));
             } else {
-                output.push_str(&ident);
+                salida.push_str(&ident);
             }
             continue;
         }
 
         // 6. Números
         if ch.is_ascii_digit() {
-            let start = pos;
+            let inicio = pos;
             let mut dot_seen = false;
-            while pos < len {
+            while pos < longitud {
                 let curr = chars[pos];
                 if curr.is_ascii_digit() {
                     pos += 1;
                 } else if curr == '.'
                     && !dot_seen
-                    && pos + 1 < len
+                    && pos + 1 < longitud
                     && chars[pos + 1].is_ascii_digit()
                 {
                     dot_seen = true;
@@ -231,17 +233,17 @@ pub(crate) fn cmd_highlight(args: &[String]) {
                     break;
                 }
             }
-            let num_lit: String = chars[start..pos].iter().collect();
-            output.push_str(&nu(&num_lit));
+            let num_lit: String = chars[inicio..pos].iter().collect();
+            salida.push_str(&nu(&num_lit));
             continue;
         }
 
         // 7. Cualquier otro caracter
-        output.push(ch);
+        salida.push(ch);
         pos += 1;
     }
 
-    print!("{}", output);
+    print!("{}", salida);
 }
 
 /// forja keywords|palabras|lista — Lista todas las palabras clave del lenguaje
