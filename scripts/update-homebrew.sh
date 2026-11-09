@@ -35,7 +35,8 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ -z "$VERSION" ]; then
-    VERSION=$(grep '^version' "$ROOT/Cargo.toml" | head -1 | cut -d'"' -f2)
+    # Cargo.toml raíz es un workspace virtual: la versión vive en el crate principal.
+    VERSION=$(awk -F'"' '/^version = /{print $2; exit}' "$ROOT/compiler/forja/Cargo.toml")
 fi
 VERSION="${VERSION#v}"
 
