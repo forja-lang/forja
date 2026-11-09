@@ -2,7 +2,7 @@ use super::*;
 
 impl NativeRegistry {
     pub fn registrar_sandbox(&mut self) {
-        // Restringir host de red
+        // Restringir anfitrion de red
         self.registrar("_sandbox_restringir_host", native_sandbox_restringir_host);
         // Restringir puerto de red
         self.registrar(
@@ -27,20 +27,20 @@ pub fn native_sandbox_restringir_host(
     vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let host = obtener_texto(vm, args[0])?;
+    let anfitrion = obtener_texto(vm, args[0])?;
     match &mut vm.sandbox().hosts_permitidos {
         Some(hosts) => {
             // Si contiene "*", empezar con lista vacía
             if hosts.iter().any(|h| h == "*") {
                 hosts.clear();
             }
-            hosts.push(host.clone());
-            // Si el host ya estaba en la lista, no duplicar
+            hosts.push(anfitrion.clone());
+            // Si el anfitrion ya estaba en la lista, no duplicar
             hosts.sort();
             hosts.dedup();
         }
         None => {
-            vm.sandbox().hosts_permitidos = Some(vec![host.clone()]);
+            vm.sandbox().hosts_permitidos = Some(vec![anfitrion.clone()]);
         }
     }
     Ok(ValorFast::nulo())
@@ -70,18 +70,18 @@ pub fn native_sandbox_restringir_directorio(
     vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let dir = obtener_texto(vm, args[0])?;
+    let directorio = obtener_texto(vm, args[0])?;
     match &mut vm.sandbox_fs().directorios_permitidos {
         Some(directorios) => {
             if directorios.iter().any(|d| d == "*") {
                 directorios.clear();
             }
-            directorios.push(dir.clone());
+            directorios.push(directorio.clone());
             directorios.sort();
             directorios.dedup();
         }
         None => {
-            vm.sandbox_fs().directorios_permitidos = Some(vec![dir.clone()]);
+            vm.sandbox_fs().directorios_permitidos = Some(vec![directorio.clone()]);
         }
     }
     Ok(ValorFast::nulo())
@@ -111,7 +111,7 @@ pub fn native_sandbox_restringir_comando(
 
 /// Retorna el estado actual del sandbox como mapa. Uso: _sandbox_estado()
 pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let mut map = std::collections::HashMap::new();
+    let mut mapa = std::collections::HashMap::new();
 
     // Estado de red
     let red = match &vm.sandbox().hosts_permitidos {
@@ -119,7 +119,7 @@ pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
         Some(_) => "restringido",
         None => "restringido",
     };
-    map.insert(
+    mapa.insert(
         "red".to_string(),
         ValorFast::texto(vm.alloc_str(Arc::from(red))),
     );
@@ -130,7 +130,7 @@ pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
         Some(_) => "restringido",
         None => "restringido",
     };
-    map.insert(
+    mapa.insert(
         "archivos".to_string(),
         ValorFast::texto(vm.alloc_str(Arc::from(archivos))),
     );
@@ -141,11 +141,11 @@ pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
         Some(_) => "restringido",
         None => "restringido",
     };
-    map.insert(
+    mapa.insert(
         "procesos".to_string(),
         ValorFast::texto(vm.alloc_str(Arc::from(procesos))),
     );
 
-    let midx = vm.alloc_map(map);
+    let midx = vm.alloc_map(mapa);
     Ok(ValorFast::mapa(midx))
 }
