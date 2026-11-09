@@ -50,6 +50,10 @@ PRESTAMOS = set(
     bytecode opcode uop token hash buffer socket byte bit ptr mut id idx vm jit gc ast hir
     ir ffi json http tls sql sandbox arena mutex crate span runtime vec std dce cse
     struct trait enum descriptor ref prop handle
+    Node ViewState Widget View Size Border BorderWidth Rect Point Color Insets Spacer
+    build rebuild on_pointer_event on_text_event on_access_event on_status_change
+    width height children child label text view widget border padding gap alignment
+    message event changed focus blur ci_class ci_id class_id
     config lint lexer parser cache enum version str
     """.split()
 )
@@ -127,7 +131,7 @@ def tokens(nombre: str) -> list[str]:
 
 def es_violacion(nombre: str) -> bool:
     """True si el nombre tiene una raíz inglesa que no es préstamo ni trait de std."""
-    if nombre in EXENTAS_GLOBALES or nombre.startswith("forja_"):
+    if nombre in EXENTAS_GLOBALES or nombre.startswith("forja_") or nombre.startswith(("Java_", "JNI_")):
         return False
     palabras = tokens(nombre)
     if not palabras:

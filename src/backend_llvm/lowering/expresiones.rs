@@ -939,7 +939,7 @@ impl Lowering {
             let mut v: Vec<(String, T)> = self
                 .vars
                 .iter()
-                .filter(|(n, _)| !n.starts_with('@'))
+                .filter(|(_, var)| !var.slot.starts_with('@'))
                 .map(|(n, var)| (n.clone(), var.t.clone()))
                 .collect();
             v.sort_by(|a, b| a.0.cmp(&b.0));
@@ -974,6 +974,9 @@ impl Lowering {
         let cuerpo_previo = std::mem::take(&mut self.cuerpos);
         let vars_previas = self.vars.clone();
         let prologo_previo = std::mem::take(&mut self.prologo);
+        let termina_previo = self.termina;
+        let ret_previo = self.ret_actual.clone();
+        let etiquetas_previas = std::mem::take(&mut self.etiquetas);
         self.termina = false;
         self.ret_actual = ret.clone();
         let mut tipos_pre = std::mem::take(&mut self.tipos_pre);
@@ -1016,6 +1019,9 @@ impl Lowering {
         self.cuerpos = cuerpo_previo;
         self.vars = vars_previas;
         self.prologo = prologo_previo;
+        self.termina = termina_previo;
+        self.ret_actual = ret_previo;
+        self.etiquetas = etiquetas_previas;
 
         let mut f = String::new();
         use std::fmt::Write as _;
@@ -1061,7 +1067,7 @@ impl Lowering {
             let mut v: Vec<(String, T)> = self
                 .vars
                 .iter()
-                .filter(|(n, _)| !n.starts_with('@'))
+                .filter(|(_, var)| !var.slot.starts_with('@'))
                 .map(|(n, var)| (n.clone(), var.t.clone()))
                 .collect();
             v.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1092,6 +1098,9 @@ impl Lowering {
         let cuerpo_previo = std::mem::take(&mut self.cuerpos);
         let vars_previas = self.vars.clone();
         let prologo_previo = std::mem::take(&mut self.prologo);
+        let termina_previo = self.termina;
+        let ret_previo = self.ret_actual.clone();
+        let etiquetas_previas = std::mem::take(&mut self.etiquetas);
         self.termina = false;
         self.ret_actual = T::Nulo;
         for (i, (nombre, t)) in capturas.iter().enumerate() {
@@ -1125,6 +1134,9 @@ impl Lowering {
         self.cuerpos = cuerpo_previo;
         self.vars = vars_previas;
         self.prologo = prologo_previo;
+        self.termina = termina_previo;
+        self.ret_actual = ret_previo;
+        self.etiquetas = etiquetas_previas;
 
         let mut f = String::new();
         use std::fmt::Write as _;
