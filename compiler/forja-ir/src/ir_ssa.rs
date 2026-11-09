@@ -478,12 +478,12 @@ pub fn promover_programa(programa: &ProgramaIr) -> ProgramaIr {
 }
 
 /// Promueve una función y las funciones anidadas que contenga.
-pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
+pub fn promover_funcion(funcion: &FuncionSsa) -> FuncionSsa {
     use crate::ir_constructor::LOCAL_BASE;
 
     // 1. Slots promovibles: declarados en esta función y locales del marco.
     let mut promovibles: HashSet<IdxMemoria> = HashSet::new();
-    for b in &func.bloques {
+    for b in &funcion.bloques {
         for inst in &b.instrucciones {
             if let Instruccion::Reservar(m) = inst {
                 if *m >= LOCAL_BASE {
@@ -493,13 +493,13 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
         }
     }
     if promovibles.is_empty() {
-        return clonar_promoviendo_anidadas(func);
+        return clonar_promoviendo_anidadas(funcion);
     }
 
     // 2. Id posicional de cada instrucción que produce valor.
     let mut id_de: HashMap<(IdBloque, usize), IdValor> = HashMap::new();
     let mut next: IdValor = IdValor(0);
-    for b in &func.bloques {
+    for b in &funcion.bloques {
         for (i, inst) in b.instrucciones.iter().enumerate() {
             if produce_valor(inst) {
                 id_de.insert((b.id, i), next);
@@ -509,12 +509,12 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
     }
 
     // 3. Dominadores y colocación de φ-nodes.
-    let arbol_dominadores = ArbolDominadores::calcular(&func.bloques);
+    let arbol_dominadores = ArbolDominadores::calcular(&funcion.bloques);
     let mut sb = ConstructorSsa::new();
     for m in &promovibles {
         sb.marcar_variable_phi(*m);
     }
-    for b in &func.bloques {
+    for b in &funcion.bloques {
         for inst in &b.instrucciones {
             if let Instruccion::Guardar(m, v) = inst {
                 if promovibles.contains(m) {
@@ -524,7 +524,7 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
             }
         }
     }
-    sb.calcular_nodos_phi(&arbol_dominadores, &func.bloques);
+    sb.calcular_nodos_phi(&arbol_dominadores, &funcion.bloques);
 
     // 4. Renombrado: recorrido del árbol de dominadores con el valor vigente de
     //    cada variable. Es lo que resuelve las cargas en orden *dentro* del
@@ -538,13 +538,13 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
         }
     }
     let bloques_por_id: HashMap<IdBloque, &BloqueBasico> =
-        func.bloques.iter().map(|b| (b.id, b)).collect();
+        funcion.bloques.iter().map(|b| (b.id, b)).collect();
 
     let mut alias: HashMap<IdValor, IdValor> = HashMap::new();
     let mut salida: HashMap<(IdBloque, IdxMemoria), IdValor> = HashMap::new();
     let mut actual: HashMap<IdxMemoria, IdValor> = HashMap::new();
     if !renombrar_bloque(
-        func.entrada,
+        funcion.entrada,
         &bloques_por_id,
         &hijos,
         &sb.nodos_phi,
@@ -554,7 +554,7 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
         &mut alias,
         &mut salida,
     ) {
-        return clonar_promoviendo_anidadas(func);
+        return clonar_promoviendo_anidadas(funcion);
     }
 
     // Rellenar los operandos de cada φ con el valor que sale de cada predecesor.
@@ -565,7 +565,7 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
             let mut operandos = Vec::with_capacity(phi.operandos.len());
             for (pred, _) in &phi.operandos {
                 let Some(&valor) = salida.get(&(*pred, phi.memoria)) else {
-                    return clonar_promoviendo_anidadas(func);
+                    return clonar_promoviendo_anidadas(funcion);
                 };
                 operandos.push((*pred, valor));
             }
@@ -581,8 +581,8 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
     // 5. Construir el flujo nuevo: φ al inicio de cada bloque y las
     //    instrucciones que no son de las variables promovidas.
     type BloqueNuevo = (IdBloque, Vec<(IdValor, Instruccion)>, Terminador);
-    let mut nuevo: Vec<BloqueNuevo> = Vec::with_capacity(func.bloques.len());
-    for b in &func.bloques {
+    let mut nuevo: Vec<BloqueNuevo> = Vec::with_capacity(funcion.bloques.len());
+    for b in &funcion.bloques {
         let mut insts: Vec<(IdValor, Instruccion)> = Vec::new();
         if let Some(phis) = phis_por_bloque.get(&b.id) {
             for phi in phis {
@@ -648,7 +648,7 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
         });
     }
     if sin_resolver {
-        return clonar_promoviendo_anidadas(func);
+        return clonar_promoviendo_anidadas(funcion);
     }
 
     // 7. Promover las funciones anidadas (closures e hilos).
@@ -663,8 +663,8 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
     }
 
     FuncionSsa {
-        nombre: func.nombre,
-        tipo_retorno: func.tipo_retorno,
+        nombre: funcion.nombre,
+        tipo_retorno: funcion.tipo_retorno,
         bloques: nuevo
             .into_iter()
             .map(|(id, insts, terminador)| BloqueBasico {
@@ -673,9 +673,9 @@ pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
                 terminador,
             })
             .collect(),
-        entrada: func.entrada,
-        cantidad_parametros: func.cantidad_parametros,
-        parametros: func.parametros.clone(),
+        entrada: funcion.entrada,
+        cantidad_parametros: funcion.cantidad_parametros,
+        parametros: funcion.parametros.clone(),
     }
 }
 
@@ -759,8 +759,8 @@ fn renombrar_bloque(
 
 /// Copia la función promoviendo sólo sus funciones anidadas (los ids no cambian
 /// porque el flujo se mantiene igual).
-fn clonar_promoviendo_anidadas(func: &FuncionSsa) -> FuncionSsa {
-    let mut nueva = func.clone();
+fn clonar_promoviendo_anidadas(funcion: &FuncionSsa) -> FuncionSsa {
+    let mut nueva = funcion.clone();
     for b in &mut nueva.bloques {
         for inst in b.instrucciones.iter_mut() {
             match inst {
@@ -1174,7 +1174,7 @@ mod tests {
 
     #[test]
     fn mem2reg_promueve_funciones_anidadas() {
-        let fuente = "funcion main() {\n    variable f = func(x) { variable y = x + 1\n retornar y }\n    escribir(f(1))\n}\nmain()";
+        let fuente = "funcion main() {\n    variable f = funcion(x) { variable y = x + 1\n retornar y }\n    escribir(f(1))\n}\nmain()";
         let ir = ir_de_fuente(fuente);
         let ssa = promover_programa(&ir);
         // El closure viaja dentro de `MakeClosure`: debe quedar promovido.
