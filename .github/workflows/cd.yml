@@ -492,18 +492,26 @@ jobs:
         shell: bash
         run: bash scripts/generar-manifiestos.sh "${VERSION}" dist
       # checksums SHA-256 de TODOS los assets, para verificación de descargas.
+      # `sha256sum *` fallaba con "winget: Is a directory": los manifiestos de
+      # generar-manifiestos.sh van en dist/winget/. Se hashean sólo archivos del
+      # primer nivel, en orden estable, y sin colar el propio SHA256SUMS (que la
+      # redirección crea vacío antes de que corra el comando).
       - name: Checksums (SHA-256)
         shell: bash
         run: |
           cd dist
           rm -f SHA256SUMS
-          sha256sum * > SHA256SUMS
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' \
+            | LC_ALL=C sort | xargs -r sha256sum > SHA256SUMS
           echo "── SHA256SUMS ──"
           cat SHA256SUMS
+      # `dist/*` incluye el directorio dist/winget/ y la acción no sabe hashear un
+      # directorio. `*.*` sólo matchea archivos con extensión (los assets), así
+      # que el directorio queda afuera sin tener que listar cada formato.
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/*
+          subject-path: dist/*.*
       # firma keyless (Sigstore/cosign) además del SHA256SUMS y la
       # atestación de procedencia. Las instalaciones pueden verificar el blob.
       - uses: sigstore/cosign-installer@v3
@@ -559,4 +567,10 @@ jobs:
             - Linux/macOS: `curl -fsSL https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.sh | sh`
             - Windows (PowerShell): `irm https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.ps1 | iex`
           generate_release_notes: true
-          files: dist/*
+          # Mismo motivo que en la atestación: `dist/*` matchea el directorio
+          # dist/winget/. Los manifiestos de winget se suben como assets planos
+          # (es el nombre que pide el PR a microsoft/winget-pkgs).
+          files: |
+            dist/*.*
+            dist/SHA256SUMS
+            dist/winget/*.yaml
