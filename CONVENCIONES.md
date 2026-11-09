@@ -1,8 +1,7 @@
 # Convenciones de nombres
 
 Fuente de verdad para nombrar código en Forja. Si un identificador no se deriva de este
-documento, no entra. El plan de migración está en
-[`plans/PLAN_ESPANOLIZAR_CODIGO.md`](plans/PLAN_ESPANOLIZAR_CODIGO.md).
+documento, no entra.
 
 > Aplica a **todo** el Rust del repo: `compiler/`, `src/`, `src/tools/`, `tests/`, `benches/` y,
 > cuando se aborde la fase 9, también `library/*`.
@@ -60,7 +59,13 @@ inicio de tipo):
 
 `bytecode`, `opcode`, `uop`, `token`, `hash`, `buffer`, `socket`, `byte`, `bit`, `ptr`, `mut`,
 `id`, `idx`, `vm`, `jit`, `gc`, `ast`, `hir`, `ir`, `ffi`, `json`, `http`, `tls`, `sql`,
-`sandbox`, `arena`, `mutex`, `crate`, `span`, `runtime`.
+`sandbox`, `arena`, `mutex`, `crate`, `span`, `runtime`, `cache`, `enum`, `lexer`, `parser`,
+`lint`, `config`, `version`.
+
+Motivo de los últimos cuatro: `Lexer`/`Parser` son los nombres de los analizadores en todo el
+ecosistema (y `forja::lexer` / `forja::parser` son API pública); `lint` es el nombre del crate, del
+comando y de la clave `lint_estricto` de `forja.yaml`; `config` es la abreviatura adoptada en
+`CONVENCIONES.md` §9 y en las claves de configuración.
 
 Sufijos técnicos permitidos: `_mut`, `_ref`, `_ptr`.
 
@@ -106,6 +111,13 @@ Abreviaturas permitidas: `id`, `idx`, `ptr`, `cfg`, `db` (solo como prefijo de m
    `vscode/forja-syntax/node_modules`.
 7. **Nombres de crate y de directorio** (`forja-vm`, `forja-span`, …): se españoliza el contenido,
    no las rutas.
+8. **Claves de configuración y de protocolo**: `forja.yaml`/`forja.json`, registry y `.fbc` son
+   formatos en el cable; sus nombres (`puerto_registry`, `lint_estricto`, `source_hash`, …) no
+   cambian aunque tengan raíz inglesa.
+9. **Structs con `#[derive(Serialize, Deserialize)]` de un protocolo externo**: hoy `forja-dap`
+   (todas sus structs son el protocolo DAP que habla VS Code) y cualquier struct del LSP que se
+   serialice. Renombrar sus campos cambia el JSON en el cable y rompe el editor: `forja-dap` queda
+   **fuera del alcance** de la españolización, salvo los locales internos de sus funciones.
 
 ## 9. Glosario núcleo
 
@@ -148,3 +160,8 @@ Abreviaturas permitidas: `id`, `idx`, `ptr`, `cfg`, `db` (solo como prefijo de m
    cada repo.
 5. La verificación automática es [`scripts/nombres.py`](scripts/nombres.py): lista negra de raíces
    inglesas, lista de excepciones justificadas y conteo por crate.
+6. Los renombres se aplican con [`scripts/renombrar.py`](scripts/renombrar.py) (simulación por
+   defecto, `--aplicar` para escribir), nunca con `sed`: respeta literales, comentarios, rutas
+   `std::`, atributos, campos de `struct`/`enum` del propio archivo y los `{campo}` de los
+   `format!`. Sólo renombra locales/parámetros/campos declarados en el archivo; los archivos con
+   muchas vinculaciones de patrón (AST) se hacen a mano.
