@@ -21,41 +21,41 @@ pub fn native_url_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
         (resto, None)
     };
     let slash_pos = host_ruta.find('/');
-    let (host, ruta) = if let Some(s) = slash_pos {
+    let (anfitrion, ruta) = if let Some(s) = slash_pos {
         (&host_ruta[..s], &host_ruta[s..])
     } else {
         (host_ruta, "/")
     };
-    let puerto_idx = host.find(':');
+    let puerto_idx = anfitrion.find(':');
     let (hostname, puerto) = if let Some(p) = puerto_idx {
-        (&host[..p], &host[p + 1..])
+        (&anfitrion[..p], &anfitrion[p + 1..])
     } else {
-        (host, "")
+        (anfitrion, "")
     };
 
     let sym = vm.tabla_simbolos().internar("URL");
-    let shape_id = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::new(sym, shape_id);
+    let id_forma = vm.registro_formas().obtener_o_crear(sym);
+    let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
     obj.campos_vec = vec![
         {
-            let idx = vm.alloc_str(Arc::from(esquema));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(esquema));
+            ValorFast::texto(indice)
         },
         {
-            let idx = vm.alloc_str(Arc::from(hostname));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(hostname));
+            ValorFast::texto(indice)
         },
         {
-            let idx = vm.alloc_str(Arc::from(puerto));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(puerto));
+            ValorFast::texto(indice)
         },
         {
-            let idx = vm.alloc_str(Arc::from(ruta));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(ruta));
+            ValorFast::texto(indice)
         },
         {
-            let idx = vm.alloc_str(Arc::from(query.unwrap_or("")));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(query.unwrap_or("")));
+            ValorFast::texto(indice)
         },
     ];
     Ok(ValorFast::objeto(vm.alloc_obj(obj)))
@@ -63,7 +63,7 @@ pub fn native_url_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
 
 pub fn native_url_construir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let esq = obtener_texto(vm, args[0])?;
-    let host = obtener_texto(vm, args[1])?;
+    let anfitrion = obtener_texto(vm, args[1])?;
     let puerto = obtener_entero(args[2])?;
     let ruta = obtener_texto(vm, args[3])?;
     let query = obtener_texto(vm, args[4])?;
@@ -77,9 +77,9 @@ pub fn native_url_construir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     } else {
         format!("?{}", query)
     };
-    let out = format!("{}://{}{}{}{}", esq, host, port_str, ruta, qs);
+    let salida = format!("{}://{}{}{}{}", esq, anfitrion, port_str, ruta, qs);
     Ok({
-        let idx = vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
