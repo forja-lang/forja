@@ -28,7 +28,7 @@ impl CsePass {
 
     /// Ejecuta CSE sobre el programa.
     pub fn cse(&mut self, programa: &Programa) -> Programa {
-        let new_decls: Vec<Declaracion> = programa
+        let declaraciones_nuevas: Vec<Declaracion> = programa
             .declaraciones
             .iter()
             .flat_map(|d| self.cse_decl(d))
@@ -38,7 +38,7 @@ impl CsePass {
             nombres: Vec::new(),
             indice_nombres: std::collections::HashMap::new(),
             span: None,
-            declaraciones: new_decls,
+            declaraciones: declaraciones_nuevas,
         }
     }
 
@@ -92,7 +92,7 @@ impl CsePass {
     fn cse_block(&mut self, decls: &[Declaracion]) -> Vec<Declaracion> {
         // Mapa: hash de expresión → (nombre de variable temporal, primera aparición)
         let mut seen: HashMap<String, String> = HashMap::new();
-        let mut result = Vec::new();
+        let mut resultado = Vec::new();
 
         for decl in decls {
             match decl {
@@ -105,7 +105,7 @@ impl CsePass {
                     if let Some(existing_var) = seen.get(&key) {
                         // CSE: reemplazar expresión con referencia a variable existente
                         self.cse_realizados += 1;
-                        result.push(Declaracion::Variable {
+                        resultado.push(Declaracion::Variable {
                             mutable: false,
                             nombre: nombre.clone(),
                             tipo: None,
@@ -119,15 +119,15 @@ impl CsePass {
                         });
                     } else {
                         seen.insert(key, nombre.clone());
-                        result.push(decl.clone());
+                        resultado.push(decl.clone());
                     }
                 }
                 _ => {
-                    result.push(decl.clone());
+                    resultado.push(decl.clone());
                 }
             }
         }
-        result
+        resultado
     }
 
     fn expr_hash_key(expr: &Expresion) -> String {
