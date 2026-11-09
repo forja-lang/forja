@@ -9,8 +9,8 @@ use std::sync::Arc;
 // Missing TokenKind coverage
 // ============================================================
 
-fn kinds(source: &str) -> Vec<TokenKind> {
-    let mut lexer = Lexer::new(source);
+fn kinds(fuente: &str) -> Vec<TokenKind> {
+    let mut lexer = Lexer::new(fuente);
     lexer
         .tokenize()
         .unwrap()
@@ -87,8 +87,8 @@ fn test_tk_doc_comment_exact() {
 // Missing Declaracion coverage
 // ============================================================
 
-fn parse(source: &str) -> forja::ast::Programa {
-    let mut lexer = Lexer::new(source);
+fn parse(fuente: &str) -> forja::ast::Programa {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     parser.parse().unwrap()
