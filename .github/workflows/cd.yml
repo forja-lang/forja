@@ -222,7 +222,12 @@ jobs:
           key: ${{ matrix.name }}
       - name: Compilar toolchain (forja, forja-lsp, forja-dap)
         shell: bash
-        run: cargo build --locked --release --target ${{ matrix.target }} --bins --features all --verbose
+        run: |
+          # Los tres crates no están en default-members: `--bins` a secas sólo
+          # construía `forja` y el empaquetado buscaba forja-lsp/forja-dap.
+          cargo build --locked --release --target ${{ matrix.target }} -p forja-cli --bin forja --features forja/all --verbose
+          cargo build --locked --release --target ${{ matrix.target }} -p forja-lsp --features lsp --verbose
+          cargo build --locked --release --target ${{ matrix.target }} -p forja-dap --features dap --verbose
       - name: Compilar forja-rt
         shell: bash
         run: cargo build --locked -p forja-rt --release --target ${{ matrix.target }} --verbose
@@ -250,7 +255,7 @@ jobs:
           dotnet tool install --global wix --version 5.0.2
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           dotnet build installer/bootstrapper/ForjaBA.csproj -c Release
-          $version = (Select-String -Path Cargo.toml -Pattern '^version').Line.Split('"')[1]
+          $version = (Select-String -Path compiler/forja/Cargo.toml -Pattern '^version').Line.Split('"')[1]
           # Un solo MSI per-user (sin pedir permisos) + bundle con la UI.
           wix build -arch x64 -d Version=$version -d PathSystem=yes -d PathRoot=HKLM `
                     -o forja-installer-x64.msi installer/msi.wxs
@@ -260,7 +265,7 @@ jobs:
         if: matrix.unix
         shell: bash
         run: |
-          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          VERSION=$(awk -F'"' '/^version = /{print $2; exit}' compiler/forja/Cargo.toml)
           PKG="forja-${VERSION}-${{ matrix.name }}"
           BIN="target/${{ matrix.target }}/release"
           mkdir -p "pack/$PKG"
@@ -278,7 +283,7 @@ jobs:
         if: '!matrix.unix'
         shell: pwsh
         run: |
-          $version = (Select-String -Path Cargo.toml -Pattern '^version').Line.Split('"')[1]
+          $version = (Select-String -Path compiler/forja/Cargo.toml -Pattern '^version').Line.Split('"')[1]
           $pkg = "forja-$version-${{ matrix.name }}"
           $bin = "target/${{ matrix.target }}/release"
           New-Item -ItemType Directory -Force -Path "pack/$pkg" | Out-Null
@@ -452,7 +457,7 @@ jobs:
         with:
           path: artifacts
       - name: Get version
-        run: echo "VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)" >> $GITHUB_ENV
+        run: echo "VERSION=$(awk -F'"' '/^version = /{print $2; exit}' compiler/forja/Cargo.toml)" >> $GITHUB_ENV
       - name: Recolectar assets del release
         shell: bash
         run: |
