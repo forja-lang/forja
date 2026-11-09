@@ -525,7 +525,7 @@ impl LlvmBackend {
         if let Some(idx) = funcion_indice {
             // Crear manager temporal para generar stack maps
             let mut gc_mgr = GcIntrinsicsManager::nuevo();
-            let function_id = gc_mgr.nuevo_funcion_id();
+            let id_funcion = gc_mgr.nuevo_funcion_id();
 
             // Analizar los bloques de la función para encontrar loops (back-edges)
             let blocks = self.module.functions[idx].blocks.clone();
@@ -545,7 +545,7 @@ impl LlvmBackend {
                                 self.inject_gc_poll_at_block(
                                     idx,
                                     block_idx,
-                                    function_id,
+                                    id_funcion,
                                     &mut gc_mgr,
                                 );
                                 break;
@@ -556,7 +556,7 @@ impl LlvmBackend {
                                 self.inject_gc_poll_at_block(
                                     idx,
                                     block_idx,
-                                    function_id,
+                                    id_funcion,
                                     &mut gc_mgr,
                                 );
                                 break;
@@ -573,34 +573,34 @@ impl LlvmBackend {
         &mut self,
         funcion_indice: usize,
         block_idx: usize,
-        function_id: u32,
+        id_funcion: u32,
         gc_mgr: &mut GcIntrinsicsManager,
     ) {
         // Crear un stack map para este safe point
-        let stack_map = PilaMapa {
-            function_id,
+        let mapa_pila = PilaMapa {
+            id_funcion,
             safe_point_offset: (block_idx * 8) as u32, // offset aproximado
             gc_slots: vec![
                 GcPilaSlot {
                     offset: -8,
-                    is_root: true,
+                    es_raiz: true,
                 },
                 GcPilaSlot {
                     offset: -16,
-                    is_root: true,
+                    es_raiz: true,
                 },
             ],
             gc_registers: vec![GcRegister {
                 name: "RDI",
-                is_root: true,
+                es_raiz: true,
             }],
         };
 
         // Registrar el stack map y safe point
-        gc_mgr.register_pila_mapa(stack_map.clone());
+        gc_mgr.register_pila_mapa(mapa_pila.clone());
         gc_mgr.register_safe_point(SafePoint {
             pc_offset: (block_idx * 8) as u32,
-            stack_map,
+            mapa_pila,
             frame_depth: 1,
         });
 

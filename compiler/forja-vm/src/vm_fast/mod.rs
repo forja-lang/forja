@@ -253,8 +253,8 @@ impl ForjaFast {
             stack: Vec::with_capacity(256),
             frame_buffer: [FrmFast {
                 ip_ret: 0,
-                func_version: 0,
-                func_sym: IdSimbolo(0),
+                funcion_version: 0,
+                funcion_simbolo: IdSimbolo(0),
             }; 2048],
             frame_count: 0,
             frame_locals: vec![Vec::with_capacity(64)], // root frame
@@ -864,10 +864,10 @@ impl ForjaFast {
 
     /// Referencia mutable al Vec de variables locales del frame actual.
     #[inline(always)]
-    fn sacar_locals(&mut self, vars_size: usize) -> Vec<ValorFast> {
+    fn sacar_locals(&mut self, tamano_variables: usize) -> Vec<ValorFast> {
         let mut locals = self.frame_locals_pool.pop().unwrap_or_default();
         locals.clear();
-        locals.resize(vars_size, ValorFast::nulo());
+        locals.resize(tamano_variables, ValorFast::nulo());
         locals
     }
 
@@ -976,10 +976,10 @@ impl ForjaFast {
         self.funciones.clear();
         self.funcion_params.clear();
 
-        // Primera pasada: indexar labels, funciones, y calcular vars_size
+        // Primera pasada: indexar labels, funciones, y calcular tamano_variables
         let mut etiqueta_positions: HashMap<usize, usize> = HashMap::new();
         let mut registos_pendientes: Vec<(IdSimbolo, usize, usize, Option<IdSimbolo>)> = Vec::new();
-        // Pre-calcular rangos de funciones para limitar escaneo de vars_size
+        // Pre-calcular rangos de funciones para limitar escaneo de tamano_variables
         let mut funcion_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
         for (i, op) in self.bytecode.iter().enumerate() {
             if let Opcode::DefinirFuncion(_, _) = op {
@@ -994,7 +994,7 @@ impl ForjaFast {
         for (i, op) in self.bytecode.iter().enumerate() {
             match op {
                 Opcode::DefinirFuncion(n, params) => {
-                    // Calcular vars_size: solo escanear el cuerpo de la función
+                    // Calcular tamano_variables: solo escanear el cuerpo de la función
                     let mut max_idx: usize = params.len();
                     let end = funcion_ranges
                         .iter()
@@ -1073,7 +1073,7 @@ impl ForjaFast {
                         sym_id,
                         FuncionFast {
                             ip: i + 1,
-                            vars_size: max_idx,
+                            tamano_variables: max_idx,
                             version: 1u32,
                         },
                     );
@@ -1090,8 +1090,8 @@ impl ForjaFast {
         }
 
         // Segunda sub-pasada: registrar funciones diferidas (ya no hay borrow de self.bytecode)
-        for (sym_id, ip, vars_size, module_id) in &registos_pendientes {
-            self.registrar_funcion(*sym_id, *ip, *vars_size, *module_id);
+        for (sym_id, ip, tamano_variables, id_modulo) in &registos_pendientes {
+            self.registrar_funcion(*sym_id, *ip, *tamano_variables, *id_modulo);
         }
 
         // Convertir llamadas por nombre a llamadas directas cuando la función
@@ -1313,8 +1313,8 @@ impl ForjaFast {
             // Buscar método en la clase y su MRO
             for &clase_id in &desc.mro {
                 if let Some(ancestor) = self.runtime.class_descriptors.get(&clase_id) {
-                    if let Some(&func_sym) = ancestor.metodos.get(&metodo_sym) {
-                        return Some(func_sym);
+                    if let Some(&funcion_simbolo) = ancestor.metodos.get(&metodo_sym) {
+                        return Some(funcion_simbolo);
                     }
                 }
             }
@@ -1482,7 +1482,7 @@ impl ForjaFast {
 
         // Frame más interno: la función actualmente en ejecución.
         let sym_actual = if self.frame_count > 0 {
-            self.frame_buffer[self.frame_count - 1].func_sym
+            self.frame_buffer[self.frame_count - 1].funcion_simbolo
         } else {
             IdSimbolo(0)
         };
@@ -1496,7 +1496,7 @@ impl ForjaFast {
         while idx > 1 {
             idx -= 1;
             let frame = self.frame_buffer[idx - 1];
-            let nombre = self.nombre_funcion(frame.func_sym);
+            let nombre = self.nombre_funcion(frame.funcion_simbolo);
             let linea = self.linea_de_ip(frame.ip_ret);
             lineas.push(formatear_frame_backtrace(&nombre, linea));
         }
@@ -1505,7 +1505,7 @@ impl ForjaFast {
         // `frame_buffer`; lo añadimos al final si el frame más externo no es
         // ya el raíz (`IdSimbolo(0)`).
         let mas_externo = if self.frame_count > 0 {
-            self.frame_buffer[0].func_sym
+            self.frame_buffer[0].funcion_simbolo
         } else {
             IdSimbolo(0)
         };

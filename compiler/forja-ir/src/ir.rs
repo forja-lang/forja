@@ -189,8 +189,8 @@ pub enum Instruccion {
     /// Parámetro de función (el índice corresponde al orden de los parámetros)
     Parametro(usize),
 
-    // === φ-node ===
-    /// φ-node: valor de la variable de memoria `memoria` en una unión de caminos.
+    // === φ-nodo ===
+    /// φ-nodo: valor de la variable de memoria `memoria` en una unión de caminos.
     /// Cada operando es `(bloque_predecesor, valor)`; el conversor los baja a
     /// copias en las aristas (predecesor → slot del φ).
     Phi(IdxMemoria, Vec<(IdBloque, IdValor)>),
@@ -725,7 +725,7 @@ impl ConstructorIr {
         v
     }
 
-    /// φ-node para la variable de memoria `memoria`, con un operando por predecesor.
+    /// φ-nodo para la variable de memoria `memoria`, con un operando por predecesor.
     pub fn emitir_phi(
         &mut self,
         memoria: IdxMemoria,

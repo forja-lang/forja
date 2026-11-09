@@ -282,7 +282,7 @@ impl InformacionBucles {
     }
 }
 
-/// φ-node de una variable de memoria en un bloque de unión.
+/// φ-nodo de una variable de memoria en un bloque de unión.
 #[derive(Debug, Clone)]
 pub struct VariablePhi {
     /// Variable promovida.

@@ -5,7 +5,7 @@
 //! `.fa` representativos:
 //!
 //!   * [`forja::compilar_pipeline_completa`]        — CANÓNICO, sin imports.
-//!   * [`forja::compilar_pipeline_completa_desde`]  — CANÓNICO, resuelve imports desde `root_dir`.
+//!   * [`forja::compilar_pipeline_completa_desde`]  — CANÓNICO, resuelve imports desde `directorio_raiz`.
 //!
 //! Tras el alias `compilar_pipeline()` es un wrapper deprecado; este test
 //! comprueba que **sigue delegando** en el entrypoint canónico sin divergir.

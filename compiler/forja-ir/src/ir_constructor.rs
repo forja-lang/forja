@@ -1398,7 +1398,7 @@ impl ConstructorDesdeAst {
         let name_sym = self.simbolos.internar("main");
         let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = self.simbolos.clone();
-        let entrada = constructor_ir.nuevo_bloque();
+        let _entrada = constructor_ir.nuevo_bloque();
 
         // Marcas @derive: la VM las consulta al comparar/imprimir objetos.
         // Deben emitirse en `main` igual que en el backend AST para que las
@@ -1524,7 +1524,7 @@ impl ConstructorDesdeAst {
         // del closure y de sus parámetros signifiquen lo mismo en ambos.
         constructor_ir.simbolos = anfitrion.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(&nombre);
-        let entrada = constructor_ir.nuevo_bloque();
+        let _entrada = constructor_ir.nuevo_bloque();
 
         // La firma es `(__entorno, p1, ..., pn)`: el entorno viaja como primer
         // argumento para que una llamada indirecta lo pase siempre.
@@ -1618,7 +1618,7 @@ impl ConstructorDesdeAst {
         let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = anfitrion.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(&nombre);
-        let entrada = constructor_ir.nuevo_bloque();
+        let _entrada = constructor_ir.nuevo_bloque();
 
         let mut params_ir = Vec::with_capacity(capturadas.len());
         for (i, cap) in capturadas.iter().enumerate() {
@@ -1656,7 +1656,7 @@ impl ConstructorDesdeAst {
         let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = self.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(nombre);
-        let entrada = constructor_ir.nuevo_bloque();
+        let _entrada = constructor_ir.nuevo_bloque();
 
         let mut params_ir = Vec::with_capacity(parametros.len());
         for (i, p) in parametros.iter().enumerate() {
@@ -1701,7 +1701,7 @@ impl ConstructorDesdeAst {
         };
         let nombre_completo = format!("{}.{}", clase, nombre_metodo);
         let name_sym = constructor_ir.simbolos.internar(&nombre_completo);
-        let entrada = constructor_ir.nuevo_bloque();
+        let _entrada = constructor_ir.nuevo_bloque();
 
         self.mapa_variables.insert("self".to_string(), LOCAL_BASE);
         let mut params_ir = vec![(constructor_ir.simbolos.internar("self"), TipoIr::Puntero)];

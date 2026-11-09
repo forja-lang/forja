@@ -48,10 +48,10 @@ impl DiagramGenerator {
         for exit in exits.split(',') {
             if exit.contains('|') {
                 let parts: Vec<&str> = exit.split('|').collect();
-                let node = parts[0];
+                let nodo = parts[0];
                 let etiqueta = parts[1];
                 self.salida
-                    .push_str(&format!("    {} -- {} --> {}\n", node, etiqueta, destino));
+                    .push_str(&format!("    {} -- {} --> {}\n", nodo, etiqueta, destino));
             } else {
                 self.salida
                     .push_str(&format!("    {} --> {}\n", exit, destino));
@@ -85,7 +85,7 @@ impl DiagramGenerator {
     fn gen_block(
         &mut self,
         decls: &[Declaracion],
-        padre: &str,
+        _padre: &str,
     ) -> (Option<String>, Option<String>) {
         let mut primero: Option<String> = None;
         let mut ultimo: Option<String> = None;
@@ -121,12 +121,12 @@ impl DiagramGenerator {
                     .as_ref()
                     .map(|v| format!(" = {}", self.ec(v)))
                     .unwrap_or_default();
-                let node = self.sumar_nodo(&format!("{kw} {nombre}{ts}{vs}"), "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo(&format!("{kw} {nombre}{ts}{vs}"), "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::Asignacion { nombre, valor, .. } => {
-                let node = self.sumar_nodo(&format!("{nombre} = {}", self.ec(valor)), "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo(&format!("{nombre} = {}", self.ec(valor)), "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::AsignacionMiembro {
                 objeto,
@@ -134,12 +134,12 @@ impl DiagramGenerator {
                 valor,
                 ..
             } => {
-                let node = self.sumar_nodo(
+                let nodo = self.sumar_nodo(
                     &format!("{}.{miembro} = {}", self.ec(objeto), self.ec(valor)),
                     "[",
                     "]",
                 );
-                (Some(node.clone()), Some(node))
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::AsignacionIndex {
                 nombre,
@@ -147,12 +147,12 @@ impl DiagramGenerator {
                 valor,
                 ..
             } => {
-                let node = self.sumar_nodo(
+                let nodo = self.sumar_nodo(
                     &format!("{nombre}[{}] = {}", self.ec(indice), self.ec(valor)),
                     "[",
                     "]",
                 );
-                (Some(node.clone()), Some(node))
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::Funcion {
                 nombre,
@@ -366,12 +366,12 @@ impl DiagramGenerator {
             }
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
                 let args: Vec<String> = argumentos.iter().map(|a| self.ec(a)).collect();
-                let node = self.sumar_nodo(&format!("{nombre}({})", args.join(", ")), "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo(&format!("{nombre}({})", args.join(", ")), "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::AccesoMiembro { objeto, miembro } => {
-                let node = self.sumar_nodo(&format!("{}.{miembro}", self.ec(objeto)), "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo(&format!("{}.{miembro}", self.ec(objeto)), "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::Retornar { valor } => {
                 let etiqueta = if let Some(v) = valor {
@@ -379,16 +379,16 @@ impl DiagramGenerator {
                 } else {
                     "retornar".to_string()
                 };
-                let node = self.sumar_nodo(&etiqueta, "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo(&etiqueta, "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::Romper => {
-                let node = self.sumar_nodo("romper", "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo("romper", "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::Continuar => {
-                let node = self.sumar_nodo("continuar", "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo("continuar", "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::Importar(r) => {
                 self.salida
@@ -451,18 +451,18 @@ impl DiagramGenerator {
                 (None, None)
             }
             Declaracion::Expresion(expr) => {
-                let node = self.sumar_nodo(&self.ec(expr), "[", "]");
-                (Some(node.clone()), Some(node))
+                let nodo = self.sumar_nodo(&self.ec(expr), "[", "]");
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::AsignacionMultiple {
                 variables, valor, ..
             } => {
-                let node = self.sumar_nodo(
+                let nodo = self.sumar_nodo(
                     &format!("{} = {}", variables.join(", "), self.ec(valor)),
                     "[",
                     "]",
                 );
-                (Some(node.clone()), Some(node))
+                (Some(nodo.clone()), Some(nodo))
             }
             Declaracion::ImportarExterna(_) => (None, None),
         }

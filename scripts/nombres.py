@@ -49,7 +49,7 @@ PRESTAMOS = set(
     """
     bytecode opcode uop token hash buffer socket byte bit ptr mut id idx vm jit gc ast hir
     ir ffi json http tls sql sandbox arena mutex crate span runtime vec std dce cse
-    struct trait enum
+    struct trait enum descriptor
     config lint lexer parser cache enum version str
     """.split()
 )
@@ -65,6 +65,9 @@ TRAITS_STD = set(
 # Nombres que son de otro dominio y no se traducen.
 EXENTAS_GLOBALES = set(
     """main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
+    WriteProcessMemory ReadProcessMemory VirtualAlloc VirtualFree CreateProcessW
+    OUTPUT_HANDLE_IS_NULL_HEAP_READ_ONLY CWA
+    native_registry package_resolver registry_remote registry_server
     puerto_registry String Vec HashMap HashSet Path PathBuf Arc Rc RefCell
     serialize deserialize expecting visit_bool visit_i64 visit_u64 visit_str visit_string
     visit_map visit_seq visit_none visit_some visit_unit""".split()

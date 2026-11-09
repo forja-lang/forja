@@ -401,7 +401,7 @@ pub fn leer_de(ruta: &Path) -> Option<Config> {
 #[derive(Debug, Clone)]
 pub struct Sesion {
     pub config: Config,
-    pub source_map: forja_span::FuenteMapa,
+    pub mapa_fuente: forja_span::FuenteMapa,
     pub diagnosticos: Vec<forja_errors::Diagnostico>,
 }
 
@@ -409,7 +409,7 @@ impl Sesion {
     pub fn nueva(config: Config) -> Self {
         Sesion {
             config,
-            source_map: forja_span::FuenteMapa::new(),
+            mapa_fuente: forja_span::FuenteMapa::new(),
             diagnosticos: Vec::new(),
         }
     }
@@ -417,7 +417,7 @@ impl Sesion {
     pub fn por_defecto() -> Self {
         Sesion {
             config: Config::default(),
-            source_map: forja_span::FuenteMapa::new(),
+            mapa_fuente: forja_span::FuenteMapa::new(),
             diagnosticos: Vec::new(),
         }
     }
@@ -427,7 +427,7 @@ impl Sesion {
         nombre: impl Into<std::path::PathBuf>,
         fuente: impl Into<String>,
     ) -> forja_span::ArchivoId {
-        self.source_map.agregar(nombre, fuente)
+        self.mapa_fuente.agregar(nombre, fuente)
     }
 
     pub fn emitir(&mut self, diagnostico: forja_errors::Diagnostico) {
@@ -456,7 +456,7 @@ dos",
         );
         let span = forja_span::Span::nuevo(f, 4, 7);
         s.emitir(forja_errors::Diagnostico::error("E1", "mal").con_span(span));
-        assert_eq!(s.source_map.ubicacion(span).unwrap().linea, 2);
+        assert_eq!(s.mapa_fuente.ubicacion(span).unwrap().linea, 2);
         assert_eq!(s.diagnosticos.len(), 1);
         assert_eq!(s.diagnosticos[0].principal(), Some(span));
     }

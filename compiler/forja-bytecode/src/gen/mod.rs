@@ -637,8 +637,8 @@ impl GeneradorBytecode {
 }
 
 impl ModuloBytecode {
-    /// Escanea los codigos del módulo y extrae (nombre_función, ip_start, vars_size)
-    /// para cada FunctionDef, calculando vars_size recorriendo el cuerpo de cada función.
+    /// Escanea los codigos del módulo y extrae (nombre_función, ip_start, tamano_variables)
+    /// para cada FunctionDef, calculando tamano_variables recorriendo el cuerpo de cada función.
     pub fn desglosar(&self) -> Vec<(String, usize, usize)> {
         let mut rangos_funciones: Vec<(usize, usize)> = Vec::new();
         for (i, op) in self.codigos.iter().enumerate() {

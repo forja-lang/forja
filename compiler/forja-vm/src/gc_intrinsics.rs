@@ -18,14 +18,14 @@ pub struct GcPilaSlot {
     /// Offset desde el frame pointer
     pub offset: i32,
     /// Es puntero raíz (debe ser rastreado por el GC)
-    pub is_root: bool,
+    pub es_raiz: bool,
 }
 
 /// Mapa de stack para una función compilada
 #[derive(Debug, Clone)]
 pub struct PilaMapa {
     /// ID único de esta función
-    pub function_id: u32,
+    pub id_funcion: u32,
     /// Punto de safe point (offset del PC donde el GC puede pausar)
     pub safe_point_offset: u32,
     /// Slots de stack que contienen punteros GC
@@ -40,7 +40,7 @@ pub struct GcRegister {
     /// Nombre del registro (RAX, RCX, etc.)
     pub name: &'static str,
     /// ¿Es raíz GC?
-    pub is_root: bool,
+    pub es_raiz: bool,
 }
 
 /// Write barrier — se inserta antes de cada Store que escribe un puntero GC
@@ -71,7 +71,7 @@ pub struct SafePoint {
     /// Offset del PC donde está el safe point
     pub pc_offset: u32,
     /// Mapa de stack asociado a este safe point
-    pub stack_map: PilaMapa,
+    pub mapa_pila: PilaMapa,
     /// Número de frames en la call stack en este punto
     pub frame_depth: u32,
 }
@@ -103,8 +103,8 @@ impl GcIntrinsicsManager {
     }
 
     /// Registra un stack map para una función
-    pub fn register_pila_mapa(&mut self, stack_map: PilaMapa) {
-        self.pila_maps.push(stack_map);
+    pub fn register_pila_mapa(&mut self, mapa_pila: PilaMapa) {
+        self.pila_maps.push(mapa_pila);
     }
 
     /// Registra un safe point
@@ -113,26 +113,26 @@ impl GcIntrinsicsManager {
     }
 
     /// Retorna el stack map más cercano a un PC dado
-    pub fn buscar_pila_mapa(&self, function_id: u32, pc_offset: u32) -> Option<&PilaMapa> {
+    pub fn buscar_pila_mapa(&self, id_funcion: u32, pc_offset: u32) -> Option<&PilaMapa> {
         self.pila_maps
             .iter()
-            .filter(|sm| sm.function_id == function_id)
+            .filter(|sm| sm.id_funcion == id_funcion)
             .min_by_key(|sm| pc_offset.abs_diff(sm.safe_point_offset))
     }
 
     /// Retorna todos los safe points de una función
-    pub fn safe_points_for(&self, function_id: u32) -> Vec<&SafePoint> {
+    pub fn safe_points_for(&self, id_funcion: u32) -> Vec<&SafePoint> {
         self.safe_points
             .iter()
-            .filter(|sp| sp.stack_map.function_id == function_id)
+            .filter(|sp| sp.mapa_pila.id_funcion == id_funcion)
             .collect()
     }
 
     /// Verifica si un PC está en un safe point
-    pub fn es_safe_point(&self, function_id: u32, pc_offset: u32) -> bool {
+    pub fn es_safe_point(&self, id_funcion: u32, pc_offset: u32) -> bool {
         self.safe_points
             .iter()
-            .any(|sp| sp.stack_map.function_id == function_id && sp.pc_offset == pc_offset)
+            .any(|sp| sp.mapa_pila.id_funcion == id_funcion && sp.pc_offset == pc_offset)
     }
 
     /// Cuenta el número total de safe points
@@ -179,8 +179,8 @@ impl LlvmGcPatterns {
     }
 
     /// Genera el LLVM IR para un safe point
-    pub fn emitir_safe_point(_function_id: u32, stack_map: &PilaMapa) -> String {
-        let num_roots = stack_map.gc_slots.iter().filter(|s| s.is_root).count();
+    pub fn emitir_safe_point(_function_id: u32, mapa_pila: &PilaMapa) -> String {
+        let num_roots = mapa_pila.gc_slots.iter().filter(|s| s.es_raiz).count();
         format!(
             "; GC safe point ({} roots)\n  call void @llvm.experimental.gc.safepoint()",
             num_roots
@@ -207,20 +207,20 @@ mod tests {
         let fid = mgr.nuevo_funcion_id();
 
         let sm = PilaMapa {
-            function_id: fid,
+            id_funcion: fid,
             safe_point_offset: 100,
             gc_slots: vec![
                 GcPilaSlot {
                     offset: -8,
-                    is_root: true,
+                    es_raiz: true,
                 },
                 GcPilaSlot {
                     offset: -16,
-                    is_root: true,
+                    es_raiz: true,
                 },
                 GcPilaSlot {
                     offset: -24,
-                    is_root: false,
+                    es_raiz: false,
                 },
             ],
             gc_registers: vec![],
@@ -239,8 +239,8 @@ mod tests {
 
         let sp = SafePoint {
             pc_offset: 50,
-            stack_map: PilaMapa {
-                function_id: fid,
+            mapa_pila: PilaMapa {
+                id_funcion: fid,
                 safe_point_offset: 50,
                 gc_slots: vec![],
                 gc_registers: vec![],
@@ -288,13 +288,13 @@ mod tests {
         let fid = mgr.nuevo_funcion_id();
 
         mgr.register_pila_mapa(PilaMapa {
-            function_id: fid,
+            id_funcion: fid,
             safe_point_offset: 100,
             gc_slots: vec![],
             gc_registers: vec![],
         });
         mgr.register_pila_mapa(PilaMapa {
-            function_id: fid,
+            id_funcion: fid,
             safe_point_offset: 200,
             gc_slots: vec![],
             gc_registers: vec![],

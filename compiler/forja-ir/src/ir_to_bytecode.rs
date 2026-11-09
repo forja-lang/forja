@@ -473,8 +473,8 @@ impl ConversorABytecode {
                 bytecode.push(Opcode::No);
                 guardar!(bytecode);
             }
-            Instruccion::Llamar(func_sym, args) => {
-                let nombre = self.simbolos.nombre_de(*func_sym).to_string();
+            Instruccion::Llamar(funcion_simbolo, args) => {
+                let nombre = self.simbolos.nombre_de(*funcion_simbolo).to_string();
                 if nombre == "escribir" {
                     for arg in args {
                         let var = self.operando(arg);
@@ -787,7 +787,7 @@ mod tests {
 
         let mut builder = ConstructorIr::nuevo();
         builder.simbolos = simbolos.clone();
-        let entrada = builder.nuevo_bloque();
+        let _entrada = builder.nuevo_bloque();
         let param0 = builder.emitir_parametro(0); // v0
         let resultado = builder.emitir_suma(param0, param0); // v1
         builder.terminar_con_retorno(Some(resultado));
@@ -819,7 +819,7 @@ mod tests {
 
         let mut builder = ConstructorIr::nuevo();
         builder.simbolos = simbolos.clone();
-        let entrada = builder.nuevo_bloque();
+        let _entrada = builder.nuevo_bloque();
         let _v0 = builder.emitir_const_entero(42);
         let _v1 = builder.emitir_const_decimal(2.5);
         let _v2 = builder.emitir_const_booleano(true);
@@ -849,7 +849,7 @@ mod tests {
         let nombre_funcion = simbolos.internar("main");
         let mut builder = ConstructorIr::nuevo();
         builder.simbolos = simbolos.clone();
-        let entrada = builder.nuevo_bloque();
+        let _entrada = builder.nuevo_bloque();
 
         // s = 0
         builder.emitir_reserva(IdxMemoria(0));

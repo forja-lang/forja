@@ -441,7 +441,7 @@ pub fn homogeneizar_exacto_fast(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i1
 #[derive(Clone)]
 pub struct FuncionFast {
     pub ip: usize,
-    pub vars_size: usize,
+    pub tamano_variables: usize,
     pub version: u32,
 }
 
@@ -449,9 +449,9 @@ pub struct FuncionFast {
 #[derive(Clone, Copy, Debug)]
 pub struct FuncionVersion {
     pub ip: usize,                    // Instruction pointer dentro del bytecode
-    pub vars_size: usize,             // Tamaño del frame de variables locales
+    pub tamano_variables: usize,      // Tamaño del frame de variables locales
     pub version: u32,                 // Número de versión (se incrementa en cada recarga)
-    pub module_id: Option<IdSimbolo>, // Módulo al que pertenece (None = builtin/nativa)
+    pub id_modulo: Option<IdSimbolo>, // Módulo al que pertenece (None = builtin/nativa)
 }
 
 /// Tabla de indirección de funciones con soporte de versionado
@@ -518,11 +518,11 @@ pub struct FrmFast {
     // soportar hot-reload (invalidación de frames obsoletos) pero todavía no
     // se lee; reservado para la verificación de versión en retorno.
     #[allow(dead_code)]
-    pub func_version: u32,
+    pub funcion_version: u32,
     // símbolo de la función que se está ejecutando en este frame.
     // Permite reconstruir el backtrace con nombres de función Forja.
     // `IdSimbolo(0)` = frame raíz (código de nivel superior, sin función).
-    pub func_sym: IdSimbolo,
+    pub funcion_simbolo: IdSimbolo,
 }
 
 #[derive(Debug, Clone)]

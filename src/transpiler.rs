@@ -2141,7 +2141,7 @@ impl Transpiler {
                 }
 
                 // Fallback: generar como while
-                let temporal_name = format!("__para_{}", self.temporal_counter);
+                let _temporal_name = format!("__para_{}", self.temporal_counter);
                 self.temporal_counter += 1;
 
                 if let Some(init) = inicializacion {

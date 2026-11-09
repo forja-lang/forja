@@ -11,8 +11,8 @@ impl ForjaFast {
         &mut self,
         sym: IdSimbolo,
         ip: usize,
-        vars_size: usize,
-        module_id: Option<IdSimbolo>,
+        tamano_variables: usize,
+        id_modulo: Option<IdSimbolo>,
     ) -> usize {
         let version = self.function_versions.get(&sym).copied().unwrap_or(1);
         let idx = self
@@ -22,9 +22,9 @@ impl ForjaFast {
             .unwrap_or(usize::MAX);
         let entry = FuncionVersion {
             ip,
-            vars_size,
+            tamano_variables,
             version,
-            module_id,
+            id_modulo,
         };
 
         if idx == usize::MAX {
@@ -53,9 +53,9 @@ impl ForjaFast {
             let version = self.function_versions.get(&sym).copied().unwrap_or(0) + 1;
             self.function_table.entries[idx] = FuncionVersion {
                 ip: nueva_ip,
-                vars_size: nuevo_vars_tamano,
+                tamano_variables: nuevo_vars_tamano,
                 version,
-                module_id: self.function_table.entries[idx].module_id,
+                id_modulo: self.function_table.entries[idx].id_modulo,
             };
             self.function_versions.insert(sym, version);
             true
@@ -85,20 +85,20 @@ impl ForjaFast {
     /// 1. Preserva el bytecode anterior en `bytecode_pool` (para frames activos).
     /// 2. Reemplaza el rango [start, end) del módulo en `self.bytecode`.
     /// 3. Re-mapea todas las funciones del módulo en `function_table`.
-    /// 4. Actualiza `module_registry[module_id].version`.
+    /// 4. Actualiza `module_registry[id_modulo].version`.
     /// 5. Re-inicializa inline caches y aplica quickening.
     ///
     /// El módulo debe estar registrado en `modulo_bytecode_ranges`.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn hot_swap_modulo(
         &mut self,
-        module_id: ModuleId,
+        id_modulo: ModuleId,
         nuevo_bc: &ModuloBytecode,
     ) -> Result<(), String> {
         // 1. Determinar la versión actual y calcular la nueva
         let version_actual = self
             .module_registry
-            .get(&module_id)
+            .get(&id_modulo)
             .map(|informacion| informacion.version)
             .unwrap_or(0);
         let nueva_version = version_actual + 1;
@@ -112,12 +112,12 @@ impl ForjaFast {
         // 3. Obtener el rango que ocupa el módulo en self.bytecode
         let (start, end) = self
             .modulo_bytecode_ranges
-            .get(&module_id)
+            .get(&id_modulo)
             .copied()
             .ok_or_else(|| {
                 format!(
                     "hot_swap_module: módulo {} no está registrado en modulo_bytecode_ranges",
-                    module_id.0
+                    id_modulo.0
                 )
             })?;
         let old_longitud = end - start;
@@ -143,7 +143,7 @@ impl ForjaFast {
             let otros: Vec<(ModuleId, (usize, usize))> = self
                 .modulo_bytecode_ranges
                 .iter()
-                .filter(|(id, _)| **id != module_id)
+                .filter(|(id, _)| **id != id_modulo)
                 .map(|(id, &range)| (*id, range))
                 .collect();
             for (other_id, (other_start, other_end)) in otros {
@@ -162,30 +162,30 @@ impl ForjaFast {
         // 5. Actualizar rango del módulo
         let nuevo_end = start + nuevo_longitud;
         self.modulo_bytecode_ranges
-            .insert(module_id, (start, nuevo_end));
+            .insert(id_modulo, (start, nuevo_end));
 
         // 6. Re-mapear funciones del módulo en la function_table
         let funciones = nuevo_bc.desglosar();
-        for (nombre, ip_rel, vars_size) in &funciones {
+        for (nombre, ip_rel, tamano_variables) in &funciones {
             let sym = self.runtime.tabla_simbolos.internar(nombre.as_str());
             let ip_absoluta = start + ip_rel;
 
             if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
                 self.function_table.entries[idx] = FuncionVersion {
                     ip: ip_absoluta,
-                    vars_size: *vars_size,
+                    tamano_variables: *tamano_variables,
                     version: nueva_version,
-                    module_id: Some(module_id),
+                    id_modulo: Some(id_modulo),
                 };
                 self.function_versions.insert(sym, nueva_version);
             } else {
-                self.registrar_funcion(sym, ip_absoluta, *vars_size, Some(module_id));
+                self.registrar_funcion(sym, ip_absoluta, *tamano_variables, Some(id_modulo));
                 self.function_versions.insert(sym, nueva_version);
             }
         }
 
         // 7. Actualizar versión en module_registry
-        if let Some(informacion) = self.module_registry.get_mut(&module_id) {
+        if let Some(informacion) = self.module_registry.get_mut(&id_modulo) {
             informacion.version = nueva_version;
         }
 

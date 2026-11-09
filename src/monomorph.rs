@@ -84,7 +84,7 @@ pub struct GenericInstantiation {
     /// Nombre original de la función/clase genérica
     pub original_name: String,
     /// Parámetros genéricos con sus tipos concretos
-    pub type_args: Vec<(String, ConcreteTipo)>,
+    pub argumentos_tipo: Vec<(String, ConcreteTipo)>,
     /// Nombre especializado resultante
     pub specialized_name: String,
 }
@@ -233,12 +233,12 @@ impl Monomorphizer {
                 // Detectar si la función es genérica y crear instanciación
                 if let Some(generic) = self.generic_functions.get(nombre) {
                     if !generic.parametros_tipo.is_empty() {
-                        let type_args = self.infer_tipo_args_for_fn(generic, argumentos);
-                        if !type_args.is_empty() {
+                        let argumentos_tipo = self.infer_tipo_args_for_fn(generic, argumentos);
+                        if !argumentos_tipo.is_empty() {
                             let specialized_name = format!(
                                 "{}_{}",
                                 nombre,
-                                type_args
+                                argumentos_tipo
                                     .iter()
                                     .map(|(_, ct)| ct.name())
                                     .collect::<Vec<_>>()
@@ -252,7 +252,7 @@ impl Monomorphizer {
                             {
                                 self.instantiations.push(GenericInstantiation {
                                     original_name: nombre.clone(),
-                                    type_args,
+                                    argumentos_tipo,
                                     specialized_name,
                                 });
                             }
@@ -268,12 +268,13 @@ impl Monomorphizer {
                 // Detectar si la clase es genérica y crear instanciación
                 if let Some(generic_class) = self.generic_classes.get(clase) {
                     if !generic_class.parametros_tipo.is_empty() {
-                        let type_args = self.infer_tipo_args_for_clase(generic_class, argumentos);
-                        if !type_args.is_empty() {
+                        let argumentos_tipo =
+                            self.infer_tipo_args_for_clase(generic_class, argumentos);
+                        if !argumentos_tipo.is_empty() {
                             let specialized_name = format!(
                                 "{}_{}",
                                 clase,
-                                type_args
+                                argumentos_tipo
                                     .iter()
                                     .map(|(_, ct)| ct.name())
                                     .collect::<Vec<_>>()
@@ -287,7 +288,7 @@ impl Monomorphizer {
                             {
                                 self.instantiations.push(GenericInstantiation {
                                     original_name: clase.clone(),
-                                    type_args,
+                                    argumentos_tipo,
                                     specialized_name,
                                 });
                             }
@@ -339,7 +340,7 @@ impl Monomorphizer {
         generic: &FuncionGenerica,
         argumentos: &[Expresion],
     ) -> Vec<(String, ConcreteTipo)> {
-        let mut type_args = Vec::new();
+        let mut argumentos_tipo = Vec::new();
         // Para cada parámetro de tipo, intentar inferir su tipo concreto
         for param_tipo in &generic.parametros_tipo {
             // Buscar un parámetro de función que use este parámetro de tipo
@@ -349,7 +350,7 @@ impl Monomorphizer {
                         // Intentar inferir del argumento correspondiente
                         if let Some(arg) = argumentos.get(i) {
                             if let Some(concrete) = self.infer_concrete_from_expr(arg) {
-                                type_args.push((param_tipo.nombre.clone(), concrete));
+                                argumentos_tipo.push((param_tipo.nombre.clone(), concrete));
                                 break;
                             }
                         }
@@ -357,7 +358,7 @@ impl Monomorphizer {
                 }
             }
         }
-        type_args
+        argumentos_tipo
     }
 
     /// Infiere tipos concretos para los parámetros de tipo de una clase genérica.
@@ -366,13 +367,13 @@ impl Monomorphizer {
         generic: &ClaseGenerica,
         argumentos: &[Expresion],
     ) -> Vec<(String, ConcreteTipo)> {
-        let mut type_args = Vec::new();
+        let mut argumentos_tipo = Vec::new();
         // Para construcciones de clase, intentar inferir de los campos
         // Simplificación: si solo hay un parámetro de tipo, infiere del primer argumento
         if generic.parametros_tipo.len() == 1 {
             if let Some(arg) = argumentos.first() {
                 if let Some(concrete) = self.infer_concrete_from_expr(arg) {
-                    type_args.push((generic.parametros_tipo[0].nombre.clone(), concrete));
+                    argumentos_tipo.push((generic.parametros_tipo[0].nombre.clone(), concrete));
                 }
             }
         }
@@ -381,12 +382,12 @@ impl Monomorphizer {
             for (i, param_tipo) in generic.parametros_tipo.iter().enumerate() {
                 if let Some(arg) = argumentos.get(i) {
                     if let Some(concrete) = self.infer_concrete_from_expr(arg) {
-                        type_args.push((param_tipo.nombre.clone(), concrete));
+                        argumentos_tipo.push((param_tipo.nombre.clone(), concrete));
                     }
                 }
             }
         }
-        type_args
+        argumentos_tipo
     }
 
     /// Intenta inferir un ConcreteType a partir de una expresión.
@@ -442,7 +443,7 @@ impl Monomorphizer {
                 let nuevo_tipo = p
                     .tipo
                     .as_ref()
-                    .and_then(|t| self.reemplazar_tipo_params(t, &inst.type_args));
+                    .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo));
                 Parametro {
                     nombre: p.nombre.clone(),
                     prestado: p.prestado,
@@ -459,7 +460,7 @@ impl Monomorphizer {
             tipo_retorno: generic
                 .tipo_retorno
                 .as_ref()
-                .and_then(|t| self.reemplazar_tipo_params(t, &inst.type_args)),
+                .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo)),
             cuerpo: generic.cuerpo.clone(), // Simplificación: cuerpo sin reemplazo de tipos
             externa: false,
             asincrona: false,
@@ -483,7 +484,7 @@ impl Monomorphizer {
                 let nuevo_tipo = c
                     .tipo
                     .as_ref()
-                    .and_then(|t| self.reemplazar_tipo_params(t, &inst.type_args));
+                    .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo));
                 VariableClase {
                     nombre: c.nombre.clone(),
                     tipo: nuevo_tipo,
@@ -504,12 +505,12 @@ impl Monomorphizer {
     fn reemplazar_tipo_params(
         &self,
         tipo: &Tipo,
-        type_args: &[(String, ConcreteTipo)],
+        argumentos_tipo: &[(String, ConcreteTipo)],
     ) -> Option<Tipo> {
         match tipo {
             Tipo::Parametro(nombre) => {
                 // Buscar el parámetro de tipo en los argumentos concretos
-                for (param_name, concrete) in type_args {
+                for (param_name, concrete) in argumentos_tipo {
                     if param_name == nombre {
                         return Some(self.concrete_to_tipo(concrete));
                     }
@@ -517,10 +518,10 @@ impl Monomorphizer {
                 Some(tipo.clone())
             }
             Tipo::Arreglo(inner) => Some(Tipo::Arreglo(Box::new(
-                self.reemplazar_tipo_params(inner, type_args)?,
+                self.reemplazar_tipo_params(inner, argumentos_tipo)?,
             ))),
             Tipo::Opcion(inner) => Some(Tipo::Opcion(Box::new(
-                self.reemplazar_tipo_params(inner, type_args)?,
+                self.reemplazar_tipo_params(inner, argumentos_tipo)?,
             ))),
             _ => Some(tipo.clone()),
         }
@@ -645,7 +646,7 @@ mod tests {
         );
         let inst = GenericInstantiation {
             original_name: "doble".to_string(),
-            type_args: vec![("T".to_string(), ConcreteTipo::Entero)],
+            argumentos_tipo: vec![("T".to_string(), ConcreteTipo::Entero)],
             specialized_name: "doble_Entero".to_string(),
         };
         mono.instantiations.push(inst);

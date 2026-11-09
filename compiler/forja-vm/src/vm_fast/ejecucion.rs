@@ -949,11 +949,11 @@ impl ForjaFast {
                             }
                             self.frame_buffer[self.frame_count] = FrmFast {
                                 ip_ret: next_ip,
-                                func_version: entry.version,
-                                func_sym: sym_id,
+                                funcion_version: entry.version,
+                                funcion_simbolo: sym_id,
                             };
                             self.frame_count += 1;
-                            let vars_tamano = entry.vars_size.max(*nargs);
+                            let vars_tamano = entry.tamano_variables.max(*nargs);
                             let mut locals = self.sacar_locals(vars_tamano);
                             for i in (0..*nargs).rev() {
                                 locals[i] = self.desapilar_valor()?;
@@ -1157,18 +1157,18 @@ impl ForjaFast {
                                 .get(*func_idx)
                                 .cloned()
                                 .unwrap_or_default();
-                            let func_sym = if nombre_pgo.is_empty() {
+                            let funcion_simbolo = if nombre_pgo.is_empty() {
                                 IdSimbolo(0)
                             } else {
                                 self.runtime.tabla_simbolos.internar(&nombre_pgo)
                             };
                             self.frame_buffer[self.frame_count] = FrmFast {
                                 ip_ret: next_ip,
-                                func_version: entry.version,
-                                func_sym,
+                                funcion_version: entry.version,
+                                funcion_simbolo,
                             };
                             self.frame_count += 1;
-                            let vars_tamano = entry.vars_size.max(*nargs);
+                            let vars_tamano = entry.tamano_variables.max(*nargs);
                             let mut locals = self.sacar_locals(vars_tamano);
                             for i in (0..*nargs).rev() {
                                 locals[i] = self.desapilar_valor()?;

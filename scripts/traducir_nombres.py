@@ -177,6 +177,27 @@ def traducir(nombre: str, forzar: bool = False) -> str | None:
 
 RE_IDENT = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
+RE_FN_INI = re.compile(r"\bfn\s+([a-z_][a-z0-9_]*)")
+
+
+def cuerpos_de_funciones(codigo: str) -> list[str]:
+    """Texto de cada función del archivo (alcance aproximado para chequear colisiones)."""
+    cuerpos: list[str] = []
+    for m in RE_FN_INI.finditer(codigo):
+        inicio = codigo.find("{", m.end())
+        if inicio < 0:
+            continue
+        profundidad = 0
+        for i in range(inicio, len(codigo)):
+            if codigo[i] == "{":
+                profundidad += 1
+            elif codigo[i] == "}":
+                profundidad -= 1
+                if profundidad == 0:
+                    cuerpos.append(codigo[m.start():i + 1])
+                    break
+    return cuerpos
+
 
 def recolectar(archivos: list[Path]) -> dict:
     """Identificadores de toda la crate: violaciones, presentes e ítems declarados."""
@@ -254,7 +275,15 @@ def main(argv: list[str]) -> int:
         codigo = ruta.read_text(encoding="utf-8", errors="ignore")
         sin_texto = "".join(t for t, es_codigo in renombrar.segmentar(codigo) if es_codigo)
         presentes = set(RE_IDENT.findall(sin_texto))
-        mapa_archivo = {k: v for k, v in mapa.items() if v not in presentes}
+        cuerpos = cuerpos_de_funciones(sin_texto)
+
+        def choca(origen: str, destino: str) -> bool:
+            # mismo nombre nuevo en la misma función: se pisa, no se toca
+            return any(origen in cuerpo and destino in cuerpo for cuerpo in cuerpos)
+
+        mapa_archivo = {
+            k: v for k, v in mapa.items() if v not in presentes or not choca(k, v)
+        }
         total += renombrar.procesar(
             ruta,
             mapa_archivo,

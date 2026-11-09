@@ -140,12 +140,12 @@ impl ForjaFast {
                             }
                             self.frame_buffer[self.frame_count] = FrmFast {
                                 ip_ret: self.ip + 1,
-                                func_version: entry.version,
-                                func_sym: fn_sym,
+                                funcion_version: entry.version,
+                                funcion_simbolo: fn_sym,
                             };
                             self.frame_count += 1;
                             let total_vars = 1 + nargs;
-                            let vars_tamano = entry.vars_size.max(total_vars);
+                            let vars_tamano = entry.tamano_variables.max(total_vars);
                             let mut locals = vec![ValorFast::nulo(); vars_tamano];
                             locals[0] = ValorFast::objeto(idx);
                             for (i, arg) in args.into_iter().enumerate() {
@@ -169,12 +169,12 @@ impl ForjaFast {
                         }
                         self.frame_buffer[self.frame_count] = FrmFast {
                             ip_ret: self.ip + 1,
-                            func_version: entry.version,
-                            func_sym: fn_sym,
+                            funcion_version: entry.version,
+                            funcion_simbolo: fn_sym,
                         };
                         self.frame_count += 1;
                         let total_vars = 1 + nargs;
-                        let vars_tamano = entry.vars_size.max(total_vars);
+                        let vars_tamano = entry.tamano_variables.max(total_vars);
                         let mut locals = vec![ValorFast::nulo(); vars_tamano];
                         locals[0] = ValorFast::objeto(idx);
                         for (i, arg) in args.into_iter().enumerate() {
@@ -284,12 +284,12 @@ impl ForjaFast {
                                     }
                                     self.frame_buffer[self.frame_count] = FrmFast {
                                         ip_ret: self.ip + 1,
-                                        func_version: entry.version,
-                                        func_sym: IdSimbolo(*method_sym_id),
+                                        funcion_version: entry.version,
+                                        funcion_simbolo: IdSimbolo(*method_sym_id),
                                     };
                                     self.frame_count += 1;
                                     let total_vars = 1 + nargs;
-                                    let vars_tamano = entry.vars_size.max(total_vars);
+                                    let vars_tamano = entry.tamano_variables.max(total_vars);
                                     let mut locals = vec![ValorFast::nulo(); vars_tamano];
                                     locals[0] = ValorFast::objeto(obj_idx);
                                     for (i, arg) in args.into_iter().enumerate() {
@@ -415,12 +415,12 @@ impl ForjaFast {
                             }
                             self.frame_buffer[self.frame_count] = FrmFast {
                                 ip_ret: self.ip + 1,
-                                func_version: entry.version,
-                                func_sym: fn_sym,
+                                funcion_version: entry.version,
+                                funcion_simbolo: fn_sym,
                             };
                             self.frame_count += 1;
                             let total_vars = 1 + nargs;
-                            let vars_tamano = entry.vars_size.max(total_vars);
+                            let vars_tamano = entry.tamano_variables.max(total_vars);
                             let mut locals = vec![ValorFast::nulo(); vars_tamano];
                             locals[0] = ValorFast::objeto(idx);
                             for (i, arg) in args.into_iter().enumerate() {
@@ -449,12 +449,12 @@ impl ForjaFast {
                         }
                         self.frame_buffer[self.frame_count] = FrmFast {
                             ip_ret: self.ip + 1,
-                            func_version: entry.version,
-                            func_sym: fn_sym,
+                            funcion_version: entry.version,
+                            funcion_simbolo: fn_sym,
                         };
                         self.frame_count += 1;
                         let total_vars = 1 + nargs;
-                        let vars_tamano = entry.vars_size.max(total_vars);
+                        let vars_tamano = entry.tamano_variables.max(total_vars);
                         let mut locals = vec![ValorFast::nulo(); vars_tamano];
                         locals[0] = ValorFast::objeto(idx);
                         for (i, arg) in args.into_iter().enumerate() {

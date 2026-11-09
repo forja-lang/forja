@@ -1357,7 +1357,7 @@ fn ejecutar_o(dbg: &mut Debugger) -> Result<(), ErrFast> {
 ///
 /// Usa el mismo mecanismo que ForjaFast::ejecutar para Call:
 /// 1. Lookup de función via `lookup_funcion_entrada` (soporta hot-reload)
-/// 2. Creación de FrmFast con ip_ret, func_version
+/// 2. Creación de FrmFast con ip_ret, funcion_version
 /// 3. Push de nuevo frame_locals Vec para el nuevo ámbito
 /// 4. Paso de argumentos en los índices 0, 1, 2...
 fn ejecutar_llamada_depuracion(
@@ -1380,8 +1380,8 @@ fn ejecutar_llamada_depuracion(
         // Guardar frame actual
         dbg.vm.frame_buffer[dbg.vm.frame_count] = FrmFast {
             ip_ret: dbg.vm.ip, // ip ya incrementado por Call handler
-            func_version: entry.version,
-            func_sym: sym,
+            funcion_version: entry.version,
+            funcion_simbolo: sym,
         };
         dbg.vm.frame_count += 1;
 
@@ -1393,7 +1393,7 @@ fn ejecutar_llamada_depuracion(
         args.reverse();
 
         // Crear nuevo frame con variables locales
-        let vars_tamano = entry.vars_size.max(nargs);
+        let vars_tamano = entry.tamano_variables.max(nargs);
         let mut locals = vec![ValorFast::nulo(); vars_tamano];
         for (i, arg) in args.into_iter().enumerate() {
             locals[i] = arg;

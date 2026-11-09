@@ -347,7 +347,7 @@ fun bar(x) {
             nombres
         );
 
-        // foo tiene 2 parámetros → vars_size >= 2
+        // foo tiene 2 parámetros → tamano_variables >= 2
         let (_name, _ip, vars_foo) = funciones.iter().find(|(n, _, _)| n == "foo").unwrap();
         assert!(
             *vars_foo >= 2,
@@ -355,7 +355,7 @@ fun bar(x) {
             vars_foo
         );
 
-        // bar tiene 1 parámetro → vars_size >= 1
+        // bar tiene 1 parámetro → tamano_variables >= 1
         let (_name, _ip, vars_bar) = funciones.iter().find(|(n, _, _)| n == "bar").unwrap();
         assert!(
             *vars_bar >= 1,

@@ -75,7 +75,7 @@ impl ForjaFast {
                     let hilo_chan_rx_monticulo = self.runtime.chan_rx_heap.clone();
                     let hilo_salida = self.salida.clone();
                     let hilo_ip = entry.ip;
-                    let hilo_vars_tamano = entry.vars_size.max(nargs);
+                    let hilo_vars_tamano = entry.tamano_variables.max(nargs);
                     // Canal para recibir resultado del hilo (usa CanalValor
                     // para transportar strings correctamente entre VMs)
                     let (tx_result, rx_result) = std::sync::mpsc::channel::<CanalValor>();
@@ -120,8 +120,8 @@ impl ForjaFast {
                             hilo_vm.salida = hilo_salida;
                             hilo_vm.frame_buffer[0] = FrmFast {
                                 ip_ret: hilo_vm.bytecode.len(),
-                                func_version: 0,
-                                func_sym: IdSimbolo(0),
+                                funcion_version: 0,
+                                funcion_simbolo: IdSimbolo(0),
                             };
                             hilo_vm.frame_count = 1;
                             hilo_vm.ip = hilo_ip;

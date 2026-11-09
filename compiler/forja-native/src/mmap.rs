@@ -16,7 +16,7 @@ pub struct MmapRegion {
     pub addr: *mut u8,
     pub len: usize,
     #[allow(dead_code)]
-    pub file_offset: u64,
+    pub desplazamiento_archivo: u64,
     pub writable: bool,
 }
 
@@ -132,7 +132,7 @@ mod unix {
         Ok(registrar(MmapRegion {
             addr,
             len: mapa_longitud,
-            file_offset: aligned_offset,
+            desplazamiento_archivo: aligned_offset,
             writable,
         }))
     }
@@ -248,7 +248,7 @@ mod windows_impl {
         Ok(registrar(MmapRegion {
             addr,
             len: mapa_longitud,
-            file_offset: aligned_offset,
+            desplazamiento_archivo: aligned_offset,
             writable,
         }))
     }

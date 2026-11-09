@@ -534,7 +534,10 @@ pub fn transpilar_desde_ir(
 /// Resuelve los imports en un programa Forja usando un ModuloResolver.
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
+pub fn resolver_imports(
+    source: &str,
+    directorio_raiz: &std::path::Path,
+) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
     use crate::module::ModuloResolver;
     use crate::package_resolver::PaqueteResolver;
@@ -547,10 +550,12 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // 2. Resolver imports recursivamente con ModuloResolver
-    let project_directorio = if root_dir.is_file() {
-        root_dir.parent().unwrap_or(std::path::Path::new("."))
+    let project_directorio = if directorio_raiz.is_file() {
+        directorio_raiz
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
     } else {
-        root_dir
+        directorio_raiz
     };
     let mut modulo_resolver = ModuloResolver::nuevo(project_directorio.to_str().unwrap_or("."));
     modulo_resolver.package_resolver = Some(PaqueteResolver::nuevo(project_directorio));
@@ -987,10 +992,10 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     // FASE 1-2: Resolver imports y obtener el AST completo.
-    let programa = resolver_imports(source, root_dir)?;
+    let programa = resolver_imports(source, directorio_raiz)?;
 
     // FASE 3+: núcleo único del pipeline a bytecode (sin lógica duplicada).
     compilar_pipeline_nucleo(programa, tiene_imports(source))
@@ -1001,10 +1006,10 @@ pub fn compilar_pipeline_completa_desde(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_con_sesion(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
     sesion: &forja_session::Sesion,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let programa = resolver_imports(source, root_dir)?;
+    let programa = resolver_imports(source, directorio_raiz)?;
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::Auto,
@@ -1019,9 +1024,9 @@ pub fn compilar_pipeline_completa_desde_con_sesion(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_ir(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let programa = resolver_imports(source, root_dir)?;
+    let programa = resolver_imports(source, directorio_raiz)?;
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::Ir,
@@ -1035,9 +1040,9 @@ pub fn compilar_pipeline_completa_desde_ir(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_ast(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let programa = resolver_imports(source, root_dir)?;
+    let programa = resolver_imports(source, directorio_raiz)?;
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::SoloAst,
@@ -1172,13 +1177,13 @@ pub fn compilar_modulo(
 pub fn compilar_con_cache(
     source: &str,
     modulo_ruta: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
 ) -> Result<Vec<bytecode::Opcode>, String> {
     // 1. Calcular hash del source
     let fuente_hash = hash_fuente(source);
 
     // 2. Intentar cargar caché incremental
-    let mut cache = incremental_cache::IncrementalCache::nuevo(root_dir);
+    let mut cache = incremental_cache::IncrementalCache::nuevo(directorio_raiz);
 
     // 3. Verificar cache hit
     if let Some(cached_opcodes) = cache.get(modulo_ruta, fuente_hash) {
@@ -1189,7 +1194,7 @@ pub fn compilar_con_cache(
     // 4. Cache miss — compilar normalmente.
     // Resolver imports (el núcleo del pipeline se delega al entrypoint canónico
     // `compilar_pipeline_nucleo`; comportamiento idéntico al previo ).
-    let programa = resolver_imports(source, root_dir)?;
+    let programa = resolver_imports(source, directorio_raiz)?;
 
     // Extraer imports (antes de consumir el AST) para invalidación transitiva.
     // Nota: `resolver_imports` ya inlinea los `Importar`, así que esta lista
@@ -1216,10 +1221,13 @@ pub fn compilar_con_cache(
 /// Compila y ejecuta código Forja usando caché incremental.
 /// Reutiliza bytecode cacheado cuando el source no ha cambiado.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Vec<String>, String> {
+pub fn ejecutar_con_cache(
+    source: &str,
+    directorio_raiz: &std::path::Path,
+) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
 
-    let bytecode = compilar_con_cache(source, "main", root_dir)?;
+    let bytecode = compilar_con_cache(source, "main", directorio_raiz)?;
     let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
@@ -1231,7 +1239,7 @@ pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Ve
 }
 
 /// Compila múltiples módulos en paralelo usando rayon.
-/// Cada elemento de `modulos` es `(source_code, module_id)`.
+/// Cada elemento de `modulos` es `(source_code, id_modulo)`.
 /// Los módulos deben ser independientes entre sí (sin dependencias mutuas).
 #[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
 pub fn compilar_modulos_paralelo(
@@ -1265,8 +1273,11 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn ejecutar_desde(source: &str, root_dir: &std::path::Path) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde(source, root_dir, true, None)
+pub fn ejecutar_desde(
+    source: &str,
+    directorio_raiz: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    ejecutar_con_opciones_desde(source, directorio_raiz, true, None)
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones
@@ -1319,11 +1330,11 @@ pub fn ejecutar_con_sesion(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde_impl(source, root_dir, verificar_contratos, sandbox, false)
+    ejecutar_con_opciones_desde_impl(source, directorio_raiz, verificar_contratos, sandbox, false)
 }
 
 /// Igual que `ejecutar_con_opciones_desde` pero fuerza el modo fast-math
@@ -1333,23 +1344,23 @@ pub fn ejecutar_con_opciones_desde(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde_fast_math(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde_impl(source, root_dir, verificar_contratos, sandbox, true)
+    ejecutar_con_opciones_desde_impl(source, directorio_raiz, verificar_contratos, sandbox, true)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn ejecutar_con_opciones_desde_impl(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
     fast_math: bool,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let (bytecode, contratos) = compilar_pipeline_completa_desde(source, root_dir)?;
+    let (bytecode, contratos) = compilar_pipeline_completa_desde(source, directorio_raiz)?;
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
@@ -1380,13 +1391,13 @@ fn ejecutar_con_opciones_desde_impl(
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde_backtrace(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, (String, Vec<String>)> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) =
-        compilar_pipeline_completa_desde(source, root_dir).map_err(|e| (e, Vec::new()))?;
+        compilar_pipeline_completa_desde(source, directorio_raiz).map_err(|e| (e, Vec::new()))?;
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
@@ -1569,23 +1580,23 @@ pub fn ejecutar_con_pgo(source: &str) -> Result<Vec<String>, String> {
 /// lee/escribe `.forjaprof`).
 pub fn ejecutar_con_pgo_desde(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_pgo_impl(source, root_dir, false)
+    ejecutar_con_pgo_impl(source, directorio_raiz, false)
 }
 
 /// Ejecuta aplicando un perfil existente (`.forjaprof`) sin volver a
 /// recolectar: las decisiones del perfil guían la ejecución actual.
 pub fn ejecutar_con_pgo_usar(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_pgo_impl(source, root_dir, true)
+    ejecutar_con_pgo_impl(source, directorio_raiz, true)
 }
 
 fn ejecutar_con_pgo_impl(
     source: &str,
-    root_dir: &std::path::Path,
+    directorio_raiz: &std::path::Path,
     solo_usar: bool,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
@@ -1594,7 +1605,7 @@ fn ejecutar_con_pgo_impl(
     let (bytecode, contratos) = compilar_pipeline_completa(source)?;
 
     // 2. Cargar perfil previo si existe
-    let mgr = pgo::ProfileManager::nuevo(root_dir);
+    let mgr = pgo::ProfileManager::nuevo(directorio_raiz);
     let perfil_previo = mgr.load();
 
     let mut vm = ForjaFast::nuevo();

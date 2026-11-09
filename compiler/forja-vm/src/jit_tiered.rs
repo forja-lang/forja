@@ -130,7 +130,7 @@ pub struct CompiledCode {
     /// Puntero al código máquina en memoria executable
     pub code_ptr: *const u8,
     /// Tamaño del código en bytes
-    pub code_size: usize,
+    pub tamano_codigo: usize,
     /// Tier al que pertenece
     pub tier: Tier,
 }
@@ -305,7 +305,7 @@ mod tests {
         // Simular compilación
         let code = CompiledCode {
             code_ptr: std::ptr::null(),
-            code_size: 100,
+            tamano_codigo: 100,
             tier: Tier::JitSimple,
         };
         jit.marcar_compiled("bar", Tier::JitSimple, code);
@@ -322,7 +322,7 @@ mod tests {
         // Compilar
         let code = CompiledCode {
             code_ptr: std::ptr::null(),
-            code_size: 100,
+            tamano_codigo: 100,
             tier: Tier::JitSimple,
         };
         jit.marcar_compiled("baz", Tier::JitSimple, code);
