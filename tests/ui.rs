@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 
 fn quitar_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next();
-            for c in chars.by_ref() {
+    let mut caracteres = s.chars().peekable();
+    while let Some(c) = caracteres.next() {
+        if c == '\x1b' && caracteres.peek() == Some(&'[') {
+            caracteres.next();
+            for c in caracteres.by_ref() {
                 if c.is_ascii_alphabetic() {
                     break;
                 }
@@ -24,9 +24,9 @@ fn quitar_ansi(s: &str) -> String {
     out.replace("\r\n", "\n")
 }
 
-fn casos(dir: &Path, out: &mut Vec<PathBuf>) {
-    for e in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("no se pudo leer {}: {e}", dir.display()))
+fn casos(directorio: &Path, out: &mut Vec<PathBuf>) {
+    for e in std::fs::read_dir(directorio)
+        .unwrap_or_else(|e| panic!("no se pudo leer {}: {e}", directorio.display()))
     {
         let p = e.unwrap().path();
         if p.is_dir() {
