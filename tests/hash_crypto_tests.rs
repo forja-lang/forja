@@ -208,11 +208,11 @@ fn test_ct_equal_longitud_diferente() {
 
 #[test]
 fn test_aes_cbc_roundtrip() {
-    let key = [42u8; 32];
+    let clave = [42u8; 32];
     let iv = [0u8; 16];
     let data = b"Hello AES CBC!!12"; // needs to be block-aligned
-    let encrypted = crypto::aes256_cbc_encrypt(&key, &iv, data);
-    let decrypted = crypto::aes256_cbc_decrypt(&key, &iv, &encrypted).unwrap();
+    let encrypted = crypto::aes256_cbc_encrypt(&clave, &iv, data);
+    let decrypted = crypto::aes256_cbc_decrypt(&clave, &iv, &encrypted).unwrap();
     assert_eq!(decrypted, data);
 }
 
@@ -222,23 +222,23 @@ fn test_aes_cbc_roundtrip() {
 
 #[test]
 fn test_aes_gcm_roundtrip() {
-    let key = [1u8; 32];
+    let clave = [1u8; 32];
     let nonce = [2u8; 12];
     let data = b"Hello AES GCM!!";
     let aad = b"";
-    let encrypted = crypto::aes256_gcm_encrypt(&key, &nonce, data, aad);
-    let decrypted = crypto::aes256_gcm_decrypt(&key, &nonce, &encrypted, aad).unwrap();
+    let encrypted = crypto::aes256_gcm_encrypt(&clave, &nonce, data, aad);
+    let decrypted = crypto::aes256_gcm_decrypt(&clave, &nonce, &encrypted, aad).unwrap();
     assert_eq!(decrypted, data);
 }
 
 #[test]
 fn test_aes_gcm_con_aad() {
-    let key = [3u8; 32];
+    let clave = [3u8; 32];
     let nonce = [4u8; 12];
     let data = b"Mensaje con AAD";
     let aad = b"datos adicionales";
-    let encrypted = crypto::aes256_gcm_encrypt(&key, &nonce, data, aad);
-    let decrypted = crypto::aes256_gcm_decrypt(&key, &nonce, &encrypted, aad).unwrap();
+    let encrypted = crypto::aes256_gcm_encrypt(&clave, &nonce, data, aad);
+    let decrypted = crypto::aes256_gcm_decrypt(&clave, &nonce, &encrypted, aad).unwrap();
     assert_eq!(decrypted, data);
 }
 
@@ -248,19 +248,19 @@ fn test_aes_gcm_con_aad() {
 
 #[test]
 fn test_chacha20_roundtrip() {
-    let key = [5u8; 32];
+    let clave = [5u8; 32];
     let nonce = [6u8; 12];
     let data = b"ChaCha20 test message";
-    let encrypted = crypto::chacha20_xor(&key, &nonce, data);
-    let decrypted = crypto::chacha20_xor(&key, &nonce, &encrypted);
+    let encrypted = crypto::chacha20_xor(&clave, &nonce, data);
+    let decrypted = crypto::chacha20_xor(&clave, &nonce, &encrypted);
     assert_eq!(decrypted, data);
 }
 
 #[test]
 fn test_chacha20_vacio() {
-    let key = [7u8; 32];
+    let clave = [7u8; 32];
     let nonce = [8u8; 12];
-    let encrypted = crypto::chacha20_xor(&key, &nonce, b"");
+    let encrypted = crypto::chacha20_xor(&clave, &nonce, b"");
     assert_eq!(encrypted.len(), 0);
 }
 
@@ -270,23 +270,23 @@ fn test_chacha20_vacio() {
 
 #[test]
 fn test_chacha20poly_roundtrip() {
-    let key = [9u8; 32];
+    let clave = [9u8; 32];
     let nonce = [10u8; 12];
     let data = b"ChaCha20Poly1305 authenticated";
     let aad = b"";
-    let encrypted = crypto::chacha20_poly1305_encrypt(&key, &nonce, data, aad);
-    let decrypted = crypto::chacha20_poly1305_decrypt(&key, &nonce, &encrypted, aad).unwrap();
+    let encrypted = crypto::chacha20_poly1305_encrypt(&clave, &nonce, data, aad);
+    let decrypted = crypto::chacha20_poly1305_decrypt(&clave, &nonce, &encrypted, aad).unwrap();
     assert_eq!(decrypted, data);
 }
 
 #[test]
 fn test_chacha20poly_con_aad() {
-    let key = [11u8; 32];
+    let clave = [11u8; 32];
     let nonce = [12u8; 12];
     let data = b"Autenticado con AAD";
     let aad = b"header info";
-    let encrypted = crypto::chacha20_poly1305_encrypt(&key, &nonce, data, aad);
-    let decrypted = crypto::chacha20_poly1305_decrypt(&key, &nonce, &encrypted, aad).unwrap();
+    let encrypted = crypto::chacha20_poly1305_encrypt(&clave, &nonce, data, aad);
+    let decrypted = crypto::chacha20_poly1305_decrypt(&clave, &nonce, &encrypted, aad).unwrap();
     assert_eq!(decrypted, data);
 }
 
@@ -296,15 +296,15 @@ fn test_chacha20poly_con_aad() {
 
 #[test]
 fn test_pbkdf2_derivacion() {
-    let key = crypto::pbkdf2_hmac_sha256(b"password", b"salt", 1000, 32);
-    assert_eq!(key.len(), 32);
+    let clave = crypto::pbkdf2_hmac_sha256(b"password", b"salt", 1000, 32);
+    assert_eq!(clave.len(), 32);
 }
 
 #[test]
 fn test_pbkdf2_determinista() {
-    let key1 = crypto::pbkdf2_hmac_sha256(b"test", b"nacl", 100, 16);
-    let key2 = crypto::pbkdf2_hmac_sha256(b"test", b"nacl", 100, 16);
-    assert_eq!(key1, key2);
+    let clave1 = crypto::pbkdf2_hmac_sha256(b"test", b"nacl", 100, 16);
+    let clave2 = crypto::pbkdf2_hmac_sha256(b"test", b"nacl", 100, 16);
+    assert_eq!(clave1, clave2);
 }
 
 #[test]
@@ -368,18 +368,18 @@ fn test_random_bytes_diferente() {
 
 #[test]
 fn test_poly1305_mac() {
-    let key = [13u8; 32];
+    let clave = [13u8; 32];
     let data = b"Poly1305 test";
-    let tag = crypto::poly1305_mac(&key, data);
+    let tag = crypto::poly1305_mac(&clave, data);
     assert_eq!(tag.len(), 16);
 }
 
 #[test]
 fn test_poly1305_mac_diferente() {
-    let key1 = [14u8; 32];
-    let key2 = [15u8; 32];
+    let clave1 = [14u8; 32];
+    let clave2 = [15u8; 32];
     let data = b"test";
-    let t1 = crypto::poly1305_mac(&key1, data);
-    let t2 = crypto::poly1305_mac(&key2, data);
+    let t1 = crypto::poly1305_mac(&clave1, data);
+    let t2 = crypto::poly1305_mac(&clave2, data);
     assert_ne!(t1, t2);
 }
