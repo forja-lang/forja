@@ -27,9 +27,17 @@ void *forja_alloc(int64_t bytes) {
 
 /* ── tiempo ───────────────────────────────────────────────────────────── */
 
+/* Alta resolución: `GetTickCount64` tiene ~15 ms de granularidad, inservible
+ * para medir bucles cortos. */
 int64_t forja_tiempo_ms(void) {
 #ifdef _WIN32
-    return (int64_t)GetTickCount64();
+    static LARGE_INTEGER frecuencia = {0};
+    LARGE_INTEGER ahora;
+    if (frecuencia.QuadPart == 0) {
+        QueryPerformanceFrequency(&frecuencia);
+    }
+    QueryPerformanceCounter(&ahora);
+    return (int64_t)((ahora.QuadPart * 1000) / frecuencia.QuadPart);
 #else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -160,14 +168,25 @@ void forja_nueva_linea(void) { fputc('\n', stdout); }
 typedef struct {
     int64_t len;
     int64_t cap;
+    int64_t tipo; /* 0 = elementos enteros, 1 = elementos texto (puntero) */
     int64_t *datos;
 } ForjaArreglo;
 
-void *forja_arreglo_nuevo(int64_t n) {
+void *forja_arreglo_nuevo(int64_t n, int64_t tipo) {
     ForjaArreglo *a = (ForjaArreglo *)forja_alloc((int64_t)sizeof(ForjaArreglo));
     a->len = n;
     a->cap = n > 4 ? n : 4;
+    a->tipo = tipo;
     a->datos = (int64_t *)forja_alloc(a->cap * (int64_t)sizeof(int64_t));
+    return a;
+}
+
+/* `repetir_arreglo(valor, n)`: n copias de `valor` en un solo recorrido. */
+void *forja_arreglo_rellenar(int64_t valor, int64_t n, int64_t tipo) {
+    ForjaArreglo *a = (ForjaArreglo *)forja_arreglo_nuevo(n, tipo);
+    for (int64_t i = 0; i < n; i++) {
+        a->datos[i] = valor;
+    }
     return a;
 }
 
@@ -204,6 +223,24 @@ void forja_arreglo_fijar(void *pv, int64_t i, int64_t v) {
         exit(1);
     }
     a->datos[i] = v;
+}
+
+/* Imprime un arreglo como `[1,2,3]` (texto según el tag del arreglo). */
+void forja_imprimir_arreglo(void *pv) {
+    ForjaArreglo *a = (ForjaArreglo *)pv;
+    fputc('[', stdout);
+    if (a) {
+        for (int64_t i = 0; i < a->len; i++) {
+            if (i) fputc(',', stdout);
+            if (a->tipo == 1) {
+                const char *s = (const char *)(size_t)a->datos[i];
+                fputs(s ? s : "nulo", stdout);
+            } else {
+                printf("%lld", (long long)a->datos[i]);
+            }
+        }
+    }
+    fputc(']', stdout);
 }
 
 void forja_empujar(void *pv, int64_t v) {
@@ -439,3 +476,25 @@ void forja_hilo_lanzar(void *fn, void *entorno) {
     }
 }
 #endif
+
+/* Imprime un mapa como `{clave: valor, …}`. */
+void forja_imprimir_mapa(void *pm) {
+    ForjaMapa *m = (ForjaMapa *)pm;
+    fputc('{', stdout);
+    int64_t impresos = 0;
+    if (m) {
+        for (int64_t i = 0; i < m->cap; i++) {
+            ForjaPar *p = &m->tabla[i];
+            if (!p->usado) continue;
+            if (impresos++) fputs(", ", stdout);
+            if (p->clave_texto) {
+                fputs(p->clave_texto, stdout);
+            } else {
+                printf("%lld", (long long)p->clave);
+            }
+            fputs(": ", stdout);
+            printf("%lld", (long long)p->valor);
+        }
+    }
+    fputc('}', stdout);
+}

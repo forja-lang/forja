@@ -29,6 +29,7 @@ pub enum BuiltinFast {
     ParsearEntero,
     ParsearFlotante,
     Repetir,
+    RepetirArreglo,
     Unir,
     Esperar,
 }
@@ -55,6 +56,7 @@ pub fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
         "a_entero" => Some(BuiltinFast::ParsearEntero),
         "a_flotante" => Some(BuiltinFast::ParsearFlotante),
         "repetir" => Some(BuiltinFast::Repetir),
+        "repetir_arreglo" | "arreglo_relleno" => Some(BuiltinFast::RepetirArreglo),
         "unir_elementos" => Some(BuiltinFast::Unir),
         "esperar" => Some(BuiltinFast::Esperar),
         _ => None,
@@ -85,6 +87,8 @@ pub const NOMBRES_BUILTINS: &[&str] = &[
     "a_entero",
     "a_flotante",
     "repetir",
+    "repetir_arreglo",
+    "arreglo_relleno",
     "unir_elementos",
     "esperar",
 ];
@@ -202,6 +206,15 @@ impl ForjaFast {
                 } else {
                     self.empujar_valor(ValorFast::nulo());
                 }
+            }
+            BuiltinFast::RepetirArreglo => {
+                // `repetir_arreglo(valor, n)`: n copias del valor.
+                let n_val = self.desapilar_valor()?;
+                let valor = self.desapilar_valor()?;
+                let n = n_val.a_entero().max(0) as usize;
+                let arr = vec![valor; n];
+                let idx = self.reservar_arr(arr);
+                self.empujar_valor(ValorFast::arreglo(idx));
             }
             BuiltinFast::Remover => {
                 let idx_val = self.desapilar_valor()?;

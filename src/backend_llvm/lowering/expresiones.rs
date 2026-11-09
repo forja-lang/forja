@@ -30,6 +30,10 @@ impl Lowering {
             }
             return Ok(self.cargar(&slot, &t));
         }
+        // Variante sin payload (`Rojo`): se construye el enum en el acto.
+        if self.variantes.contains_key(nombre) {
+            return self.construir_variante(nombre, &[]);
+        }
         if self.firmas.contains_key(nombre) || self.externas.contains_key(nombre) {
             return Ok(V::Funcion(format!("@{}", nombre)));
         }
@@ -166,11 +170,24 @@ impl Lowering {
             Expresion::Instanciacion { clase, argumentos } => self.instanciar(clase, argumentos),
             Expresion::Arreglo(items) => {
                 let n = items.len().to_string();
+                // tag: 1 si los elementos son texto (para `escribir`), 0 si no.
+                let tag = if items
+                    .first()
+                    .map(|e| self.tipo_estatico(e) == T::Texto)
+                    .unwrap_or(false)
+                {
+                    "1"
+                } else {
+                    "0"
+                };
                 let r = self.r();
-                self.linea(&format!("{} = call ptr @forja_arreglo_nuevo(i64 {})", r, n));
+                self.linea(&format!(
+                    "{} = call ptr @forja_arreglo_nuevo(i64 {}, i64 {})",
+                    r, n, tag
+                ));
                 for (i, item) in items.iter().enumerate() {
                     let v = self.expr(item)?;
-                    let x = self.como(&v, T::Int);
+                    let x = self.como_slot(&v);
                     self.linea(&format!(
                         "  call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
                         r, i, x
@@ -202,12 +219,19 @@ impl Lowering {
                 let a = self.como(&arr, T::Arreglo);
                 let iv = self.expr(indice)?;
                 let i = self.como(&iv, T::Int);
-                if self.sin_rangos {
+                let demostrado = match (objeto.as_ref(), indice.as_ref()) {
+                    (
+                        Expresion::Identificador { nombre: arr, .. },
+                        Expresion::Identificador { nombre: var, .. },
+                    ) => self.sin_check.contains(&(var.clone(), arr.clone())),
+                    _ => false,
+                };
+                if self.sin_rangos || demostrado {
                     // FORJA_SIN_RANGOS=1: sin chequeo de rango (UB si se pasa,
                     // equivalente a `get_unchecked`). Permite vectorizar al -O3.
                     let datos = self.r();
                     self.linea(&format!(
-                        "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 2",
+                        "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 3",
                         datos, a
                     ));
                     let base = self.r();
@@ -246,7 +270,7 @@ impl Lowering {
                 self.etiqueta(&correcto);
                 let datos = self.r();
                 self.linea(&format!(
-                    "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 2",
+                    "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 3",
                     datos, a
                 ));
                 let base = self.r();
@@ -915,11 +939,23 @@ impl Lowering {
                 ));
                 V::Int(r)
             }
+            "repetir_arreglo" | "arreglo_relleno" => {
+                let v = self.arg(nombre, args, 0)?;
+                let x = self.como(&v, T::Int);
+                let n = self.arg(nombre, args, 1)?;
+                let cant = self.como(&n, T::Int);
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_arreglo_rellenar(i64 {}, i64 {}, i64 0)",
+                    r, x, cant
+                ));
+                V::Arreglo(r)
+            }
             "empujar" => {
                 let arg0 = self.arg(nombre, args, 0)?;
                 let arr = self.como(&arg0, T::Arreglo);
                 let arg1 = self.arg(nombre, args, 1)?;
-                let v = self.como(&arg1, T::Int);
+                let v = self.como_slot(&arg1);
                 self.linea(&format!("call void @forja_empujar(ptr {}, i64 {})", arr, v));
                 V::Nulo
             }
@@ -958,7 +994,7 @@ impl Lowering {
         let n = capturas.len().max(1).to_string();
         let env = self.r();
         self.linea(&format!(
-            "{} = call ptr @forja_arreglo_nuevo(i64 {})",
+            "{} = call ptr @forja_arreglo_nuevo(i64 {}, i64 0)",
             env, n
         ));
         for (i, (nombre, _)) in capturas.iter().enumerate() {
@@ -986,7 +1022,7 @@ impl Lowering {
             let slot = self.alloca(t, nombre);
             let p = self.r();
             self.linea(&format!(
-                "{} = getelementptr inbounds %ForjaArreglo, ptr %entorno, i32 0, i32 2",
+                "{} = getelementptr inbounds %ForjaArreglo, ptr %entorno, i32 0, i32 3",
                 p
             ));
             let base = self.r();
@@ -1067,7 +1103,6 @@ impl Lowering {
             let mut v: Vec<(String, T)> = self
                 .vars
                 .iter()
-                .filter(|(_, var)| !var.slot.starts_with('@'))
                 .map(|(n, var)| (n.clone(), var.t.clone()))
                 .collect();
             v.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1081,7 +1116,7 @@ impl Lowering {
         let n = capturas.len().max(1).to_string();
         let env = self.r();
         self.linea(&format!(
-            "{} = call ptr @forja_arreglo_nuevo(i64 {})",
+            "{} = call ptr @forja_arreglo_nuevo(i64 {}, i64 0)",
             env, n
         ));
         for (i, (nombre, t)) in capturas.iter().enumerate() {
@@ -1107,7 +1142,7 @@ impl Lowering {
             let slot = self.alloca(t, nombre);
             let p = self.r();
             self.linea(&format!(
-                "{} = getelementptr inbounds %ForjaArreglo, ptr %entorno, i32 0, i32 2",
+                "{} = getelementptr inbounds %ForjaArreglo, ptr %entorno, i32 0, i32 3",
                 p
             ));
             let base = self.r();
@@ -1288,6 +1323,26 @@ impl Lowering {
         Ok(V::Int("0".into()))
     }
 
+    /// Convierte un valor a la casilla `i64` de un arreglo o mapa: los punteros
+    /// viajan como `ptrtoint` (no como el número que "parezca" el texto).
+    pub(super) fn como_slot(&mut self, v: &V) -> String {
+        match v.t() {
+            T::Texto
+            | T::Arreglo
+            | T::Mapa
+            | T::Enum(_)
+            | T::Canal
+            | T::Closure
+            | T::Clase(_)
+            | T::Funcion => {
+                let i = self.r();
+                self.linea(&format!("{} = ptrtoint ptr {} to i64", i, v.r()));
+                i
+            }
+            _ => self.como(v, T::Int),
+        }
+    }
+
     pub(super) fn imprimir(&mut self, arg: &Expresion) -> Result<(), String> {
         let v = self.expr(arg)?;
         match v.t() {
@@ -1306,9 +1361,17 @@ impl Lowering {
                         .into(),
                 )
             }
-            T::Arreglo | T::Mapa | T::Canal | T::Closure | T::Clase(_) | T::Funcion => {
+            T::Arreglo => {
+                let r = self.como(&v, T::Arreglo);
+                self.linea(&format!("call void @forja_imprimir_arreglo(ptr {})", r));
+            }
+            T::Mapa => {
+                let r = self.como(&v, T::Mapa);
+                self.linea(&format!("call void @forja_imprimir_mapa(ptr {})", r));
+            }
+            T::Canal | T::Closure | T::Clase(_) | T::Funcion => {
                 return Err(
-                    "`escribir` de arreglos/mapas/canales/closures/objetos/funciones no está                      soportado en la ruta LLVM"
+                    "`escribir` de arreglos/mapas/canales/closures/objetos/funciones no está soportado en la ruta LLVM"
                         .into(),
                 )
             }

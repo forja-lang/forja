@@ -232,6 +232,7 @@ impl Lowering {
                 let iv = self.expr(indice)?;
                 let v = self.expr(valor)?;
                 let x = self.como(&v, T::Int);
+                let x_slot = self.como_slot(&v);
                 if cont.t() == T::Mapa {
                     let m = self.como(&cont, T::Mapa);
                     if iv.t() == T::Texto {
@@ -252,7 +253,7 @@ impl Lowering {
                     let i = self.como(&iv, T::Int);
                     self.linea(&format!(
                         "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
-                        a, i, x
+                        a, i, x_slot
                     ));
                 }
             }
@@ -299,8 +300,18 @@ impl Lowering {
                 ));
                 self.etiqueta(&cuerpo_bb);
                 self.etiquetas.push((fin_bb.clone(), cond_bb.clone()));
+                // `mientras (i < longitud(arr))`: `arr[i]` está en rango por
+                // construcción, así que no hace falta chequearlo (y el bucle
+                // puede vectorizarse).
+                let rango = patron_rango(condicion);
+                if let Some((var, arr)) = &rango {
+                    self.sin_check.push((var.clone(), arr.clone()));
+                }
                 for s in bloque {
                     self.sentencia(s)?;
+                }
+                if rango.is_some() {
+                    self.sin_check.pop();
                 }
                 self.etiquetas.pop();
                 if !self.termina {
@@ -481,4 +492,30 @@ fn valor_param(t: &T, i: usize) -> V {
         T::Nulo => V::Nulo,
         T::Int => V::Int(format!("%p{}", i)),
     }
+}
+
+/// Reconoce `i < longitud(arr)` (o `len`), con `i` y `arr` identificadores.
+fn patron_rango(cond: &Expresion) -> Option<(String, String)> {
+    if let Expresion::Binaria {
+        izquierda,
+        operador: crate::ast::Operador::Menor,
+        derecha,
+    } = cond
+    {
+        if let (
+            Expresion::Identificador { nombre: var, .. },
+            Expresion::LlamadaFuncion {
+                nombre: f,
+                argumentos,
+            },
+        ) = (izquierda.as_ref(), derecha.as_ref())
+        {
+            if (f == "longitud" || f == "len") && argumentos.len() == 1 {
+                if let Expresion::Identificador { nombre: arr, .. } = &argumentos[0] {
+                    return Some((var.clone(), arr.clone()));
+                }
+            }
+        }
+    }
+    None
 }

@@ -120,24 +120,55 @@ escribir(etiqueta(7))
 /// (`store` a nivel de módulo).
 #[test]
 fn globales_sin_principal_generan_ir_valido() {
+    // Bug §2 del plan: los `variable` de nivel superior generaban `store` a
+    // nivel de módulo (IR inválido). Ahora viven en `@forja_init`; además, si
+    // ninguna función las usa, son `alloca` locales (más rápidas que un global).
     let fuente = r#"
 variable a = 5
 variable b = a * 2
 escribir("r = " + b)
 "#;
-    let ir = ir(fuente);
+    let ir_local = ir(fuente);
     assert!(
-        ir.contains("@g_a = internal global"),
-        "falta global @g_a:\n{ir}"
+        ir_local.contains("define void @forja_init"),
+        "falta forja_init:
+{ir_local}"
     );
     assert!(
-        ir.contains("define void @forja_init"),
-        "falta forja_init:\n{ir}"
+        ir_local.contains("%a.0 = alloca i64"),
+        "falta alloca de a:
+{ir_local}"
     );
-    // Un solo alloca/store de `a`: el init vive dentro de @forja_init.
-    assert_eq!(ir.matches("store i64 5, ptr @g_a").count(), 1, "{ir}");
+    // No hay instrucciones de nivel de módulo (`store` fuera de un define).
+    for l in ir_local.lines() {
+        let t = l.trim_start();
+        if t.contains("store i64 5") {
+            assert_ne!(
+                l, t,
+                "store a nivel de módulo:
+{l}"
+            );
+        }
+    }
     if let Some(salida) = ejecutar_nativo(fuente) {
         assert_eq!(salida.trim(), "r = 10");
+    }
+
+    // Si una función la usa, sí se emite como global real.
+    let con_funcion = r#"
+variable a = 5
+funcion leer() -> Entero { retornar a }
+escribir(leer())
+"#;
+    let ir_global = ir(con_funcion);
+    assert!(
+        ir_global.contains("@g_a = internal global i64 5")
+            || ir_global.contains("@g_a = internal global i64 0"),
+        "falta global @g_a:
+{ir_global}"
+    );
+    if let Some(salida) = ejecutar_nativo(con_funcion) {
+        assert_eq!(salida.trim(), "5");
     }
 }
 
@@ -182,22 +213,75 @@ escribir(c.doble())
 
 #[test]
 fn constructos_no_soportados_fallan_con_mensaje() {
-    // Nunca generar IR que miente: mapas, enums, hilos y closures dan error.
+    // Lo que la ruta nativa todavía no baja devuelve error, nunca IR que miente.
     for (fuente, esperado) in [
-        // Las closures siguen sin bajar a la ruta nativa; el resto (mapas,
-        // enums, hilos, canales, arreglos, clases) ya está soportado.
         (
-            "variable f = func(x) { retornar x }
-escribir(f(1))
+            "variable e, r = canal()
+escribir(e)
 ",
-            "closures",
+            "no está soportado",
+        ),
+        (
+            "tipo Color = Rojo | Verde
+variable c = Rojo
+escribir(c)
+",
+            "no está soportado",
         ),
     ] {
         let err = forja::compilar_a_llvm(fuente).expect_err("debía fallar");
         let texto = format!("{err:?}");
         assert!(
             texto.contains(esperado),
-            "se esperaba `{esperado}` en: {texto}"
+            "se esperaba `{esperado}` en: {}",
+            &texto[..texto.len().min(300)]
+        );
+    }
+}
+
+#[test]
+fn imprimir_agregados_y_repetir_arreglo() {
+    let fuente = r#"
+variable a = [1, 2, 3]
+escribir(a)
+variable textos = ["uno", "dos"]
+escribir(textos)
+variable m = {}
+m[7] = 70
+m["k"] = 3
+escribir(m)
+variable r = repetir_arreglo(9, 5)
+escribir(r)
+escribir(longitud(r))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida,
+            "[1,2,3]
+[uno,dos]
+{7: 70, k: 3}
+[9,9,9,9,9]
+5
+"
+        );
+    }
+}
+
+#[test]
+fn closures_con_captura() {
+    let fuente = r#"
+variable base = 100
+variable sumar_base = func(n) { retornar n + base }
+variable doble = func(n) { retornar n * 2 }
+escribir(doble(21))
+escribir(sumar_base(5))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida,
+            "42
+105
+"
         );
     }
 }

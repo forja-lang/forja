@@ -89,6 +89,11 @@ pub struct Config {
     /// Aritmética flotante optimizada.
     #[serde(with = "bool_es")]
     pub matematica_rapida: bool,
+    /// Chequeo de rangos en accesos a arreglos (ruta LLVM/AOT). Desactivarlo
+    /// permite vectorizar bucles, pero un índice fuera de rango es UB
+    /// (equivalente a `get_unchecked`).
+    #[serde(with = "bool_es")]
+    pub verificar_rangos: bool,
     /// Perfil de ejecución: `""`, `recoger` o `usar`.
     pub perfil: String,
     /// Recarga de módulos en caliente (con `destino: nativo`).
@@ -139,6 +144,7 @@ impl Default for Config {
             contratos: true,
             pila: false,
             matematica_rapida: false,
+            verificar_rangos: true,
             perfil: String::new(),
             recarga: false,
             permitir_red: String::new(),
@@ -268,6 +274,11 @@ pub fn escribir(ruta: &Path, cfg: &Config) -> Result<(), String> {
         "Incluye la pila de llamadas en errores de runtime. Valores: verdadero | falso",
         "pila",
         booleano(cfg.pila)
+    );
+    opcion!(
+        "Chequeo de rango en arreglos (LLVM/AOT). Desactivarlo vectoriza mejor pero un índice fuera de rango es UB. Valores: verdadero | falso",
+        "verificar_rangos",
+        booleano(cfg.verificar_rangos)
     );
     opcion!(
         "Atajos aritméticos inseguros: división por cero => inf y sin chequeos. Sólo benchmarks. Valores: verdadero | falso",

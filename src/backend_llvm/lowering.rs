@@ -182,6 +182,9 @@ pub struct Lowering {
     /// `FORJA_SIN_RANGOS=1`: acceso a arreglos sin chequeo de rango (UB si se
     /// pasa, como `get_unchecked`). Es lo que permite vectorizar bucles.
     sin_rangos: bool,
+    /// Pares (variable de bucle, arreglo) demostrados en rango por
+    /// `mientras (i < longitud(arr))`: no hace falta chequear `arr[i]`.
+    sin_check: Vec<(String, String)>,
 }
 
 const RUNTIME: &[(&str, &str)] = &[
@@ -209,8 +212,11 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_imprimir_booleano", "void (i64)"),
     ("forja_imprimir_nulo", "void ()"),
     ("forja_nueva_linea", "void ()"),
-    ("forja_arreglo_nuevo", "ptr (i64)"),
+    ("forja_arreglo_nuevo", "ptr (i64, i64)"),
     ("forja_arreglo_longitud", "i64 (ptr)"),
+    ("forja_arreglo_rellenar", "ptr (i64, i64, i64)"),
+    ("forja_imprimir_arreglo", "void (ptr)"),
+    ("forja_imprimir_mapa", "void (ptr)"),
     ("forja_arreglo_obtener", "i64 (ptr, i64)"),
     ("forja_arreglo_fijar", "void (ptr, i64, i64)"),
     ("forja_empujar", "void (ptr, i64)"),
@@ -258,7 +264,8 @@ impl Lowering {
                         "1" | "si" | "sí" | "on" | "verdadero"
                     )
                 })
-                .unwrap_or(false),
+                .unwrap_or_else(|_| !crate::config::actual().verificar_rangos),
+            sin_check: Vec::new(),
         }
     }
 
@@ -598,6 +605,48 @@ impl Lowering {
             let _ = writeln!(self.decls, "declare {} @{}{}", ret, nombre, params);
         }
 
+        // 3.5 Variables de nivel superior: las que usan funciones/closures/hilos
+        // se declaran como globals (las necesita la función); el resto vivirá en
+        // un `alloca` de `@forja_init` y LLVM lo promoverá a registro.
+        let usados_en_funciones = nombres_usados_en_funciones(decls);
+        let mut globals_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
+        let mut locales_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
+        for d in decls {
+            if let Declaracion::Variable {
+                nombre,
+                valor,
+                tipo,
+                ..
+            } = d
+            {
+                let t = self.tipo_declarado(tipo).unwrap_or_else(|| {
+                    valor
+                        .as_ref()
+                        .map(|v| self.tipo_estatico(v))
+                        .unwrap_or(T::Int)
+                });
+                if usados_en_funciones.contains(nombre) {
+                    let _ = writeln!(
+                        self.globals,
+                        "@g_{} = internal global {} {}, align 8",
+                        nombre,
+                        t.llvm().to_llvm_ir(),
+                        cero(&t)
+                    );
+                    self.vars.insert(
+                        nombre.clone(),
+                        Var {
+                            slot: format!("@g_{}", nombre),
+                            t: t.clone(),
+                        },
+                    );
+                    globals_iniciales.push((nombre.clone(), t, valor.clone()));
+                } else {
+                    locales_iniciales.push((nombre.clone(), t, valor.clone()));
+                }
+            }
+        }
+
         // 4. Funciones del usuario (primero las que no son main).
         for d in decls {
             if let Declaracion::Funcion {
@@ -646,46 +695,26 @@ impl Lowering {
             }
         }
 
-        // 6. Globals: se declaran acá y se inicializan en `@forja_init`.
-        let mut globals_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
-        for d in decls {
-            if let Declaracion::Variable {
-                nombre,
-                valor,
-                tipo,
-                ..
-            } = d
-            {
-                let t = self.tipo_declarado(tipo).unwrap_or_else(|| {
-                    valor
-                        .as_ref()
-                        .map(|v| self.tipo_estatico(v))
-                        .unwrap_or(T::Int)
-                });
-                let _ = writeln!(
-                    self.globals,
-                    "@g_{} = internal global {} {}, align 8",
-                    nombre,
-                    t.llvm().to_llvm_ir(),
-                    cero(&t)
-                );
-                self.vars.insert(
-                    nombre.clone(),
-                    Var {
-                        slot: format!("@g_{}", nombre),
-                        t: t.clone(),
-                    },
-                );
-                globals_iniciales.push((nombre.clone(), t, valor.clone()));
-            }
-        }
-
         // Las funciones ya están emitidas en `self.cuerpos`: se aparta ese
         // buffer para que las instrucciones del init no caigan en medio.
         let cuerpo_funciones = std::mem::take(&mut self.cuerpos);
         // `self.vars` ya tiene los globals registrados: el init los necesita.
         self.prologo.clear();
         self.termina = false;
+        for (nombre, t, valor) in &locales_iniciales {
+            let slot = self.alloca(t, nombre);
+            self.vars.insert(
+                nombre.clone(),
+                Var {
+                    slot: slot.clone(),
+                    t: t.clone(),
+                },
+            );
+            if let Some(v) = valor {
+                let val = self.expr(v)?;
+                self.guardar(&slot, val, t);
+            }
+        }
         for (nombre, t, valor) in &globals_iniciales {
             if let Some(v) = valor {
                 let val = self.expr(v)?;
@@ -729,7 +758,7 @@ impl Lowering {
         let mut salida = String::new();
         salida.push_str(&self.header);
         // Layout del arreglo del runtime: { len, cap, datos }.
-        let _ = writeln!(salida, "%ForjaArreglo = type {{ i64, i64, ptr }}");
+        let _ = writeln!(salida, "%ForjaArreglo = type {{ i64, i64, i64, ptr }}");
         salida.push('\n');
         for (nombre, campos) in &clases {
             let fs: Vec<String> = campos.iter().map(|(_, t)| t.llvm().to_llvm_ir()).collect();
@@ -882,9 +911,17 @@ impl Lowering {
                     }
                 }
             },
-            Expresion::Identificador { nombre, .. } => {
-                self.vars.get(nombre).map(|v| v.t.clone()).unwrap_or(T::Int)
-            }
+            Expresion::Identificador { nombre, .. } => self
+                .vars
+                .get(nombre)
+                .map(|v| v.t.clone())
+                .or_else(|| {
+                    // variante sin payload (`Rojo`): el tipo es el del enum
+                    self.variantes
+                        .get(nombre)
+                        .map(|(en, _, _)| T::Enum(en.clone()))
+                })
+                .unwrap_or(T::Int),
             Expresion::LlamadaFuncion { nombre, .. } => self
                 .firmas
                 .get(nombre)
@@ -911,6 +948,188 @@ fn cero(t: &T) -> &'static str {
     }
 }
 
+/// Nombres de variables que se usan dentro de cuerpos de funciones, métodos,
+/// closures o hilos. Las de nivel superior que no aparezcan acá pueden vivir en
+/// un `alloca` de `@forja_init` en vez de un global (mucho más rápido: LLVM las
+/// promueve a registros).
+fn nombres_usados_en_funciones(decls: &[Declaracion]) -> std::collections::HashSet<String> {
+    fn expr(e: &Expresion, out: &mut std::collections::HashSet<String>) {
+        match e {
+            Expresion::Identificador { nombre, .. } => {
+                out.insert(nombre.clone());
+            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                expr(izquierda, out);
+                expr(derecha, out);
+            }
+            Expresion::Unaria { expr: e, .. } | Expresion::Grupo(e) => expr(e, out),
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                expr(condicion, out);
+                expr(si_verdadero, out);
+                expr(si_falso, out);
+            }
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for a in argumentos {
+                    expr(a, out);
+                }
+            }
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
+                expr(objeto, out);
+                for a in argumentos {
+                    expr(a, out);
+                }
+            }
+            Expresion::AccesoMiembro { objeto, .. } => expr(objeto, out),
+            Expresion::Instanciacion { argumentos, .. } => {
+                for a in argumentos {
+                    expr(a, out);
+                }
+            }
+            Expresion::Arreglo(items) => {
+                for i in items {
+                    expr(i, out);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares {
+                    expr(k, out);
+                    expr(v, out);
+                }
+            }
+            Expresion::Index { objeto, indice } => {
+                expr(objeto, out);
+                expr(indice, out);
+            }
+            Expresion::Asignacion { variable, valor } => {
+                out.insert(variable.clone());
+                expr(valor, out);
+            }
+            Expresion::AsignacionCampo { objeto, valor, .. } => {
+                expr(objeto, out);
+                expr(valor, out);
+            }
+            Expresion::AsignacionCompuesta {
+                objetivo, valor, ..
+            } => {
+                expr(objetivo, out);
+                expr(valor, out);
+            }
+            Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
+                sentencias(cuerpo, out);
+            }
+            _ => {}
+        }
+    }
+    fn sentencias(cuerpo: &[Declaracion], out: &mut std::collections::HashSet<String>) {
+        for d in cuerpo {
+            match d {
+                Declaracion::Variable { nombre, valor, .. } => {
+                    out.insert(nombre.clone());
+                    if let Some(v) = valor {
+                        expr(v, out);
+                    }
+                }
+                Declaracion::Asignacion { nombre, valor, .. } => {
+                    out.insert(nombre.clone());
+                    expr(valor, out);
+                }
+                Declaracion::AsignacionMiembro { objeto, valor, .. } => {
+                    expr(objeto, out);
+                    expr(valor, out);
+                }
+                Declaracion::AsignacionIndex {
+                    nombre,
+                    indice,
+                    valor,
+                    ..
+                } => {
+                    out.insert(nombre.clone());
+                    expr(indice, out);
+                    expr(valor, out);
+                }
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
+                    expr(condicion, out);
+                    sentencias(bloque_verdadero, out);
+                    if let Some(b) = bloque_falso {
+                        sentencias(b, out);
+                    }
+                }
+                Declaracion::Mientras { condicion, bloque } => {
+                    expr(condicion, out);
+                    sentencias(bloque, out);
+                }
+                Declaracion::Para {
+                    inicializacion,
+                    condicion,
+                    incremento,
+                    bloque,
+                } => {
+                    if let Some(i) = inicializacion {
+                        sentencias(std::slice::from_ref(i.as_ref()), out);
+                    }
+                    if let Some(c) = condicion {
+                        expr(c, out);
+                    }
+                    if let Some(i) = incremento {
+                        sentencias(std::slice::from_ref(i.as_ref()), out);
+                    }
+                    sentencias(bloque, out);
+                }
+                Declaracion::Repetir { cantidad, bloque } => {
+                    expr(cantidad, out);
+                    sentencias(bloque, out);
+                }
+                Declaracion::Retornar { valor: Some(v) } => expr(v, out),
+                Declaracion::Retornar { valor: None } => {}
+                Declaracion::LlamadaFuncion { argumentos, .. } => {
+                    for a in argumentos {
+                        expr(a, out);
+                    }
+                }
+                Declaracion::Expresion(e) => expr(e, out),
+                Declaracion::AccesoMiembro { objeto, .. } => expr(objeto, out),
+                Declaracion::Cuando {
+                    condicion, cuerpo, ..
+                } => {
+                    expr(condicion, out);
+                    sentencias(cuerpo, out);
+                }
+                Declaracion::AsignacionMultiple { valor, .. } => expr(valor, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    for d in decls {
+        match d {
+            Declaracion::Funcion {
+                cuerpo,
+                externa: false,
+                ..
+            } => sentencias(cuerpo, &mut out),
+            Declaracion::Clase { metodos, .. } => {
+                for m in metodos {
+                    sentencias(&m.cuerpo, &mut out);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 fn tipo_builtin(nombre: &str) -> Option<T> {
     Some(match nombre {
         "longitud" => T::Int,
@@ -921,6 +1140,7 @@ fn tipo_builtin(nombre: &str) -> Option<T> {
         "subcadena" => T::Texto,
         "a_mayusculas" | "a_minusculas" => T::Texto,
         "tiempo_ms" => T::Int,
+        "repetir_arreglo" | "arreglo_relleno" => T::Arreglo,
         "contiene" | "empieza_con" | "termina_con" => T::Int,
         _ => return None,
     })
