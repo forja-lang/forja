@@ -65,7 +65,7 @@ impl FunctionInliner {
         }
 
         // 4. Reemplazar llamadas con el cuerpo
-        let mut new_decls = Vec::new();
+        let mut declaraciones_nuevas = Vec::new();
         for decl in &programa.declaraciones {
             match decl {
                 Declaracion::Funcion { nombre, .. } if inline_candidates.contains_key(nombre) => {
@@ -73,7 +73,7 @@ impl FunctionInliner {
                     self.inlines_realizados += 1;
                 }
                 _ => {
-                    new_decls.extend(self.inline_en_decl(decl, &inline_candidates));
+                    declaraciones_nuevas.extend(self.inline_en_decl(decl, &inline_candidates));
                 }
             }
         }
@@ -83,7 +83,7 @@ impl FunctionInliner {
             nombres: Vec::new(),
             indice_nombres: std::collections::HashMap::new(),
             span: None,
-            declaraciones: new_decls,
+            declaraciones: declaraciones_nuevas,
         }
     }
 
@@ -234,29 +234,29 @@ impl FunctionInliner {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let new_verdadero: Vec<Declaracion> = bloque_verdadero
+                let verdadero_nuevo: Vec<Declaracion> = bloque_verdadero
                     .iter()
                     .flat_map(|d| self.inline_en_decl(d, candidates))
                     .collect();
-                let new_falso: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
+                let falso_nuevo: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
                     bf.iter()
                         .flat_map(|d| self.inline_en_decl(d, candidates))
                         .collect()
                 });
                 vec![Declaracion::Si {
                     condicion: condicion.clone(),
-                    bloque_verdadero: new_verdadero,
-                    bloque_falso: new_falso,
+                    bloque_verdadero: verdadero_nuevo,
+                    bloque_falso: falso_nuevo,
                 }]
             }
             Declaracion::Mientras { condicion, bloque } => {
-                let new_bloque: Vec<Declaracion> = bloque
+                let nuevo_bloque: Vec<Declaracion> = bloque
                     .iter()
                     .flat_map(|d| self.inline_en_decl(d, candidates))
                     .collect();
                 vec![Declaracion::Mientras {
                     condicion: condicion.clone(),
-                    bloque: new_bloque,
+                    bloque: nuevo_bloque,
                 }]
             }
             Declaracion::Para {
@@ -265,7 +265,7 @@ impl FunctionInliner {
                 incremento,
                 bloque,
             } => {
-                let new_bloque: Vec<Declaracion> = bloque
+                let nuevo_bloque: Vec<Declaracion> = bloque
                     .iter()
                     .flat_map(|d| self.inline_en_decl(d, candidates))
                     .collect();
@@ -273,7 +273,7 @@ impl FunctionInliner {
                     inicializacion: inicializacion.clone(),
                     condicion: condicion.clone(),
                     incremento: incremento.clone(),
-                    bloque: new_bloque,
+                    bloque: nuevo_bloque,
                 }]
             }
             _ => vec![decl.clone()],
