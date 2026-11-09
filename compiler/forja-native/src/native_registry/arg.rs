@@ -32,13 +32,13 @@ pub fn native_arg_flag_texto(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
         {
             if i + 1 < args_raw.len() && !args_raw[i + 1].starts_with('-') {
                 return Ok({
-                    let idx = vm.alloc_str(Arc::from(args_raw[i + 1].as_str()));
-                    ValorFast::texto(idx)
+                    let indice = vm.alloc_str(Arc::from(args_raw[i + 1].as_str()));
+                    ValorFast::texto(indice)
                 });
             }
             return Ok({
-                let idx = vm.alloc_str(Arc::from(""));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(""));
+                ValorFast::texto(indice)
             }); // flag presente sin valor
         }
         i += 1;
@@ -47,13 +47,13 @@ pub fn native_arg_flag_texto(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
 }
 
 pub fn native_arg_posicional(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let idx = obtener_entero(args[0])? as usize;
+    let indice = obtener_entero(args[0])? as usize;
     let args_raw: Vec<String> = std::env::args().skip(1).collect();
     let positional: Vec<&String> = args_raw.iter().filter(|a| !a.starts_with('-')).collect();
-    match positional.get(idx) {
+    match positional.get(indice) {
         Some(v) => Ok({
-            let idx = vm.alloc_str(Arc::from(v.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(v.as_str()));
+            ValorFast::texto(indice)
         }),
         None => Ok(ValorFast::nulo()),
     }
