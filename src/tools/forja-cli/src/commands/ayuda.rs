@@ -61,7 +61,10 @@ pub(crate) fn mostrar_ayuda() {
     println!("  run, build, transpile, build-asm, asm, new, init, add, remove, install, learn, keywords, explain, help, test\n");
     println!("CONFIGURACIÓN — forja.yaml (se crea solo, con estos valores):");
     println!("  motor: rapido                  # rapido (o vm/fast) | jit | todas");
-    println!("  destino: maquina               # maquina | ensamblador | nativo");
+    println!("  destino: maquina               # maquina (VM) | ensamblador | nativo | auto");
+    println!(
+        "                                 #   auto: intenta clang nativo antes de la VM (~200 ms)"
+    );
     println!("  iteraciones: 100               # iteraciones por defecto de medir");
     println!("  memoizacion: verdadero         # memoizar funciones puras en LLVM/AOT");
     println!("  estricto: falso                # modo estricto de tipos y ownership");

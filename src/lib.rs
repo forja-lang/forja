@@ -1455,7 +1455,7 @@ pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
 ///   iteraciones de bucle) sin incidentes.
 /// - `uso_fallback == true`: el orquestador JIT falló (error o *panic*) y se usó
 ///   directamente la VM canónica, **garantizando** la ejecución sin tumbar el
-/// proceso. Es la red de seguridad que exige la ejecución nunca depende
+///   proceso. Es la red de seguridad que exige la ejecución nunca depende
 ///   de que el JIT esté sano.
 ///
 /// Nota de arquitectura: mientras `jit_tiered` no exponga un ejecutor
@@ -1694,313 +1694,9 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
         )]
     })?;
 
-    Ok(memoizar_puras(&normalizar_llvm(&ir)))
-}
-
-/// Normaliza el IR emitido por el backend LLVM legado:
-/// - mueve instrucciones de nivel superior dentro de `main`,
-/// - mueve strings globales fuera de las funciones,
-/// - elimina instrucciones después de `ret`,
-/// - renumera temporales `%N` por función,
-/// - corrige `%%label` y la firma de `main`.
-/// Memoiza funciones puras, recursivas, de un `i64` a `i64`.
-///
-/// Sólo aplica cuando el cuerpo no llama a otras funciones ni toca globals/I/O.
-/// La caché es directa, de 4096 entradas; una colisión sólo provoca un miss.
-fn memoizar_puras(ir: &str) -> String {
-    if !crate::config::actual().memoizacion {
-        return ir.to_string();
-    }
-    let lines: Vec<&str> = ir.lines().collect();
-    let mut out: Vec<String> = Vec::new();
-    let mut globals: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < lines.len() {
-        let l = lines[i];
-        let t = l.trim_start();
-        if t.starts_with("define i64 @") && t.contains("(i64 %p0)") {
-            let name = t
-                .strip_prefix("define i64 @")
-                .and_then(|x| x.split('(').next())
-                .unwrap_or("");
-            let mut end = i + 1;
-            while end < lines.len() && lines[end].trim() != "}" {
-                end += 1;
-            }
-            if end < lines.len() {
-                let cuerpo: Vec<&str> = lines[i + 1..end].to_vec();
-                let body = cuerpo.join("\n");
-                let self_call = format!("call i64 @{name}(i64");
-                let mut pura = body.contains(&self_call);
-                for x in &cuerpo {
-                    let xt = x.trim_start();
-                    if xt.contains("call ") && !xt.contains(&format!("@{name}(")) {
-                        pura = false;
-                    }
-                    if xt.starts_with("store ") && xt.contains(" @") {
-                        pura = false;
-                    }
-                    if xt.contains("@printf")
-                        || xt.contains("@malloc")
-                        || xt.contains("@forja_contract_error")
-                    {
-                        pura = false;
-                    }
-                    if xt.contains("load") && xt.contains(" @") {
-                        pura = false;
-                    }
-                }
-                if pura {
-                    let clave = format!("@forja_cache_keys_{name}");
-                    let val = format!("@forja_cache_values_{name}");
-                    globals.push(format!(
-                        "{clave} = internal global [4096 x i64] zeroinitializer"
-                    ));
-                    globals.push(format!(
-                        "{val} = internal global [4096 x i64] zeroinitializer"
-                    ));
-                    out.push(l.to_string());
-                    out.push(format!("  %cache_idx_{name} = urem i64 %p0, 4096"));
-                    out.push(format!("  %cache_kp_{name} = getelementptr [4096 x i64], [4096 x i64]* {clave}, i64 0, i64 %cache_idx_{name}"));
-                    out.push(format!("  %cache_vp_{name} = getelementptr [4096 x i64], [4096 x i64]* {val}, i64 0, i64 %cache_idx_{name}"));
-                    out.push(format!(
-                        "  %cache_k_{name} = load i64, i64* %cache_kp_{name}"
-                    ));
-                    out.push(format!("  %cache_exp_{name} = add i64 %p0, 1"));
-                    out.push(format!(
-                        "  %cache_es_hit_{name} = icmp eq i64 %cache_k_{name}, %cache_exp_{name}"
-                    ));
-                    out.push(format!("  br i1 %cache_es_hit_{name}, label %cache_hit_{name}, label %cache_miss_{name}"));
-                    out.push(format!("cache_hit_{name}:"));
-                    out.push(format!(
-                        "  %cache_v_{name} = load i64, i64* %cache_vp_{name}"
-                    ));
-                    out.push(format!("  ret i64 %cache_v_{name}"));
-                    out.push(format!("cache_miss_{name}:"));
-                    for x in cuerpo {
-                        let xt = x.trim_start();
-                        if xt == "entry:" {
-                            continue;
-                        }
-                        if let Some(v) = xt.strip_prefix("ret i64 ") {
-                            let v = v.trim();
-                            out.push(format!(
-                                "  store i64 %cache_exp_{name}, i64* %cache_kp_{name}"
-                            ));
-                            out.push(format!("  store i64 {v}, i64* %cache_vp_{name}"));
-                            out.push(format!("  ret i64 {v}"));
-                        } else {
-                            out.push(x.to_string());
-                        }
-                    }
-                    out.push("}".to_string());
-                    i = end + 1;
-                    continue;
-                }
-            }
-        }
-        out.push(l.to_string());
-        i += 1;
-    }
-    let mut texto = out.join("\n");
-    if !globals.is_empty() {
-        texto.push_str("\n\n");
-        texto.push_str(&globals.join("\n"));
-    }
-    texto + "\n"
-}
-
-fn normalizar_llvm(ir: &str) -> String {
-    use std::collections::HashMap;
-    let mut globals = Vec::new();
-    let mut lineas = Vec::new();
-    for l in ir.lines() {
-        let t = l.trim_start();
-        if t.starts_with('@') && t.contains("constant") {
-            globals.push(l.to_string());
-            continue;
-        }
-        if t.starts_with("target triple") {
-            continue;
-        }
-        lineas.push(l.to_string());
-    }
-    // Instrucciones de nivel superior (antes de main) → cuerpo de main.
-    let mut top = Vec::new();
-    let mut cuerpo = Vec::new();
-    let mut depth = 0i32;
-    let mut en_principal = false;
-    for l in lineas {
-        let t = l.trim_start();
-        if t.starts_with("define ") && t.contains("@main") {
-            en_principal = true;
-            cuerpo.push(l.clone());
-            depth = 1;
-            continue;
-        }
-        if !en_principal {
-            if depth == 0 && (t.starts_with('%') || t.starts_with("call ")) {
-                top.push(l.clone());
-            } else {
-                cuerpo.push(l.clone());
-            }
-            if t.starts_with("define ") {
-                depth += 1;
-            }
-            if t.starts_with('}') {
-                depth -= 1;
-            }
-        } else {
-            cuerpo.push(l.clone());
-        }
-    }
-    let mut out = Vec::new();
-    let mut dentro_principal = false;
-    let mut depth2 = 0i32;
-    let mut principal_abierto = false;
-    for l in cuerpo {
-        let t = l.trim_start();
-        if t.starts_with("define ") && t.contains("@main") {
-            out.push("define i32 @main() {".to_string());
-            dentro_principal = true;
-            principal_abierto = true;
-            depth2 = 1;
-            continue;
-        }
-        if dentro_principal {
-            if principal_abierto && t.starts_with('%') && t.ends_with(':') {
-                out.push(l.clone());
-
-                principal_abierto = false;
-                continue;
-            }
-            if t == "}" {
-                dentro_principal = false;
-            }
-            if t.starts_with("ret i64 0") && depth2 == 1 {
-                out.push("  ret i32 0".to_string());
-                continue;
-            }
-        }
-        out.push(l.clone());
-    }
-    // Eliminar instrucciones después de ret hasta label/}.
-    let mut limpio = Vec::new();
-    let mut saltar = false;
-    for l in out {
-        let t = l.trim_start();
-        if saltar {
-            if t.ends_with(':') || t == "}" {
-                saltar = false;
-            } else {
-                continue;
-            }
-        }
-        limpio.push(l.clone());
-        if t.starts_with("ret ") {
-            saltar = true;
-        }
-    }
-    // Renumerar temporales por función.
-    let mut finales = Vec::new();
-    let mut i = 0;
-    while i < limpio.len() {
-        let l = &limpio[i];
-        let t = l.trim_start();
-        if t.starts_with("define ") {
-            let mut fin = i + 1;
-            while fin < limpio.len() && limpio[fin].trim() != "}" {
-                fin += 1;
-            }
-            if fin < limpio.len() {
-                fin += 1;
-            }
-            let mut mapa: HashMap<String, usize> = HashMap::new();
-            let mut orden = 0usize;
-            for x in &limpio[i..fin] {
-                let mut j = 0;
-                let b = x.as_bytes();
-                while j < b.len() {
-                    if b[j] == b'%' && j + 1 < b.len() && b[j + 1].is_ascii_digit() {
-                        let mut k = j + 1;
-                        while k < b.len() && b[k].is_ascii_digit() {
-                            k += 1;
-                        }
-                        let clave = x[j + 1..k].to_string();
-                        mapa.entry(clave).or_insert_with(|| {
-                            let v = orden;
-                            orden += 1;
-                            v
-                        });
-                        j = k;
-                    } else {
-                        j += 1;
-                    }
-                }
-            }
-            for x in &limpio[i..fin] {
-                let y = x.replace("%%", "%");
-                let mut out = String::with_capacity(y.len());
-                let mut j = 0;
-                let b = y.as_bytes();
-                while j < b.len() {
-                    if b[j] == b'%' && j + 1 < b.len() && b[j + 1].is_ascii_digit() {
-                        let mut k = j + 1;
-                        while k < b.len() && b[k].is_ascii_digit() {
-                            k += 1;
-                        }
-                        let clave = &y[j + 1..k];
-                        if let Some(v) = mapa.get(clave) {
-                            out.push_str(&format!("%v{v}"));
-                        } else {
-                            out.push_str(&y[j..k]);
-                        }
-                        j = k;
-                    } else {
-                        out.push(b[j] as char);
-                        j += 1;
-                    }
-                }
-                finales.push(out);
-            }
-            i = fin;
-        } else {
-            finales.push(l.replace("%%", "%"));
-            i += 1;
-        }
-    }
-    let mut texto = finales
-        .into_iter()
-        .map(|l| {
-            let t = l.trim_start();
-            if t == "entry:" {
-                String::new()
-            } else if t.starts_with('%') && t.ends_with(':') {
-                l.replacen('%', "", 1)
-            } else {
-                l
-            }
-        })
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        );
-    if !globals.is_empty() {
-        texto.push_str(
-            "
-
-",
-        );
-        texto.push_str(&globals.join(
-            "
-",
-        ));
-    }
-    texto
-        + "
-"
+    // El backend nuevo emite IR válido de entrada: no hace falta `normalizar_llvm`
+    // (era un parche de texto para el backend legacy).
+    Ok(memoizar_puras(&ir))
 }
 
 /// Lee un archivo de código fuente verificando que no supere el límite de tamaño.
@@ -2150,4 +1846,111 @@ mod jit_fallback_tests {
         let r = con_respaldo(|| {}, || Err("boom".to_string()));
         assert_eq!(r, Err("boom".to_string()));
     }
+}
+
+/// Memoiza funciones puras, recursivas, de un `i64` a `i64`.
+///
+/// Sólo aplica cuando el cuerpo no llama a otras funciones ni toca globals/I/O.
+/// La caché es directa, de 4096 entradas; una colisión sólo provoca un miss.
+fn memoizar_puras(ir: &str) -> String {
+    if !crate::config::actual().memoizacion {
+        return ir.to_string();
+    }
+    let lineas: Vec<&str> = ir.lines().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut globals: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lineas.len() {
+        let l = lineas[i];
+        let t = l.trim_start();
+        if t.starts_with("define i64 @") && t.contains("(i64 %p0)") {
+            let name = t
+                .strip_prefix("define i64 @")
+                .and_then(|x| x.split('(').next())
+                .unwrap_or("");
+            let mut end = i + 1;
+            while end < lineas.len() && lineas[end].trim() != "}" {
+                end += 1;
+            }
+            if end < lineas.len() {
+                let cuerpo: Vec<&str> = lineas[i + 1..end].to_vec();
+                let body = cuerpo.join("\n");
+                let self_call = format!("call i64 @{name}(i64");
+                let mut pura = body.contains(&self_call);
+                for x in &cuerpo {
+                    let xt = x.trim_start();
+                    if xt.contains("call ") && !xt.contains(&format!("@{name}(")) {
+                        pura = false;
+                    }
+                    if xt.starts_with("store ") && xt.contains(" @") {
+                        pura = false;
+                    }
+                    if xt.contains("@printf")
+                        || xt.contains("@malloc")
+                        || xt.contains("@forja_contract_error")
+                    {
+                        pura = false;
+                    }
+                    if xt.contains("load") && xt.contains(" @") {
+                        pura = false;
+                    }
+                }
+                if pura {
+                    let clave = format!("@forja_cache_keys_{name}");
+                    let val = format!("@forja_cache_values_{name}");
+                    globals.push(format!(
+                        "{clave} = internal global [4096 x i64] zeroinitializer"
+                    ));
+                    globals.push(format!(
+                        "{val} = internal global [4096 x i64] zeroinitializer"
+                    ));
+                    out.push(l.to_string());
+                    out.push(format!("  %cache_idx_{name} = urem i64 %p0, 4096"));
+                    out.push(format!("  %cache_kp_{name} = getelementptr [4096 x i64], [4096 x i64]* {clave}, i64 0, i64 %cache_idx_{name}"));
+                    out.push(format!("  %cache_vp_{name} = getelementptr [4096 x i64], [4096 x i64]* {val}, i64 0, i64 %cache_idx_{name}"));
+                    out.push(format!(
+                        "  %cache_k_{name} = load i64, i64* %cache_kp_{name}"
+                    ));
+                    out.push(format!("  %cache_exp_{name} = add i64 %p0, 1"));
+                    out.push(format!(
+                        "  %cache_es_hit_{name} = icmp eq i64 %cache_k_{name}, %cache_exp_{name}"
+                    ));
+                    out.push(format!("  br i1 %cache_es_hit_{name}, label %cache_hit_{name}, label %cache_miss_{name}"));
+                    out.push(format!("cache_hit_{name}:"));
+                    out.push(format!(
+                        "  %cache_v_{name} = load i64, i64* %cache_vp_{name}"
+                    ));
+                    out.push(format!("  ret i64 %cache_v_{name}"));
+                    out.push(format!("cache_miss_{name}:"));
+                    for x in cuerpo {
+                        let xt = x.trim_start();
+                        if xt == "entry:" {
+                            continue;
+                        }
+                        if let Some(v) = xt.strip_prefix("ret i64 ") {
+                            let v = v.trim();
+                            out.push(format!(
+                                "  store i64 %cache_exp_{name}, i64* %cache_kp_{name}"
+                            ));
+                            out.push(format!("  store i64 {v}, i64* %cache_vp_{name}"));
+                            out.push(format!("  ret i64 {v}"));
+                        } else {
+                            out.push(x.to_string());
+                        }
+                    }
+                    out.push("}".to_string());
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(l.to_string());
+        i += 1;
+    }
+    let mut texto = out.join("\n");
+    if !globals.is_empty() {
+        texto.push_str("\n\n");
+        texto.push_str(&globals.join("\n"));
+    }
+    texto + "\n"
 }

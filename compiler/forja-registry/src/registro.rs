@@ -170,8 +170,8 @@ impl Index {
     }
 
     pub fn guardar(&self, ruta_archivo: &Path) -> Result<(), String> {
-        if let Some(dir) = ruta_archivo.parent() {
-            fs::create_dir_all(dir)
+        if let Some(directorio) = ruta_archivo.parent() {
+            fs::create_dir_all(directorio)
                 .map_err(|e| format!("Error creando directorio del index: {}", e))?;
         }
         let contenido = serde_json::to_string_pretty(self)
@@ -410,9 +410,9 @@ pub fn empaquetar(
 }
 
 /// Recolecta recursivamente archivos `.fa` (ignora `target/`, `.git/`, `.forja/`).
-fn recolectar_fa(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries =
-        fs::read_dir(dir).map_err(|e| format!("Error leyendo {}: {}", dir.display(), e))?;
+fn recolectar_fa(directorio: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = fs::read_dir(directorio)
+        .map_err(|e| format!("Error leyendo {}: {}", directorio.display(), e))?;
     for entrada in entries {
         let entrada = entrada.map_err(|e| format!("Error de entrada: {}", e))?;
         let ruta_archivo = entrada.path();

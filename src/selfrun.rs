@@ -99,6 +99,18 @@ pub fn try_selfrun() -> Option<()> {
     Some(())
 }
 
+/// ¿El comando puede reemplazar este mismo ejecutable?
+///
+/// Solo en ese caso hace falta la copia temporal en Windows: en cada arranque
+/// cuesta ~400 ms (copiar el binario + segundo proceso) y ningún comando de
+/// ejecución lo necesita.
+pub fn comando_reemplaza_binario(comando: Option<&str>) -> bool {
+    matches!(
+        comando,
+        Some("actualizar" | "update" | "upgrade" | "desinstalar" | "uninstall")
+    )
+}
+
 /// Si estamos en Windows, copia el ejecutable actual al directorio temporal (%TEMP%)
 /// y lo ejecuta desde allí para liberar el ejecutable original (evita bloqueos de archivo).
 /// Al finalizar la ejecución, elimina automáticamente el ejecutable temporal generado.

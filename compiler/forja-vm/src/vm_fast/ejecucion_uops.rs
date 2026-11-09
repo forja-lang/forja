@@ -61,11 +61,11 @@ impl ForjaFast {
             self.reemplazar_funcion(*sym_id, *ip, *tamano_variables);
         }
 
-        let len = uops.len();
+        let longitud = uops.len();
         self.ip = 0;
 
         loop {
-            if self.ip >= len {
+            if self.ip >= longitud {
                 break;
             }
             if self.ejecutadas > self.max_inst {
@@ -604,7 +604,7 @@ impl ForjaFast {
                     if let Some(entry) = entrada_opt {
                         let next_ip = self.ip + 1;
                         let es_tail =
-                            next_ip < len && matches!(uops.get(next_ip), Some(Uop::Return));
+                            next_ip < longitud && matches!(uops.get(next_ip), Some(Uop::Return));
 
                         if es_tail {
                             self.flush_pila();

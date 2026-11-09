@@ -119,12 +119,14 @@ pub struct ForjaFast {
     // `ObtenerCampo`, `NuevoObjeto`, ...) es constante para ese IP, así que se
     // interna una sola vez en vez de pagar `Arc::from` + hash en cada ejecución.
     sym_por_ip: Vec<Option<IdSimbolo>>,
+    /// el opcode de esta iteración viene forzado por `CallClosure`.
+    op_forzado_en_ip: bool,
 
     // Cache de IdSimbolo para builtins comunes (comparaciones O(1))
     sym_escribir: IdSimbolo,
     sym_retornar: IdSimbolo,
     sym_longitud: IdSimbolo,
-    sym_len: IdSimbolo,
+    longitud_simbolo: IdSimbolo,
     sym_tipo: IdSimbolo,
     sym_a_texto: IdSimbolo,
     sym_es_numero: IdSimbolo,
@@ -289,10 +291,11 @@ impl ForjaFast {
             ic_mapget: Vec::new(),
             ic_mapset: Vec::new(),
             sym_por_ip: Vec::new(),
+            op_forzado_en_ip: false,
             sym_escribir: IdSimbolo(0),
             sym_retornar: IdSimbolo(0),
             sym_longitud: IdSimbolo(0),
-            sym_len: IdSimbolo(0),
+            longitud_simbolo: IdSimbolo(0),
             sym_tipo: IdSimbolo(0),
             sym_a_texto: IdSimbolo(0),
             sym_es_numero: IdSimbolo(0),
@@ -419,9 +422,9 @@ impl ForjaFast {
     /// instrumenter muestrea los IPs calientes (para pre-especializar la
     /// siguiente corrida).
     pub fn habilitar_pgo(&mut self) {
-        let len = self.bytecode.len().max(1);
+        let longitud = self.bytecode.len().max(1);
         self.perfil_pgo = Some(crate::pgo::ProfileData::nuevo());
-        self.instrumenter_pgo = Some(crate::pgo::Instrumenter::con_sample_rate(len, 8));
+        self.instrumenter_pgo = Some(crate::pgo::Instrumenter::con_sample_rate(longitud, 8));
     }
 
     /// Finaliza la recolección: vuelca los contadores del instrumenter al
@@ -554,10 +557,10 @@ impl ForjaFast {
     ) -> ValorFast {
         // Stack temporal para evaluar la condición
         let mut stack: Vec<ValorFast> = Vec::with_capacity(16);
-        let len = uops.len();
+        let longitud = uops.len();
         let mut ip = 0usize;
 
-        while ip < len {
+        while ip < longitud {
             match &uops[ip] {
                 Uop::PushEntero(n) => stack.push(obtener_small_entero_fast(*n)),
                 Uop::PushDecimal(d) => stack.push(ValorFast::flotante(*d)),
@@ -880,8 +883,8 @@ impl ForjaFast {
     }
 
     fn locals_mut(&mut self) -> &mut Vec<ValorFast> {
-        let len = self.frame_locals.len();
-        unsafe { self.frame_locals.get_unchecked_mut(len - 1) }
+        let longitud = self.frame_locals.len();
+        unsafe { self.frame_locals.get_unchecked_mut(longitud - 1) }
     }
 
     /// Carga una variable local por índice (O(1)).
@@ -911,7 +914,7 @@ impl ForjaFast {
         self.sym_escribir = self.runtime.tabla_simbolos.internar("escribir");
         self.sym_retornar = self.runtime.tabla_simbolos.internar("retornar");
         self.sym_longitud = self.runtime.tabla_simbolos.internar("longitud");
-        self.sym_len = self.runtime.tabla_simbolos.internar("len");
+        self.longitud_simbolo = self.runtime.tabla_simbolos.internar("len");
         self.sym_tipo = self.runtime.tabla_simbolos.internar("tipo");
         self.sym_a_texto = self.runtime.tabla_simbolos.internar("a_texto");
         self.sym_es_numero = self.runtime.tabla_simbolos.internar("es_numero");
@@ -936,15 +939,15 @@ impl ForjaFast {
     }
 
     fn inicializar_ic(&mut self) {
-        let len = self.bytecode.len();
-        self.ic_getfield = vec![Pic::Empty; len];
-        self.ic_setfield = vec![Pic::Empty; len];
-        self.ic_miss_cantidad = vec![0u8; len];
-        self.ic_callmethod = vec![Pic::Empty; len];
-        self.ic_arrayget = vec![None; len];
-        self.ic_arrayset = vec![None; len];
-        self.ic_mapget = vec![false; len];
-        self.ic_mapset = vec![false; len];
+        let longitud = self.bytecode.len();
+        self.ic_getfield = vec![Pic::Empty; longitud];
+        self.ic_setfield = vec![Pic::Empty; longitud];
+        self.ic_miss_cantidad = vec![0u8; longitud];
+        self.ic_callmethod = vec![Pic::Empty; longitud];
+        self.ic_arrayget = vec![None; longitud];
+        self.ic_arrayset = vec![None; longitud];
+        self.ic_mapget = vec![false; longitud];
+        self.ic_mapset = vec![false; longitud];
         // el bytecode puede cambiar (hot reload): los IPs apuntan a otros nombres.
         self.sym_por_ip.clear();
     }
@@ -958,9 +961,9 @@ impl ForjaFast {
             return id;
         }
         let id = self.runtime.tabla_simbolos.internar_arco(nombre);
-        let len = self.bytecode.len().max(ip + 1);
-        if self.sym_por_ip.len() < len {
-            self.sym_por_ip.resize(len, None);
+        let longitud = self.bytecode.len().max(ip + 1);
+        if self.sym_por_ip.len() < longitud {
+            self.sym_por_ip.resize(longitud, None);
         }
         self.sym_por_ip[ip] = Some(id);
         id

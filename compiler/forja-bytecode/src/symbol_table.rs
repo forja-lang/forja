@@ -103,7 +103,7 @@ impl TablaSimbolos {
     ///
     /// # Devuelve
     /// Número de textos distintos que contiene la tabla.
-    pub fn len(&self) -> usize {
+    pub fn longitud(&self) -> usize {
         self.textos.len()
     }
 
@@ -112,6 +112,6 @@ impl TablaSimbolos {
     /// # Devuelve
     /// `true` si no se internó ningún texto todavía.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.longitud() == 0
     }
 }

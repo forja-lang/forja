@@ -697,8 +697,8 @@ pub fn nativo_socket_udp_recibir_binario(
 
     match socket.recv_from(&mut buffer) {
         Ok((n, _origen)) => {
-            let hex_string: String = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect();
-            let indice = vm.reservar_texto(Arc::from(hex_string.as_str()));
+            let texto_hex: String = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect();
+            let indice = vm.reservar_texto(Arc::from(texto_hex.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => {

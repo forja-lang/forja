@@ -1,12 +1,16 @@
-//! # LLVM Backend para Forja — BACKEND NUEVO (en desarrollo)
+//! # LLVM Backend para Forja
 //!
-//! Este es el **backend LLVM NUEVO en desarrollo** (andamiaje de bajo nivel
-//! IR→LLVM). Todavía **NO implementa lowering AST→LLVM**: esa labor corresponde
-//! . El lowering real AST→LLVM hoy vive en el módulo interno/legacy
-//! `compiler_llvm.rs`, retenido solo para respaldar `compilar_a_llvm()`.
+//! Backend **único**: el lowering AST → LLVM IR vive en [`lowering`] y emite IR
+//! válido de entrada (punteros opacos, globals reales, valores tipados). El
+//! antiguo módulo `legacy.rs` (que emitía IR inválido y se parcheaba después con
+//! `normalizar_llvm`) fue eliminado; sus capacidades están migradas acá.
 //!
-//! Backend que genera código máquina nativo usando LLVM como infraestructura.
-//! Soporta: tipos básicos, funciones, clases/structs, enums, closures.
+//! Este archivo conserva el catálogo de tipos (`LlvmTipo`), layouts de
+//! struct/enum, intrínsecas de GC y el pipeline de optimización.
+//!
+//! Soporta: tipos básicos, funciones, recursión, globals, control de flujo,
+//! texto (concat/compare/builtins), arreglos, clases con constructor y métodos,
+//! FFI (`funcion externa`) y punteros a función.
 //!
 //! ## Arquitectura
 //!
@@ -50,7 +54,7 @@ impl LlvmTipo {
             LlvmTipo::Ptr => "ptr".to_string(),
             LlvmTipo::Void => "void".to_string(),
             LlvmTipo::Struct(name, _) => format!("%{}", name),
-            LlvmTipo::Array(inner, len) => format!("[{} x {}]", len, inner.to_llvm_ir()),
+            LlvmTipo::Array(inner, longitud) => format!("[{} x {}]", longitud, inner.to_llvm_ir()),
         }
     }
 
@@ -1182,13 +1186,18 @@ mod tests {
 //
 // El lowering histórico (antes `compiler_llvm.rs`, módulo interno separado)
 // vive ahora bajo `backend_llvm` como `legado`. Así hay **un solo** backend
-// LLVM público y `compilar_a_llvm()` no depende de un módulo paralelo.
-#[path = "backend_llvm/legacy.rs"]
-pub mod legado;
+pub mod lowering;
 
-/// Compila declaraciones Forja a LLVM IR textual usando el lowering unificado.
+/// Compila declaraciones Forja a LLVM IR textual (lowering nuevo).
+///
+/// Emite IR válido de entrada: punteros opacos, globals reales, valores
+/// tipados (`Texto` = `ptr`, `Decimal` = `double`) y llamadas al runtime de
+/// soporte (`src/backend_llvm/runtime.c`, en [`RUNTIME_C`]). Los constructos que
+/// todavía no baja devuelven `Err` en vez de generar código que miente.
 pub fn compilar_a_llvm_texto(declaraciones: &[crate::ast::Declaracion]) -> Result<String, String> {
-    let mut backend = legado::LlvmBackend::nuevo("", "forja_module");
-    backend.compile(declaraciones)?;
-    Ok(backend.emitir_ir())
+    let mut backend = lowering::Lowering::nuevo();
+    backend.compilar(declaraciones)
 }
+
+/// Código C del runtime que debe enlazarse con el `.ll` generado.
+pub const RUNTIME_C: &str = include_str!("backend_llvm/runtime.c");

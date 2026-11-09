@@ -120,7 +120,7 @@ pub struct Transpiler {
     /// Si es true, la app GUI compilada mantiene la consola (`forja compilar --console`)
     mantener_consola: bool,
     /// Clases declaradas (para generar impls)
-    clases: HashMap<String, ClaseInfo>,
+    clases: HashMap<String, ClaseInformacion>,
     /// Declaraciones globales del programa (para análisis de mutabilidad)
     declaraciones_globales: Vec<Declaracion>,
     /// Nombres de funciones externas (FFI)
@@ -141,7 +141,7 @@ pub struct Transpiler {
     pub forzar_gui: bool,
 }
 
-struct ClaseInfo {
+struct ClaseInformacion {
     #[allow(dead_code)]
     campos: Vec<(String, String)>, // (nombre_campo, tipo)
     #[allow(dead_code)]
@@ -364,7 +364,7 @@ impl Transpiler {
         }
 
         // Detectar si hay función main o clases para generar el fn main()
-        let tiene_main = programa
+        let tiene_principal = programa
             .declaraciones
             .iter()
             .any(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"));
@@ -498,7 +498,7 @@ impl Transpiler {
         }
 
         // Si no hay GUI, generar main con código global
-        if !tiene_main && !self.saltar_main {
+        if !tiene_principal && !self.saltar_main {
             self.emitir_linea("fn main() {");
             self.sangria();
 
@@ -1123,7 +1123,7 @@ impl Transpiler {
 
                 self.clases.insert(
                     nombre.clone(),
-                    ClaseInfo {
+                    ClaseInformacion {
                         campos: campos_informacion,
                         metodos: metodos_informacion,
                         tipos_campos,

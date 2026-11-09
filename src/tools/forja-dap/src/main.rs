@@ -186,7 +186,7 @@ fn main() {
 
         // DAP usa Content-Length headers como LSP
         if linea.starts_with("Content-Length: ") {
-            let len: usize = linea
+            let longitud: usize = linea
                 .strip_prefix("Content-Length: ")
                 .unwrap_or_default()
                 .trim()
@@ -196,7 +196,7 @@ fn main() {
             let mut blank = String::new();
             stdin.lock().read_line(&mut blank).ok();
             // Leer contenido
-            let mut content = vec![0u8; len];
+            let mut content = vec![0u8; longitud];
             if io::stdin().read_exact(&mut content).is_err() {
                 break;
             }

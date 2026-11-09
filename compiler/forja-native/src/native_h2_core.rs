@@ -250,12 +250,12 @@ impl TablaDinamica {
         self.evict();
     }
 
-    pub fn len(&self) -> usize {
+    pub fn longitud(&self) -> usize {
         self.entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.longitud() == 0
     }
 
     pub fn buscar(&self, name: &str, valor: &str) -> Option<usize> {
@@ -560,9 +560,9 @@ fn huffman_codificar(entrada: &str) -> Vec<u8> {
     let mut salida = Vec::new();
 
     for &byte in entrada.as_bytes() {
-        let (code, len) = HUFFMAN_TABLE[byte as usize];
-        bits = (bits << len) | code as u64;
-        n_bits += len as u32;
+        let (code, longitud) = HUFFMAN_TABLE[byte as usize];
+        bits = (bits << longitud) | code as u64;
+        n_bits += longitud as u32;
 
         while n_bits >= 8 {
             n_bits -= 8;
@@ -594,10 +594,10 @@ impl HuffmanNodo {
         }
     }
 
-    fn insert(&mut self, code: u32, len: u8, valor: u8) {
+    fn insert(&mut self, code: u32, longitud: u8, valor: u8) {
         let mut nodo = self;
-        for i in (0..len).rev() {
-            let bit = ((code >> (len - 1 - i)) & 1) as usize;
+        for i in (0..longitud).rev() {
+            let bit = ((code >> (longitud - 1 - i)) & 1) as usize;
             if nodo.children[bit].is_none() {
                 nodo.children[bit] = Some(Box::new(HuffmanNodo::nuevo()));
             }
@@ -609,9 +609,9 @@ impl HuffmanNodo {
 
 fn construir_huffman_arbol() -> HuffmanNodo {
     let mut raiz = HuffmanNodo::nuevo();
-    for (i, &(code, len)) in HUFFMAN_TABLE.iter().enumerate() {
-        if len > 0 {
-            raiz.insert(code, len, i as u8);
+    for (i, &(code, longitud)) in HUFFMAN_TABLE.iter().enumerate() {
+        if longitud > 0 {
+            raiz.insert(code, longitud, i as u8);
         }
     }
     raiz
@@ -749,12 +749,12 @@ fn decodificar_texto(data: &[u8], offset: &mut usize) -> Result<String, ()> {
         return Err(());
     }
     let huff = (data[*offset] & 0x80) != 0;
-    let len = decodificar_integer(data, offset, 7)? as usize;
-    if *offset + len > data.len() {
+    let longitud = decodificar_integer(data, offset, 7)? as usize;
+    if *offset + longitud > data.len() {
         return Err(());
     }
-    let raw = &data[*offset..*offset + len];
-    *offset += len;
+    let raw = &data[*offset..*offset + longitud];
+    *offset += longitud;
     if huff {
         let decoded = huffman_decodificar(raw).map_err(|_| ())?;
         String::from_utf8(decoded).map_err(|_| ())
@@ -810,13 +810,13 @@ pub struct H2Frame {
 impl H2Frame {
     /// Serializa un frame a bytes (listo para enviar por socket)
     pub fn serializar(&self) -> Vec<u8> {
-        let len = self.payload.len();
-        let mut buf = Vec::with_capacity(9 + len);
+        let longitud = self.payload.len();
+        let mut buf = Vec::with_capacity(9 + longitud);
 
         // Length: 24 bits, big-endian
-        buf.push((len >> 16) as u8);
-        buf.push((len >> 8) as u8);
-        buf.push(len as u8);
+        buf.push((longitud >> 16) as u8);
+        buf.push((longitud >> 8) as u8);
+        buf.push(longitud as u8);
 
         // Type
         buf.push(self.tipo_frame);
@@ -841,7 +841,7 @@ impl H2Frame {
         if data.len() < 9 {
             return None;
         }
-        let len = ((data[0] as usize) << 16) | ((data[1] as usize) << 8) | (data[2] as usize);
+        let longitud = ((data[0] as usize) << 16) | ((data[1] as usize) << 8) | (data[2] as usize);
         let tipo_frame = data[3];
         let flags = data[4];
         let stream_id = ((data[5] as u32) << 24)
@@ -849,7 +849,7 @@ impl H2Frame {
             | ((data[7] as u32) << 8)
             | (data[8] as u32);
         let stream_id = stream_id & 0x7FFFFFFF;
-        Some((len, tipo_frame, flags, stream_id))
+        Some((longitud, tipo_frame, flags, stream_id))
     }
 
     /// Crea un frame SETTINGS vacío (ACK o con settings)
@@ -1071,10 +1071,10 @@ pub fn hpack_decodificar(
             if use_name_index {
                 let idx = decodificar_integer(data, &mut offset, 6).ok()?;
                 let valor = decodificar_texto(data, &mut offset).ok()?;
-                let entry = tabla
+                let entrada = tabla
                     .get(idx as usize)
                     .map(|(n, _)| (n.to_string(), valor.clone()));
-                if let Some((name, val)) = entry {
+                if let Some((name, val)) = entrada {
                     cabeceras.insert(name.clone(), val.clone());
                     tabla.add(&name, &val);
                 } else {
@@ -1093,10 +1093,10 @@ pub fn hpack_decodificar(
                 } else {
                     let idx = decodificar_integer(data, &mut offset, 6).ok()?;
                     let valor = decodificar_texto(data, &mut offset).ok()?;
-                    let entry = tabla
+                    let entrada = tabla
                         .get(idx as usize)
                         .map(|(n, _)| (n.to_string(), valor.clone()));
-                    if let Some((name, val)) = entry {
+                    if let Some((name, val)) = entrada {
                         cabeceras.insert(name.clone(), val.clone());
                         tabla.add(&name, &val);
                     } else {
@@ -1258,38 +1258,38 @@ pub fn nativo_h2_leer_frame(
 
     // Leer header de 9 bytes
     let mut header = [0u8; 9];
-    let mut read = 0;
-    while read < 9 {
-        match stream.read(&mut header[read..]) {
+    let mut leer = 0;
+    while leer < 9 {
+        match stream.read(&mut header[leer..]) {
             Ok(0) => {
                 return Err(ErrFast::TipoInv(
                     "h2_frame_cerrado: conexión cerrada".into(),
                 ))
             }
-            Ok(n) => read += n,
+            Ok(n) => leer += n,
             Err(e) => return Err(ErrFast::TipoInv(format!("error_io: {}", e))),
         }
     }
 
-    let (len, tipo_frame, flags, stream_id) = H2Frame::parsear_header(&header)
+    let (longitud, tipo_frame, flags, stream_id) = H2Frame::parsear_header(&header)
         .ok_or_else(|| ErrFast::TipoInv("h2_frame_invalido: header mal formado".into()))?;
 
     // Validar tamaño máximo
-    if len > 16777215 {
+    if longitud > 16777215 {
         return Err(ErrFast::TipoInv("h2_frame_muy_grande: > 16MB".into()));
     }
 
     // Leer payload
-    let mut payload = vec![0u8; len];
-    let mut read = 0;
-    while read < len {
-        match stream.read(&mut payload[read..]) {
+    let mut payload = vec![0u8; longitud];
+    let mut leer = 0;
+    while leer < longitud {
+        match stream.read(&mut payload[leer..]) {
             Ok(0) => {
                 return Err(ErrFast::TipoInv(
                     "h2_frame_cerrado: payload truncado".into(),
                 ))
             }
-            Ok(n) => read += n,
+            Ok(n) => leer += n,
             Err(e) => return Err(ErrFast::TipoInv(format!("error_io: {}", e))),
         }
     }
@@ -1373,9 +1373,9 @@ pub fn nativo_h2_settings_predeterminado(
     let raw = settings.serializar();
 
     // Parsear el frame serializado para extraer payload
-    let (len, _frame_type, flags, stream_id) = H2Frame::parsear_header(&raw[..9])
+    let (longitud, _frame_type, flags, stream_id) = H2Frame::parsear_header(&raw[..9])
         .ok_or_else(|| ErrFast::TipoInv("h2_settings_invalido".into()))?;
-    let payload = &raw[9..9 + len];
+    let payload = &raw[9..9 + longitud];
     let payload_b64 = b64_codificar(payload);
 
     let mapa = format!(

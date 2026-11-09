@@ -1406,7 +1406,7 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
 
         let linea = token.linea as u32;
         let col = token.columna as u32;
-        let len = token.kind.to_string().len() as u32;
+        let longitud = token.kind.to_string().len() as u32;
 
         let delta_line = linea.saturating_sub(anterior_linea);
         let delta_inicio = if delta_line == 0 {
@@ -1418,7 +1418,7 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
         semanticos.push(SemanticToken {
             delta_line,
             delta_start,
-            length: len,
+            length: longitud,
             token_type: tipo_idx,
             token_modifiers_bitset: modifier_bitset,
         });

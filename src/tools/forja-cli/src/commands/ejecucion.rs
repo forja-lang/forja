@@ -9,24 +9,27 @@ pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<
     std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
     let ll = directorio.join("main.ll");
     std::fs::write(&ll, ir).map_err(|e| e.to_string())?;
+    // Runtime de soporte (texto, arreglos, tiempo): se compila junto al .ll.
+    let rt = directorio.join("forja_rt.c");
+    std::fs::write(&rt, forja::backend_llvm::RUNTIME_C).map_err(|e| e.to_string())?;
     let (compilador, banderas) = if std::process::Command::new("clang")
         .arg("--version")
         .output()
         .is_ok()
     {
-        ("clang", vec!["-O3", "-Wno-override-module"])
+        ("clang", vec!["-O3", "-flto", "-Wno-override-module"])
     } else if std::process::Command::new("cc")
         .arg("--version")
         .output()
         .is_ok()
     {
-        ("cc", vec!["-O3"])
+        ("cc", vec!["-O3", "-flto"])
     } else if std::process::Command::new("gcc")
         .arg("--version")
         .output()
         .is_ok()
     {
-        ("gcc", vec!["-O3"])
+        ("gcc", vec!["-O3", "-flto"])
     } else {
         return Err("no se encontró clang, cc ni gcc en PATH".into());
     };
@@ -35,6 +38,7 @@ pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<
         .arg("-o")
         .arg(salida)
         .arg(&ll)
+        .arg(&rt)
         .output()
         .map_err(|e| format!("{compilador} no disponible: {e}"))?;
     if !out.status.success() {
@@ -123,7 +127,12 @@ pub(crate) fn cmd_ejecutar(args: &[String]) {
         return;
     }
 
-    let auto_asm = !asm_mode
+    // Compilar con clang en cada `forja ejecutar` cuesta ~200 ms (y sólo se
+    // intentaba si el fuente no contiene "importar", un heurístico por
+    // substring). Ahora es opt-in explícito: `destino: auto` en forja.yaml.
+    // Por defecto (`maquina`) se usa la VM, que compila en <1 ms.
+    let auto_asm = destino == "auto"
+        && !asm_mode
         && !nativo_mode
         && !cfg.estricto
         && !fuente.contains("requiere")

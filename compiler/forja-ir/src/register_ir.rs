@@ -281,12 +281,12 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
             }
             for (vreg, nominal) in uses {
                 let c = clases.get(&vreg).copied().unwrap_or(nominal);
-                let entry = intervals
+                let entrada = intervals
                     .entry(vreg)
                     .or_insert_with(|| (instr_idx, instr_idx, c, Vec::new()));
-                entry.0 = entry.0.min(instr_idx);
-                entry.1 = instr_idx;
-                entry.3.push(instr_idx);
+                entrada.0 = entrada.0.min(instr_idx);
+                entrada.1 = instr_idx;
+                entrada.3.push(instr_idx);
             }
             instr_idx += 1;
         }

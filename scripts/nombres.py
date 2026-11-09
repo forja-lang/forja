@@ -66,8 +66,19 @@ TRAITS_STD = set(
 EXENTAS_GLOBALES = set(
     """main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
     WriteProcessMemory ReadProcessMemory VirtualAlloc VirtualFree CreateProcessW
-    OUTPUT_HANDLE_IS_NULL_HEAP_READ_ONLY CWA
-    native_registry package_resolver registry_remote registry_server
+    GetProcAddress CreateToolhelp32Snapshot GetLastError GetStdHandle GetConsoleMode
+    GetConsoleWindow GetConsoleScreenBufferInfo GetAsyncKeyState SetConsoleMode
+    SetConsoleCtrlHandler ShowWindow OpenProcess Process32FirstW Process32NextW
+    Module32FirstW Module32NextW ReadConsoleW CreateFileMappingW MapViewOfFile
+    UnmapViewOfFile FlushViewOfFile CloseHandle LoadLibraryW FreeLibrary CreateFileW
+    STD_OUTPUT_HANDLE STD_INPUT_HANDLE MAX_PATH MAX_MODULE_NAME PROT_WRITE PROT_READ
+    MAP_SHARED MAP_PRIVATE MAP_FAILED FILE_MAP_WRITE FILE_MAP_READ ENABLE_LINE_INPUT
+    ENABLE_ECHO_INPUT ENABLE_PROCESSED_INPUT ENABLE_PROCESSED_OUTPUT
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING SETTINGS_HEADER_TABLE_SIZE
+    SETTINGS_MAX_FRAME_SIZE SETTINGS_MAX_HEADER_LIST_SIZE SETTINGS_INITIAL_WINDOW_SIZE
+    SETTINGS_ENABLE_PUSH DEFAULT_WINDOW_SIZE DEFAULT_MAX_FRAME_SIZE ERROR_FRAME_SIZE_ERROR
+    FRAME_WINDOW_UPDATE FRAME_PUSH_PROMISE
+    native_registry package_config
     puerto_registry String Vec HashMap HashSet Path PathBuf Arc Rc RefCell
     serialize deserialize expecting visit_bool visit_i64 visit_u64 visit_str visit_string
     visit_map visit_seq visit_none visit_some visit_unit""".split()

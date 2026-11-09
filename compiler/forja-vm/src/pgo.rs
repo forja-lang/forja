@@ -54,11 +54,11 @@ impl ProfileData {
 
     /// Registra un branch taken/not-taken
     pub fn record_branch(&mut self, block: &IdBloque, taken: bool) {
-        let entry = self.branch_counts.entry(block.clone()).or_insert((0, 0));
+        let entrada = self.branch_counts.entry(block.clone()).or_insert((0, 0));
         if taken {
-            entry.0 += 1;
+            entrada.0 += 1;
         } else {
-            entry.1 += 1;
+            entrada.1 += 1;
         }
     }
 

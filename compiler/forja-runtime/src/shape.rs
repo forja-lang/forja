@@ -89,7 +89,7 @@ impl Forma {
     ///
     /// # Devuelve
     /// Número de campos definidos.
-    pub fn len(&self) -> usize {
+    pub fn longitud(&self) -> usize {
         self.indice_a_campo.len()
     }
 
@@ -98,7 +98,7 @@ impl Forma {
     /// # Devuelve
     /// `true` si no se agregó ningún campo todavía.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.longitud() == 0
     }
 }
 
@@ -226,7 +226,7 @@ impl RegistroFormas {
         forma_nueva.padre = Some(id_forma);
 
         // La forma derivada arranca con los mismos campos que la forma de origen.
-        for posicion in 0..forma_padre.len() {
+        for posicion in 0..forma_padre.longitud() {
             forma_nueva.agregar_campo(forma_padre.indice_a_campo[posicion]);
         }
         let posicion = forma_nueva.agregar_campo(campo);

@@ -155,8 +155,8 @@ pub fn nativo_xhb_parsear(
     let ver_mapa_indice = vm.reservar_mapa(ver_mapa);
     doc_mapa.insert("versiones".to_string(), ValorFast::mapa(ver_mapa_indice));
 
-    let prop_mapa_indice = vm.reservar_mapa(properties_mapa);
-    doc_mapa.insert("properties".to_string(), ValorFast::mapa(prop_mapa_indice));
+    let indice_mapa_prop = vm.reservar_mapa(properties_mapa);
+    doc_mapa.insert("properties".to_string(), ValorFast::mapa(indice_mapa_prop));
 
     let cur_arr_idx = vm.reservar_arr(cur_lista);
     doc_mapa.insert("currencies".to_string(), ValorFast::arreglo(cur_arr_idx));
@@ -344,8 +344,8 @@ pub fn nativo_xhb_serializar(
                     }
                 }
             } else if sec_val.es_mapa() && field_name == "properties" {
-                let prop_mapa_indice = sec_val.indice_mapa() as usize;
-                if let Some(prop_map) = vm.mapa_monticulo().get(prop_mapa_indice) {
+                let indice_mapa_prop = sec_val.indice_mapa() as usize;
+                if let Some(prop_map) = vm.mapa_monticulo().get(indice_mapa_prop) {
                     if !prop_map.is_empty() {
                         salida.push_str("<properties");
                         for &attr in attr_order {

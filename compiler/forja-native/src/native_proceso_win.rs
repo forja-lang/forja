@@ -218,15 +218,15 @@ pub fn nativo_proceso_obtener_pid(
             return Ok(ValorFast::entero(0));
         }
         let mut pid: i64 = 0;
-        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-        let mut correcto = unsafe { Process32FirstW(snap, &mut entry) };
+        let mut entrada: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entrada.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut correcto = unsafe { Process32FirstW(snap, &mut entrada) };
         while correcto != 0 {
-            if wstr_igual(&entry.szExeFile, &nombre_w) {
-                pid = entry.th32ProcessID as i64;
+            if wstr_igual(&entrada.szExeFile, &nombre_w) {
+                pid = entrada.th32ProcessID as i64;
                 break;
             }
-            correcto = unsafe { Process32NextW(snap, &mut entry) };
+            correcto = unsafe { Process32NextW(snap, &mut entrada) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(pid))
@@ -338,15 +338,15 @@ pub fn nativo_proceso_modulo_base(
             return Ok(ValorFast::entero(0));
         }
         let mut base: i64 = 0;
-        let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
-        entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
-        let mut correcto = unsafe { Module32FirstW(snap, &mut entry) };
+        let mut entrada: MODULEENTRY32W = unsafe { std::mem::zeroed() };
+        entrada.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
+        let mut correcto = unsafe { Module32FirstW(snap, &mut entrada) };
         while correcto != 0 {
-            if wstr_igual(&entry.szModule, &nombre_w) {
-                base = entry.modBaseAddr as i64;
+            if wstr_igual(&entrada.szModule, &nombre_w) {
+                base = entrada.modBaseAddr as i64;
                 break;
             }
-            correcto = unsafe { Module32NextW(snap, &mut entry) };
+            correcto = unsafe { Module32NextW(snap, &mut entrada) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(base))
@@ -381,15 +381,15 @@ pub fn nativo_proceso_modulo_tamano(
             return Ok(ValorFast::entero(0));
         }
         let mut tamano: i64 = 0;
-        let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
-        entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
-        let mut correcto = unsafe { Module32FirstW(snap, &mut entry) };
+        let mut entrada: MODULEENTRY32W = unsafe { std::mem::zeroed() };
+        entrada.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
+        let mut correcto = unsafe { Module32FirstW(snap, &mut entrada) };
         while correcto != 0 {
-            if wstr_igual(&entry.szModule, &nombre_w) {
-                tamano = entry.modBaseSize as i64;
+            if wstr_igual(&entrada.szModule, &nombre_w) {
+                tamano = entrada.modBaseSize as i64;
                 break;
             }
-            correcto = unsafe { Module32NextW(snap, &mut entry) };
+            correcto = unsafe { Module32NextW(snap, &mut entrada) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(tamano))

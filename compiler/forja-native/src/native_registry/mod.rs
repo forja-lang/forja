@@ -184,7 +184,7 @@ impl NativoRegistro {
     /// el modo estricto lo usa para saber qué llamadas resuelve el
     /// runtime sin declararse en el programa.
     pub fn nombres(&self) -> Vec<String> {
-        (0..self.tabla_simbolos.len())
+        (0..self.tabla_simbolos.longitud())
             .map(|i| self.tabla_simbolos.texto(IdSimbolo(i as u32)).to_string())
             .collect()
     }

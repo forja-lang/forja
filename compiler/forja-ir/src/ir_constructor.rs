@@ -810,17 +810,17 @@ impl ConstructorDesdeAst {
         valor: &Expresion,
         num: Option<TipoNumerico>,
     ) -> IdValor {
-        let tmp = format!("__ac_{}", self.siguiente_temporal);
+        let temporal = format!("__ac_{}", self.siguiente_temporal);
         self.siguiente_temporal += 1;
-        let mem = self.reservar_memoria(&tmp);
+        let mem = self.reservar_memoria(&temporal);
         constructor_ir.emitir_reserva(mem);
         constructor_ir.emitir_guardado(mem, old);
         if let Some(n) = num {
-            self.num_var.insert(tmp.clone(), n);
+            self.num_var.insert(temporal.clone(), n);
         }
         let sintetica = Expresion::Binaria {
             izquierda: Box::new(Expresion::Identificador {
-                nombre: tmp,
+                nombre: temporal,
                 linea: 0,
                 columna: 0,
             }),

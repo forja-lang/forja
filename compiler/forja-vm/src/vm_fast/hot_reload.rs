@@ -20,7 +20,7 @@ impl ForjaFast {
             .get(&sym)
             .copied()
             .unwrap_or(usize::MAX);
-        let entry = FuncionVersion {
+        let entrada = FuncionVersion {
             ip,
             tamano_variables,
             version,
@@ -30,13 +30,13 @@ impl ForjaFast {
         if idx == usize::MAX {
             // Nueva función
             let nuevo_indice = self.function_table.entries.len();
-            self.function_table.entries.push(entry);
+            self.function_table.entries.push(entrada);
             self.sym_to_func_idx.insert(sym, nuevo_indice);
             self.function_versions.insert(sym, version);
             nuevo_indice
         } else {
             // Reemplazar función existente (hot reload)
-            self.function_table.entries[idx] = entry;
+            self.function_table.entries[idx] = entrada;
             self.function_versions.insert(sym, version);
             idx
         }

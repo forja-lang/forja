@@ -108,6 +108,72 @@ GLOSARIO = {
 
 
 # Métodos de `std`/`gtk` que empiezan con `is_`: renombrarlos rompe las llamadas (`.is_empty()`).
+# Nombres compuestos: en inglés el núcleo va al final (`method_table`), en español al principio
+# (`tabla_metodos`). El glosario palabra por palabra no alcanza, así que estos van explícitos.
+OVERRIDES = {
+    "method_table": "tabla_metodos",
+    "function_table": "tabla_funciones",
+    "symbol_table": "tabla_simbolos",
+    "class_structs": "estructuras_clase",
+    "class_descriptors": "descriptores_clase",
+    "class_descriptor": "descriptor_clase",
+    "tag_type": "tipo_etiqueta",
+    "fn_ptr_type": "tipo_ptr_funcion",
+    "env_ptr_type": "tipo_ptr_entorno",
+    "env_size": "tamano_entorno",
+    "state_type": "tipo_estado",
+    "resume_fn_type": "tipo_funcion_reanudar",
+    "function_versions": "versiones_funcion",
+    "function_hotness": "frecuencia_funcion",
+    "line_to_ip": "linea_a_ip",
+    "ip_to_line": "ip_a_linea",
+    "last_report_line": "linea_ultimo_reporte",
+    "current_line": "linea_actual",
+    "max_inline_size": "tamano_maximo_en_linea",
+    "inline_candidates": "candidatos_en_linea",
+    "final_output": "salida_final",
+    "current_count": "cantidad_actual",
+    "call_count": "cantidad_llamadas",
+    "deopt_count": "cantidad_desoptimizaciones",
+    "loop_iterations": "iteraciones_bucle",
+    "frame_count": "cantidad_marcos",
+    "step_over_frame_count": "cantidad_marcos_paso_a_paso",
+    "step_out_target_frame": "marco_destino_salir",
+    "module_resolver": "resolvedor_modulos",
+    "module_registry": "registro_modulos",
+    "module_cache": "cache_modulos",
+    "thread_rx": "hilo_receptor",
+    "thread_marked": "hilo_marcado",
+    "thread_heap": "hilo_monticulo",
+    "thread_free": "hilo_libre",
+    "chan_tx_heap": "canal_envio_monticulo",
+    "chan_tx_free": "canal_envio_libre",
+    "chan_rx_heap": "canal_recepcion_monticulo",
+    "chan_rx_free": "canal_recepcion_libre",
+    "obj_heap": "objeto_monticulo",
+    "obj_free": "objeto_libre",
+    "array_heap": "arreglo_monticulo",
+    "array_free": "arreglo_libre",
+    "map_heap": "mapa_monticulo",
+    "map_free": "mapa_libre",
+    "map_marked": "mapa_marcado",
+    "exacto_heap": "exacto_monticulo",
+    "exacto_free": "exacto_libre",
+    "str_heap": "texto_monticulo",
+    "str_free": "texto_libre",
+    "socket_heap": "socket_monticulo",
+    "hex_string": "texto_hex",
+    "project_dir": "directorio_proyecto",
+    "source_path": "ruta_fuente",
+    "type_distribution": "distribucion_tipos",
+    "push_valor_calls": "llamadas_empujar_valor",
+    "pop_valor_calls": "llamadas_desapilar_valor",
+    "sym_to_func_idx": "indice_simbolo_funcion",
+    "sym_len": "longitud_simbolo",
+    "osr_loop_iterations": "iteraciones_bucle_osr",
+    "prop_mapa_indice": "indice_mapa_prop",
+}
+
 NO_TOCAR = {
     # métodos de std (y de serde/tower-lsp) con estos nombres: renombrar `.clear()` o `.is_empty()`
     # rompe el build. Se hacen archivo por archivo (PLAN §7, lección 2), no en una pasada global.
@@ -156,6 +222,8 @@ def traducir_partes(parte: str) -> str | None:
 def traducir(nombre: str, forzar: bool = False) -> str | None:
     if nombre in renombrar.PROTEGIDOS or (nombre in NO_TOCAR and not forzar):
         return None
+    if nombre in OVERRIDES:
+        return OVERRIDES[nombre]
     original = nombre
     prefijo = ""
     if nombre.startswith("test_"):
@@ -201,21 +269,23 @@ def cuerpos_de_funciones(codigo: str) -> list[str]:
 
 def recolectar(archivos: list[Path]) -> dict:
     """Identificadores de toda la crate: violaciones, presentes e ítems declarados."""
-    violaciones: set[str] = set()
+    violaciones: Counter[str] = Counter()
     presentes: set[str] = set()
     funciones: set[str] = set()
     tipos: set[str] = set()
     campos: set[str] = set()
     modulos: set[str] = set()
+    locales: set[str] = set()
     for ruta in archivos:
         codigo = ruta.read_text(encoding="utf-8", errors="ignore")
-        violaciones |= {nombre for _, nombre in nombres.revisar(ruta)}
+        violaciones.update(nombre for _, nombre in nombres.revisar(ruta))
         codigo_sin_texto = "".join(t for t, es_codigo in renombrar.segmentar(codigo) if es_codigo)
         presentes |= set(RE_IDENT.findall(codigo_sin_texto))
         funciones |= set(renombrar.RE_FN.findall(codigo_sin_texto))
         tipos |= renombrar.tipos_del_archivo(codigo_sin_texto)
         campos |= renombrar.campos_del_archivo(codigo_sin_texto)
         modulos |= renombrar.modulos_del_archivo(codigo_sin_texto)
+        locales |= renombrar.locales_del_archivo(codigo_sin_texto)
     return {
         "violaciones": violaciones,
         "presentes": presentes,
@@ -223,6 +293,7 @@ def recolectar(archivos: list[Path]) -> dict:
         "tipos": tipos,
         "campos": campos,
         "modulos": modulos,
+        "locales": locales,
     }
 
 
@@ -243,17 +314,28 @@ def planificar(datos: dict) -> tuple[dict[str, str], list[str]]:
     destinos: Counter[str] = Counter()
     for nombre in sorted(datos["violaciones"]):
         # un campo declarado en nuestros structs sí se renombra aunque su nombre choque con std
-        destino = traducir(nombre, forzar=nombre in datos["campos"])
+        # campos y locales propios sí se renombran aunque choquen con un método de std:
+        # las llamadas `.len()` quedan protegidas por METODOS_STD en renombrar.py
+        forzar = nombre in datos["campos"] or nombre in datos["locales"]
+        destino = traducir(nombre, forzar=forzar)
         if destino is None:
             saltados.append(nombre)
             continue
         destinos[destino] += 1
         mapa[nombre] = destino
     # colisiones: destino ya existente en la crate o dos orígenes al mismo destino
+    # dos nombres distintos al mismo español (`len` y `length`): se queda el más usado
+    ganadores: dict[str, str] = {}
+    for nombre, destino in mapa.items():
+        if destinos[destino] == 1:
+            continue
+        actual = ganadores.get(destino)
+        if actual is None or datos["violaciones"][nombre] > datos["violaciones"][actual]:
+            ganadores[destino] = nombre
     for nombre, destino in list(mapa.items()):
         # la colisión se valida archivo por archivo (ver `main`): el mismo nombre puede
         # convivir en archivos distintos sin pisarse
-        if destinos[destino] > 1:
+        if destinos[destino] > 1 and ganadores[destino] != nombre:
             saltados.append(nombre)
             del mapa[nombre]
     return mapa, saltados

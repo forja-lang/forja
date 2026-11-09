@@ -39,9 +39,16 @@ fn main() {
     if selfrun::try_selfrun().is_some() {
         return;
     }
-    selfrun::shadow_copia();
 
     let args: Vec<String> = env::args().collect();
+
+    // En Windows, re-ejecutarse desde una copia temporal sirve para poder
+    // reemplazar el binario en caliente (auto-update/desinstalación). Hacerlo en
+    // cada arranque costaba ~400 ms (copiar el ejecutable + segundo proceso) y
+    // ningún comando de ejecución lo necesita.
+    if selfrun::comando_reemplaza_binario(args.get(1).map(String::as_str)) {
+        selfrun::shadow_copia();
+    }
 
     // Reportes de fallo locales (solo si el usuario activó la telemetría).
     let panico_anterior = std::panic::take_hook();

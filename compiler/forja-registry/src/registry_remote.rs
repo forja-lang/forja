@@ -269,11 +269,11 @@ pub fn decodificar_publicacion(cuerpo: &[u8]) -> Result<(Publicacion, Vec<u8>), 
 }
 
 /// Ruta local del índice para el servidor de desarrollo.
-pub fn index_servidor(dir: &Path) -> std::path::PathBuf {
-    if dir.as_os_str().is_empty() {
+pub fn index_servidor(directorio: &Path) -> std::path::PathBuf {
+    if directorio.as_os_str().is_empty() {
         ruta_index()
     } else {
-        dir.join("index.json")
+        directorio.join("index.json")
     }
 }
 

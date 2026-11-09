@@ -61,17 +61,17 @@ pub fn b64_codificar(datos: &[u8]) -> String {
 /// Decodifica Base64 a bytes. Retorna Err si el input es inválido.
 pub fn b64_decodificar(texto: &str) -> Result<Vec<u8>, &'static str> {
     let bytes = texto.as_bytes();
-    let len = bytes.len();
-    if len == 0 {
+    let longitud = bytes.len();
+    if longitud == 0 {
         return Ok(Vec::new());
     }
-    if !len.is_multiple_of(4) {
+    if !longitud.is_multiple_of(4) {
         return Err("base64: longitud inválida");
     }
 
     // Contar padding
-    let relleno = if bytes[len - 1] == b'=' {
-        if bytes[len - 2] == b'=' {
+    let relleno = if bytes[longitud - 1] == b'=' {
+        if bytes[longitud - 2] == b'=' {
             2
         } else {
             1
@@ -80,7 +80,7 @@ pub fn b64_decodificar(texto: &str) -> Result<Vec<u8>, &'static str> {
         0
     };
 
-    let chunks = len / 4;
+    let chunks = longitud / 4;
     let out_longitud = chunks * 3 - relleno;
     let mut out = Vec::with_capacity(out_longitud);
 

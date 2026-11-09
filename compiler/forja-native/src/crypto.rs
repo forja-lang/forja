@@ -680,9 +680,9 @@ pub fn chacha20_xor(clave: &[u8; 32], nonce: &[u8; 12], data: &[u8]) -> Vec<u8> 
 /// en la posición 8*len (RFC 8439: cada bloque se interpreta como entero LE
 /// con el bit 8*len encendido).
 fn le_bytes_to_limbs(b: &[u8]) -> [u64; 5] {
-    let len = b.len().min(16);
+    let longitud = b.len().min(16);
     let mut buf = [0u8; 16];
-    buf[..len].copy_from_slice(b);
+    buf[..longitud].copy_from_slice(b);
     let val = u128::from_le_bytes(buf);
 
     // Extraer 5 × 26 bits
@@ -696,8 +696,8 @@ fn le_bytes_to_limbs(b: &[u8]) -> [u64; 5] {
     // Agregar bit alto en posición 8*len (RFC 8439)
     // Para len=16 → bit 128 → limbo[4] bit 24 (128 - 4*26)
     // Para len=1  → bit 8   → limbo[0] bit 8
-    if len > 0 {
-        let high_bit_pos = len * 8; // 8..128
+    if longitud > 0 {
+        let high_bit_pos = longitud * 8; // 8..128
         let limb = high_bit_pos / 26;
         let bit = high_bit_pos % 26;
         if limb < 5 {

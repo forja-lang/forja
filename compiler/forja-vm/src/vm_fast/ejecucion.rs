@@ -11,10 +11,10 @@ impl ForjaFast {
         // La redirección automática causaba bugs con DeclareIdx después de Add/Call,
         // ya que en uops DeclareIdx se expande a DeclareVar (sin pop del stack).
 
-        let len = self.bytecode.len();
+        let longitud = self.bytecode.len();
 
         loop {
-            if self.ip >= len {
+            if self.ip >= longitud {
                 break;
             }
             if self.ejecutadas > self.max_inst {
@@ -46,6 +46,10 @@ impl ForjaFast {
             } else {
                 None
             };
+            // `CallClosure` ejecuta un `Llamar` forzado en el mismo IP con el
+            // nombre del closure: ese nombre NO es constante por IP y no puede
+            // usar `simbolo_para_ip`.
+            self.op_forzado_en_ip = op_forzado.is_some();
             let op_propia;
             let op: &Opcode = match op_forzado {
                 Some(o) => {
@@ -885,7 +889,11 @@ impl ForjaFast {
                         p.record_call(nombre.as_ref());
                     }
                     let call_ip = self.ip;
-                    let sym_id = self.simbolo_para_ip(call_ip, nombre);
+                    let sym_id = if self.op_forzado_en_ip {
+                        self.runtime.tabla_simbolos.internar(nombre.as_ref())
+                    } else {
+                        self.simbolo_para_ip(call_ip, nombre)
+                    };
                     if self.show_bytecode {
                         eprintln!("[DEBUG Call] nombre={}, nargs={}, self.stack.len={}, top_len={}, frame_count={}",
                             nombre, nargs, self.stack.len(), self.top_longitud, self.frame_count);
@@ -919,7 +927,7 @@ impl ForjaFast {
                         // Tail Call Elimination: si el próximo opcode es Return,
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
                         let next_ip = call_ip + 1;
-                        let es_tail = next_ip < len
+                        let es_tail = next_ip < longitud
                             && matches!(self.bytecode.get(next_ip), Some(Opcode::Retornar));
 
                         if es_tail {
@@ -1123,7 +1131,7 @@ impl ForjaFast {
                     // Obtener la función de la function_table por índice
                     if let Some(entry) = self.function_table.entries.get(*func_idx).copied() {
                         let next_ip = self.ip + 1;
-                        let es_tail = next_ip < len
+                        let es_tail = next_ip < longitud
                             && matches!(self.bytecode.get(next_ip), Some(Opcode::Retornar));
 
                         if es_tail {

@@ -270,18 +270,18 @@ impl RegisterAllocator {
             assignments: HashMap::new(),
             spill_slots: 0,
             active_regs: {
-                let mut map: HashMap<PhysReg, VirtReg> =
+                let mut mapa: HashMap<PhysReg, VirtReg> =
                     TEMP_REGS.iter().map(|&r| (r, 0)).collect();
                 // Registrar registros extendidos (callee-saved) como disponibles
                 for &r in EXTENDED_REGS {
-                    map.insert(r, 0);
+                    mapa.insert(r, 0);
                 }
                 // Registrar los XMM (valores flotantes) como disponibles. Sin
                 // esto `find_free_reg(Float)` nunca encontraba registro libre.
                 for &r in XMM_REGS {
-                    map.insert(r, 0);
+                    mapa.insert(r, 0);
                 }
-                map
+                mapa
             },
             active_intervals: Vec::new(),
         }

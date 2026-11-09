@@ -738,8 +738,8 @@ impl ForjaFast {
         }
         self.runtime.canal_marked[tx_idx] = true;
         let ptr = self.runtime.chan_payloads[tx_idx].as_ptr();
-        let len = self.runtime.chan_payloads[tx_idx].len();
-        for i in 0..len {
+        let longitud = self.runtime.chan_payloads[tx_idx].len();
+        for i in 0..longitud {
             let v = unsafe { *ptr.add(i) };
             self.marcar_valor(v);
         }

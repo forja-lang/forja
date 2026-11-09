@@ -323,7 +323,7 @@ impl ForjaFast {
                     } else if sym == self.sym_escribir {
                         self.bytecode[i] =
                             Opcode::LlamarIncorporada(TipoIncorporada::Escribir, nargs);
-                    } else if sym == self.sym_longitud || sym == self.sym_len {
+                    } else if sym == self.sym_longitud || sym == self.longitud_simbolo {
                         self.bytecode[i] =
                             Opcode::LlamarIncorporada(TipoIncorporada::Longitud, nargs);
                     } else if sym == self.sym_tipo {

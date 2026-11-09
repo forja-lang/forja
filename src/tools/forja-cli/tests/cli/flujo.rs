@@ -44,8 +44,8 @@ fn salida(o: &Output) -> String {
     )
 }
 
-fn escribir(dir: &Path, nombre: &str, contenido: &str) -> PathBuf {
-    let ruta = dir.join(nombre);
+fn escribir(directorio: &Path, nombre: &str, contenido: &str) -> PathBuf {
+    let ruta = directorio.join(nombre);
     std::fs::write(&ruta, contenido).unwrap();
     ruta
 }

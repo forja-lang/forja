@@ -9,7 +9,7 @@
 pub struct Sha256 {
     h: [u32; 8],
     buf: [u8; 64],
-    len: u64,
+    longitud: u64,
 }
 
 impl Default for Sha256 {
@@ -26,19 +26,19 @@ impl Sha256 {
                 0x5be0cd19,
             ],
             buf: [0u8; 64],
-            len: 0,
+            longitud: 0,
         }
     }
 
     pub fn update(&mut self, data: &[u8]) {
         let mut off = 0;
-        let remaining = self.len as usize % 64;
+        let remaining = self.longitud as usize % 64;
         if remaining > 0 {
             let take = (64 - remaining).min(data.len());
             self.buf[remaining..remaining + take].copy_from_slice(&data[..take]);
-            self.len += take as u64;
+            self.longitud += take as u64;
             off += take;
-            if (self.len as usize).is_multiple_of(64) {
+            if (self.longitud as usize).is_multiple_of(64) {
                 sha256_compress(&mut self.h, &self.buf);
             }
         }
@@ -46,22 +46,22 @@ impl Sha256 {
             let mut block = [0u8; 64];
             block.copy_from_slice(&data[off..off + 64]);
             sha256_compress(&mut self.h, &block);
-            self.len += 64;
+            self.longitud += 64;
             off += 64;
         }
         if off < data.len() {
             let rem = data.len() - off;
             self.buf[..rem].copy_from_slice(&data[off..]);
-            self.len += rem as u64;
+            self.longitud += rem as u64;
         }
     }
 
     pub fn finalize(mut self) -> [u8; 32] {
         // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
         // y al final la longitud en bits como entero de 64 bits
-        let bit_longitud = self.len.wrapping_mul(8).to_be_bytes();
+        let bit_longitud = self.longitud.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
-        while (self.len as usize) % 64 != 56 {
+        while (self.longitud as usize) % 64 != 56 {
             self.update(&[0]);
         }
         self.update(&bit_longitud);
@@ -150,7 +150,7 @@ fn sha256_compress(h: &mut [u32; 8], block: &[u8; 64]) {
 pub struct Sha1 {
     h: [u32; 5],
     buf: [u8; 64],
-    len: u64,
+    longitud: u64,
 }
 
 impl Default for Sha1 {
@@ -164,19 +164,19 @@ impl Sha1 {
         Self {
             h: [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0],
             buf: [0u8; 64],
-            len: 0,
+            longitud: 0,
         }
     }
 
     pub fn update(&mut self, data: &[u8]) {
         let mut off = 0;
-        let remaining = self.len as usize % 64;
+        let remaining = self.longitud as usize % 64;
         if remaining > 0 {
             let take = (64 - remaining).min(data.len());
             self.buf[remaining..remaining + take].copy_from_slice(&data[..take]);
-            self.len += take as u64;
+            self.longitud += take as u64;
             off += take;
-            if (self.len as usize).is_multiple_of(64) {
+            if (self.longitud as usize).is_multiple_of(64) {
                 sha1_compress(&mut self.h, &self.buf);
             }
         }
@@ -184,22 +184,22 @@ impl Sha1 {
             let mut block = [0u8; 64];
             block.copy_from_slice(&data[off..off + 64]);
             sha1_compress(&mut self.h, &block);
-            self.len += 64;
+            self.longitud += 64;
             off += 64;
         }
         if off < data.len() {
             let rem = data.len() - off;
             self.buf[..rem].copy_from_slice(&data[off..]);
-            self.len += rem as u64;
+            self.longitud += rem as u64;
         }
     }
 
     pub fn finalize(mut self) -> [u8; 20] {
         // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
         // y al final la longitud en bits como entero de 64 bits
-        let bit_longitud = self.len.wrapping_mul(8).to_be_bytes();
+        let bit_longitud = self.longitud.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
-        while (self.len as usize) % 64 != 56 {
+        while (self.longitud as usize) % 64 != 56 {
             self.update(&[0]);
         }
         self.update(&bit_longitud);
@@ -280,7 +280,7 @@ impl Sha224 {
         let inner = Sha256 {
             h: IV224,
             buf: [0u8; 64],
-            len: 0,
+            longitud: 0,
         };
         Self(inner)
     }
@@ -305,7 +305,7 @@ impl Sha224 {
 pub struct Sha512 {
     h: [u64; 8],
     buf: [u8; 128],
-    len: u64,
+    longitud: u64,
 }
 
 impl Default for Sha512 {
@@ -328,19 +328,19 @@ impl Sha512 {
                 0x5be0cd19137e2179,
             ],
             buf: [0u8; 128],
-            len: 0,
+            longitud: 0,
         }
     }
 
     pub fn update(&mut self, data: &[u8]) {
         let mut off = 0;
-        let remaining = self.len as usize % 128;
+        let remaining = self.longitud as usize % 128;
         if remaining > 0 {
             let take = (128 - remaining).min(data.len());
             self.buf[remaining..remaining + take].copy_from_slice(&data[..take]);
-            self.len += take as u64;
+            self.longitud += take as u64;
             off += take;
-            if (self.len as usize).is_multiple_of(128) {
+            if (self.longitud as usize).is_multiple_of(128) {
                 sha512_compress(&mut self.h, &self.buf);
             }
         }
@@ -348,13 +348,13 @@ impl Sha512 {
             let mut block = [0u8; 128];
             block.copy_from_slice(&data[off..off + 128]);
             sha512_compress(&mut self.h, &block);
-            self.len += 128;
+            self.longitud += 128;
             off += 128;
         }
         if off < data.len() {
             let rem = data.len() - off;
             self.buf[..rem].copy_from_slice(&data[off..]);
-            self.len += rem as u64;
+            self.longitud += rem as u64;
         }
     }
 
@@ -363,15 +363,15 @@ impl Sha512 {
         // (16 bytes). Antes se escribían sólo 8, el bloque quedaba en 120 bytes y
         // nunca se comprimía: `digest` devolvía el estado inicial para cualquier
         // entrada.
-        let bit_longitud = self.len.wrapping_mul(8).to_be_bytes();
+        let bit_longitud = self.longitud.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
-        while (self.len as usize) % 128 != 112 {
+        while (self.longitud as usize) % 128 != 112 {
             self.update(&[0]);
         }
         // `buf` tiene 112 bytes rellenos y sin comprimir: completar el bloque.
         self.buf[112..120].copy_from_slice(&[0u8; 8]);
         self.buf[120..128].copy_from_slice(&bit_longitud);
-        self.len += 16;
+        self.longitud += 16;
         sha512_compress(&mut self.h, &self.buf);
         let mut resultado = [0u8; 64];
         for (i, &h) in self.h.iter().enumerate() {
@@ -550,7 +550,7 @@ impl Sha384 {
         Self(Sha512 {
             h: IV384,
             buf: [0u8; 128],
-            len: 0,
+            longitud: 0,
         })
     }
     pub fn update(&mut self, data: &[u8]) {

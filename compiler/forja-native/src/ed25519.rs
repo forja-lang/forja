@@ -55,14 +55,14 @@ fn u256_add(a: &U256, b: &U256) -> (U256, u64) {
 
 fn u256_sub(a: &U256, b: &U256) -> (U256, u64) {
     let mut r = CERO;
-    let mut borrow = 0u64;
+    let mut prestamo = 0u64;
     for i in 0..4 {
         let (d1, b1) = a[i].overflowing_sub(b[i]);
-        let (d2, b2) = d1.overflowing_sub(borrow);
+        let (d2, b2) = d1.overflowing_sub(prestamo);
         r[i] = d2;
-        borrow = (b1 as u64) | (b2 as u64);
+        prestamo = (b1 as u64) | (b2 as u64);
     }
-    (r, borrow)
+    (r, prestamo)
 }
 
 fn u256_cmp(a: &U256, b: &U256) -> core::cmp::Ordering {
@@ -140,8 +140,8 @@ fn fe_add(a: &U256, b: &U256) -> U256 {
 }
 
 fn fe_sub(a: &U256, b: &U256) -> U256 {
-    let (d, borrow) = u256_sub(a, b);
-    if borrow != 0 {
+    let (d, prestamo) = u256_sub(a, b);
+    if prestamo != 0 {
         u256_add(&d, &P).0
     } else {
         d
@@ -388,9 +388,9 @@ fn sc_reduce_wide(x: &[u64; 8]) -> U256 {
         rem[0] |= bit;
         let bajo = [rem[0], rem[1], rem[2], rem[3]];
         if rem[4] != 0 || u256_cmp(&bajo, &L) != core::cmp::Ordering::Less {
-            let (d, borrow) = u256_sub(&bajo, &L);
+            let (d, prestamo) = u256_sub(&bajo, &L);
             rem[..4].copy_from_slice(&d);
-            rem[4] -= borrow;
+            rem[4] -= prestamo;
         }
     }
     [rem[0], rem[1], rem[2], rem[3]]

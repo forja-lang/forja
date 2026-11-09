@@ -287,9 +287,9 @@ impl ForjaFast {
                 if v.es_texto() && inicio_arg.es_entero() && longitud_arg.es_entero() {
                     let s = self.obtener_texto(v.indice_texto()).clone();
                     let inicio = inicio_arg.a_entero().max(0) as usize;
-                    let len = longitud_arg.a_entero().max(0) as usize;
+                    let longitud = longitud_arg.a_entero().max(0) as usize;
                     let chars: Vec<char> = s.chars().collect();
-                    let end = (inicio + len).min(chars.len());
+                    let end = (inicio + longitud).min(chars.len());
                     let sub: String = if inicio < chars.len() {
                         chars[inicio..end].iter().collect()
                     } else {

@@ -56,7 +56,7 @@ impl Manifiesto {
 pub fn normalizar_componentes(texto: &str) -> Vec<String> {
     let mut features = vec!["Core".to_string()];
 
-    for parte in texto.split(|c: char| c == ',' || c == ';' || c == ' ') {
+    for parte in texto.split([',', ';', ' ']) {
         let p = parte.trim().to_lowercase();
         let id = match p.as_str() {
             "lsp" | "lenguaje" | "languageserver" => "LanguageServer",
@@ -427,7 +427,7 @@ fn verificar_digest(ruta: &Path, esperado: &Option<String>) -> Result<(), String
 
 pub fn es_mas_nueva(nueva: &str, actual: &str) -> bool {
     let parsear = |v: &str| -> Vec<u64> {
-        v.split(|c: char| c == '.' || c == '-' || c == '+')
+        v.split(['.', '-', '+'])
             .map(|p| p.parse::<u64>().unwrap_or(0))
             .collect()
     };
@@ -639,10 +639,11 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
     for doc in ["README.md", "COMANDOS.md", "INSTRUCCIONES.md", "LICENSE.md"] {
         let origen = raiz.join(doc);
         let objetivo = destino.join(doc);
-        if origen.exists() && objetivo.exists() {
-            if copiar_si_cambia(&origen, &objetivo).unwrap_or(false) {
-                copiados += 1;
-            }
+        if origen.exists()
+            && objetivo.exists()
+            && copiar_si_cambia(&origen, &objetivo).unwrap_or(false)
+        {
+            copiados += 1;
         }
     }
 

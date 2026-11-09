@@ -13,7 +13,7 @@ mod unix {
         fn tcgetattr(fd: RawFd, termios: *mut Termios) -> i32;
         fn tcsetattr(fd: RawFd, action: i32, termios: *const Termios) -> i32;
         fn ioctl(fd: RawFd, request: u64, ...) -> i32;
-        fn read(fd: RawFd, buf: *mut std::ffi::c_void, cantidad: usize) -> isize;
+        fn leer(fd: RawFd, buf: *mut std::ffi::c_void, cantidad: usize) -> isize;
     }
 
     #[repr(C)]
@@ -112,7 +112,7 @@ mod unix {
 
     pub fn leer_tecla() -> Result<String, String> {
         let mut buf = [0u8; 16];
-        let n = unsafe { read(STDIN_FILENO, buf.as_mut_ptr().cast(), buf.len()) };
+        let n = unsafe { leer(STDIN_FILENO, buf.as_mut_ptr().cast(), buf.len()) };
         if n <= 0 {
             return Err("Error leyendo tecla".into());
         }
@@ -265,20 +265,20 @@ mod windows_impl {
             return Err("GetStdHandle falló".into());
         }
         let mut buf = [0u16; 8];
-        let mut read: u32 = 0;
+        let mut leer: u32 = 0;
         let ret = unsafe {
             ReadConsoleW(
                 h_in,
                 buf.as_mut_ptr(),
                 buf.len() as u32,
-                &mut read as *mut u32,
+                &mut leer as *mut u32,
                 std::ptr::null_mut(),
             )
         };
-        if ret == 0 || read == 0 {
+        if ret == 0 || leer == 0 {
             return Err("ReadConsoleW falló".into());
         }
-        let s = String::from_utf16_lossy(&buf[..read as usize]);
+        let s = String::from_utf16_lossy(&buf[..leer as usize]);
         Ok(s.trim_end_matches(['\r', '\n']).to_string())
     }
 }

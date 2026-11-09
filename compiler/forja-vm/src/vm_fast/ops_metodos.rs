@@ -220,8 +220,8 @@ impl ForjaFast {
                     let arr_idx = obj.indice_arreglo();
                     match m.as_ref() {
                         "longitud" => {
-                            let len = self.runtime.array_heap[arr_idx as usize].len() as i64;
-                            self.empujar_valor(ValorFast::entero(len));
+                            let longitud = self.runtime.array_heap[arr_idx as usize].len() as i64;
+                            self.empujar_valor(ValorFast::entero(longitud));
                         }
                         "empujar" => {
                             if !args.is_empty() {
@@ -506,8 +506,8 @@ impl ForjaFast {
                     let m = self.runtime.tabla_simbolos.texto(IdSimbolo(*method_sym_id));
                     match m {
                         "longitud" => {
-                            let len = self.runtime.array_heap[arr_idx as usize].len() as i64;
-                            self.empujar_valor(ValorFast::entero(len));
+                            let longitud = self.runtime.array_heap[arr_idx as usize].len() as i64;
+                            self.empujar_valor(ValorFast::entero(longitud));
                         }
                         "empujar" => {
                             if !args.is_empty() {

@@ -71,7 +71,7 @@ impl FormaCampos {
     ///
     /// # Devuelve
     /// Número de campos definidos.
-    pub fn len(&self) -> usize {
+    pub fn longitud(&self) -> usize {
         self.indice_a_campo.len()
     }
 
@@ -80,7 +80,7 @@ impl FormaCampos {
     /// # Devuelve
     /// `true` si no se agregó ningún campo todavía.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.longitud() == 0
     }
 }
 

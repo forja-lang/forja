@@ -26,8 +26,8 @@ static FFI_REGISTRY: OnceLock<Mutex<HashMap<String, LibManejar>>> = OnceLock::ne
 
 fn registro() -> &'static Mutex<HashMap<String, LibManejar>> {
     FFI_REGISTRY.get_or_init(|| {
-        let map = HashMap::new();
-        Mutex::new(map)
+        let mapa = HashMap::new();
+        Mutex::new(mapa)
     })
 }
 

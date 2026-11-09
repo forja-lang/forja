@@ -1222,7 +1222,7 @@ mod tests {
     #[test]
     fn test_ir_builder_basic() {
         let mut builder = ConstructorIr::nuevo();
-        let _entry = builder.nuevo_bloque();
+        let entrada = builder.nuevo_bloque();
         let v0 = builder.emitir_const_entero(42);
         let v1 = builder.emitir_const_entero(10);
         let v2 = builder.emitir_suma(v0, v1);

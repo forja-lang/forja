@@ -843,11 +843,11 @@ impl DestinoArch {
         match self {
             DestinoArch::X86_64Linux => {
                 vec![
-                    format!("    mov rax, 1"),
-                    format!("    mov rdi, 1"),
+                    "    mov rax, 1".to_string(),
+                    "    mov rdi, 1".to_string(),
                     format!("    mov rsi, {}", reg_buf),
                     format!("    mov rdx, {}", reg_len),
-                    format!("    syscall"),
+                    "    syscall".to_string(),
                 ]
             }
             DestinoArch::X86_64Windows => {
@@ -857,36 +857,36 @@ impl DestinoArch {
                 // convention de Windows x64 usa: RCX=hFile, RDX=lpBuffer, R8=len, R9=&written
                 // Primero guardamos len (R8) ANTES de sobrescribir RDX con el buffer
                 vec![
-                    format!("    sub rsp, 48"),
-                    format!("    mov rcx, -11"), // STD_OUTPUT_HANDLE
-                    format!("    call GetStdHandle"),
-                    format!("    mov rcx, rax"),         // hFile = handle
-                    format!("    mov r8, {}", reg_len),  // nNumberOfBytesToWrite (guardar primero)
+                    "    sub rsp, 48".to_string(),
+                    "    mov rcx, -11".to_string(), // STD_OUTPUT_HANDLE
+                    "    call GetStdHandle".to_string(),
+                    "    mov rcx, rax".to_string(), // hFile = handle
+                    format!("    mov r8, {}", reg_len), // nNumberOfBytesToWrite (guardar primero)
                     format!("    mov rdx, {}", reg_buf), // lpBuffer (sobrescribe RDX después)
-                    format!("    lea r9, [rsp + 40]"),   // lpNumberOfBytesWritten
-                    format!("    mov qword ptr [rsp + 32], 0"), // lpOverlapped = NULL
-                    format!("    call WriteFile"),
-                    format!("    add rsp, 48"),
+                    "    lea r9, [rsp + 40]".to_string(), // lpNumberOfBytesWritten
+                    "    mov qword ptr [rsp + 32], 0".to_string(), // lpOverlapped = NULL
+                    "    call WriteFile".to_string(),
+                    "    add rsp, 48".to_string(),
                 ]
             }
             DestinoArch::AArch64 => {
                 // Linux ARM64 syscall: write(1, buf, len)
                 vec![
-                    format!("    mov x8, 64"),          // syscall nr: write
-                    format!("    mov x0, 1"),           // fd = stdout
+                    "    mov x8, 64".to_string(),       // syscall nr: write
+                    "    mov x0, 1".to_string(),        // fd = stdout
                     format!("    mov x1, {}", reg_buf), // buf
                     format!("    mov x2, {}", reg_len), // len
-                    format!("    svc #0"),
+                    "    svc #0".to_string(),
                 ]
             }
             DestinoArch::RiscV64 => {
                 // Linux RISC-V syscall (A7 = número): write(1, buf, len)
                 vec![
-                    format!("    li a7, 64"),          // syscall nr: write
-                    format!("    li a0, 1"),           // fd = stdout
+                    "    li a7, 64".to_string(),       // syscall nr: write
+                    "    li a0, 1".to_string(),        // fd = stdout
                     format!("    mv a1, {}", reg_buf), // buf
                     format!("    mv a2, {}", reg_len), // len
-                    format!("    ecall"),
+                    "    ecall".to_string(),
                 ]
             }
         }
@@ -1141,95 +1141,95 @@ impl CompilerAsm {
         match a {
             DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
                 vec![
-                    format!("    sub rsp, 32"),
+                    "    sub rsp, 32".to_string(),
                     format!("    // itoa: convertir {} a ASCII en [rsp]", reg_num),
                     format!("    mov rcx, {}", reg_num),
-                    format!("    mov rax, rcx"),
-                    format!("    mov rbx, 10"),
-                    format!("    lea rdi, [rsp + 20]"),
-                    format!("    mov byte ptr [rdi], 0"),
-                    format!("    test rax, rax"),
+                    "    mov rax, rcx".to_string(),
+                    "    mov rbx, 10".to_string(),
+                    "    lea rdi, [rsp + 20]".to_string(),
+                    "    mov byte ptr [rdi], 0".to_string(),
+                    "    test rax, rax".to_string(),
                     format!("    jns {}", lp_pos),
-                    format!("    neg rax"),
+                    "    neg rax".to_string(),
                     format!("{}:", lp_pos),
                     format!("{}:", lp_bucle),
-                    format!("    dec rdi"),
-                    format!("    xor rdx, rdx"),
-                    format!("    div rbx"),
-                    format!("    add dl, '0'"),
-                    format!("    mov [rdi], dl"),
-                    format!("    test rax, rax"),
+                    "    dec rdi".to_string(),
+                    "    xor rdx, rdx".to_string(),
+                    "    div rbx".to_string(),
+                    "    add dl, '0'".to_string(),
+                    "    mov [rdi], dl".to_string(),
+                    "    test rax, rax".to_string(),
                     format!("    jnz {}", lp_bucle),
-                    format!("    test rcx, rcx"),
+                    "    test rcx, rcx".to_string(),
                     format!("    jns {}", lp_done),
-                    format!("    dec rdi"),
-                    format!("    mov byte ptr [rdi], '-'"),
+                    "    dec rdi".to_string(),
+                    "    mov byte ptr [rdi], '-'".to_string(),
                     format!("{}:", lp_done),
-                    format!("    // rax = longitud, rdi = ptr string"),
-                    format!("    lea rax, [rsp + 20]"),
-                    format!("    sub rax, rdi"),
+                    "    // rax = longitud, rdi = ptr string".to_string(),
+                    "    lea rax, [rsp + 20]".to_string(),
+                    "    sub rax, rdi".to_string(),
                 ]
             }
             DestinoArch::AArch64 => {
                 vec![
-                    format!("    sub sp, sp, #32"),
-                    format!("    mov x4, #10"),
-                    format!("    add x3, sp, #20"),
-                    format!("    mov w5, #0"),
-                    format!("    strb w5, [x3]"),
+                    "    sub sp, sp, #32".to_string(),
+                    "    mov x4, #10".to_string(),
+                    "    add x3, sp, #20".to_string(),
+                    "    mov w5, #0".to_string(),
+                    "    strb w5, [x3]".to_string(),
                     format!("    mov x0, {}", reg_num),
-                    format!("    cmp x0, #0"),
+                    "    cmp x0, #0".to_string(),
                     format!("    b.ge {}", lp_pos),
-                    format!("    neg x0, x0"),
+                    "    neg x0, x0".to_string(),
                     format!("{}:", lp_pos),
                     format!("{}:", lp_bucle),
-                    format!("    sub x3, x3, #1"),
-                    format!("    udiv x1, x0, x4"),
-                    format!("    msub x2, x1, x4, x0"),
-                    format!("    add w2, w2, #48"),
-                    format!("    strb w2, [x3]"),
-                    format!("    mov x0, x1"),
+                    "    sub x3, x3, #1".to_string(),
+                    "    udiv x1, x0, x4".to_string(),
+                    "    msub x2, x1, x4, x0".to_string(),
+                    "    add w2, w2, #48".to_string(),
+                    "    strb w2, [x3]".to_string(),
+                    "    mov x0, x1".to_string(),
                     format!("    cbnz x0, {}", lp_bucle),
                     format!("    cmp {}, #0", reg_num),
                     format!("    b.ge {}", lp_done),
-                    format!("    sub x3, x3, #1"),
-                    format!("    mov w5, #45"),
-                    format!("    strb w5, [x3]"),
+                    "    sub x3, x3, #1".to_string(),
+                    "    mov w5, #45".to_string(),
+                    "    strb w5, [x3]".to_string(),
                     format!("{}:", lp_done),
-                    format!("    add x0, sp, #20"),
-                    format!("    sub x0, x0, x3"),
-                    format!("    mov x1, x3"),
+                    "    add x0, sp, #20".to_string(),
+                    "    sub x0, x0, x3".to_string(),
+                    "    mov x1, x3".to_string(),
                 ]
             }
             DestinoArch::RiscV64 => {
                 // Contrato de salida: a1 = ptr al string, a0 = longitud.
                 // El valor original se guarda en 24(sp) para el test de signo.
                 vec![
-                    format!("    addi sp, sp, -32"),
-                    format!("    li t3, 10"),
-                    format!("    addi t5, sp, 20"),
-                    format!("    sb zero, 0(t5)"),
+                    "    addi sp, sp, -32".to_string(),
+                    "    li t3, 10".to_string(),
+                    "    addi t5, sp, 20".to_string(),
+                    "    sb zero, 0(t5)".to_string(),
                     format!("    sd {}, 24(sp)", reg_num),
                     format!("    mv t4, {}", reg_num),
                     format!("    bgez t4, {}", lp_pos),
-                    format!("    neg t4, t4"),
+                    "    neg t4, t4".to_string(),
                     format!("{}:", lp_pos),
                     format!("{}:", lp_bucle),
-                    format!("    addi t5, t5, -1"),
-                    format!("    rem t6, t4, t3"),
-                    format!("    div t4, t4, t3"),
-                    format!("    addi t6, t6, 48"),
-                    format!("    sb t6, 0(t5)"),
+                    "    addi t5, t5, -1".to_string(),
+                    "    rem t6, t4, t3".to_string(),
+                    "    div t4, t4, t3".to_string(),
+                    "    addi t6, t6, 48".to_string(),
+                    "    sb t6, 0(t5)".to_string(),
                     format!("    bnez t4, {}", lp_bucle),
-                    format!("    ld t4, 24(sp)"),
+                    "    ld t4, 24(sp)".to_string(),
                     format!("    bgez t4, {}", lp_done),
-                    format!("    addi t5, t5, -1"),
-                    format!("    li t6, 45"),
-                    format!("    sb t6, 0(t5)"),
+                    "    addi t5, t5, -1".to_string(),
+                    "    li t6, 45".to_string(),
+                    "    sb t6, 0(t5)".to_string(),
                     format!("{}:", lp_done),
-                    format!("    mv a1, t5"),
-                    format!("    addi a0, sp, 20"),
-                    format!("    sub a0, a0, t5"),
+                    "    mv a1, t5".to_string(),
+                    "    addi a0, sp, 20".to_string(),
+                    "    sub a0, a0, t5".to_string(),
                 ]
             }
         }
@@ -1277,7 +1277,7 @@ impl CompilerAsm {
     /// usando syscall directo con la longitud precalculada.
     fn generacion_escribir_texto_literal(&mut self, s: &str) {
         let a = self.arch;
-        let len = s.len();
+        let longitud = s.len();
         let lbl = self.nueva_etiqueta("wstr");
         let escaped = s
             .replace('\\', "\\\\")
@@ -1292,21 +1292,21 @@ impl CompilerAsm {
         match a {
             DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
                 self.emitir_linea(a.lea_etiqueta("rsi", &lbl));
-                self.emitir_linea(a.mov_reg_imm("rdx", len as i64));
+                self.emitir_linea(a.mov_reg_imm("rdx", longitud as i64));
                 for line in &a.generacion_syscall_escribir("rsi", "rdx") {
                     self.emitir_linea(line);
                 }
             }
             DestinoArch::AArch64 => {
                 self.emitir_linea(a.lea_etiqueta("x1", &lbl));
-                self.emitir_linea(a.mov_reg_imm("x2", len as i64));
+                self.emitir_linea(a.mov_reg_imm("x2", longitud as i64));
                 for line in &a.generacion_syscall_escribir("x1", "x2") {
                     self.emitir_linea(line);
                 }
             }
             DestinoArch::RiscV64 => {
                 self.emitir_linea(a.lea_etiqueta("a1", &lbl));
-                self.emitir_linea(a.mov_reg_imm("a2", len as i64));
+                self.emitir_linea(a.mov_reg_imm("a2", longitud as i64));
                 for line in &a.generacion_syscall_escribir("a1", "a2") {
                     self.emitir_linea(line);
                 }
@@ -1514,12 +1514,12 @@ impl CompilerAsm {
         }
 
         // main()
-        let tiene_main = programa
+        let tiene_principal = programa
             .declaraciones
             .iter()
             .any(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"));
 
-        if !tiene_main {
+        if !tiene_principal {
             let regs = self.reg_names.clone();
             self.emitir_linea("main:");
             // 1) Guardar registros calle-saved ANTES que rbp
@@ -2152,7 +2152,7 @@ impl CompilerAsm {
         let a = self.arch;
         let fp = a.fp_reg();
         let ret = a.ret_reg();
-        let tmp = a.temporal_reg();
+        let temporal = a.temporal_reg();
 
         match decl {
             Declaracion::Variable {
@@ -2260,8 +2260,8 @@ impl CompilerAsm {
                 // 1) Compilar objeto → puntero al struct en ret
                 self.compilar_expresion_asm(objeto);
                 // 2) Guardar puntero
-                let obj_reg = self.reservar_reg().unwrap_or(tmp);
-                let uso_empujar = obj_reg == tmp && self.reg_pool.iter().all(|&x| x);
+                let obj_reg = self.reservar_reg().unwrap_or(temporal);
+                let uso_empujar = obj_reg == temporal && self.reg_pool.iter().all(|&x| x);
                 if uso_empujar {
                     self.emitir_linea(a.empujar_reg(ret));
                 } else {
@@ -2271,14 +2271,14 @@ impl CompilerAsm {
                 self.compilar_expresion_asm(valor);
                 // 4) Restaurar puntero
                 if uso_empujar {
-                    self.emitir_linea(a.desapilar_reg(tmp));
+                    self.emitir_linea(a.desapilar_reg(temporal));
                 } else {
-                    self.emitir_linea(a.mov_reg_reg(tmp, obj_reg));
+                    self.emitir_linea(a.mov_reg_reg(temporal, obj_reg));
                     self.liberar_reg(obj_reg);
                 }
                 // 5) Almacenar en campo
                 let co = self.buscar_campo_offset(objeto, miembro);
-                self.emitir_linea(a.texto_campo(tmp, co, ret));
+                self.emitir_linea(a.texto_campo(temporal, co, ret));
             }
 
             Declaracion::AsignacionIndex {
@@ -2309,28 +2309,28 @@ impl CompilerAsm {
                 self.emitir_linea(a.empujar_reg(ret));
                 // Cargar puntero del array (desde registro o stack) → tmp
                 if let Some(&reg) = self.variable_reg_mapa.get(nombre) {
-                    self.emitir_linea(a.mov_reg_reg(tmp, reg));
+                    self.emitir_linea(a.mov_reg_reg(temporal, reg));
                 } else if let Some(var) = self.variables.get(nombre) {
                     let oa = -var.offset;
-                    self.emitir_linea(a.ldr_reg_mem(tmp, fp, oa));
+                    self.emitir_linea(a.ldr_reg_mem(temporal, fp, oa));
                 } else {
                     self.emitir_linea(a.desapilar_reg(ret)); // limpiar pila
                     return;
                 }
                 // Calcular dirección: base + byte_offset
-                self.emitir_linea(a.add_reg_reg(tmp, a.tmp2_reg()));
+                self.emitir_linea(a.add_reg_reg(temporal, a.tmp2_reg()));
                 // Restaurar valor del array
                 self.emitir_linea(a.desapilar_reg(ret));
                 // Almacenar: [base + byte_offset] = valor
                 match a {
                     DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
-                        self.emitir_linea(format!("    mov [{}], {}", tmp, ret));
+                        self.emitir_linea(format!("    mov [{}], {}", temporal, ret));
                     }
                     DestinoArch::AArch64 => {
-                        self.emitir_linea(format!("    str {}, [{}]", ret, tmp));
+                        self.emitir_linea(format!("    str {}, [{}]", ret, temporal));
                     }
                     DestinoArch::RiscV64 => {
-                        self.emitir_linea(format!("    sd {}, 0({})", ret, tmp));
+                        self.emitir_linea(format!("    sd {}, 0({})", ret, temporal));
                     }
                 }
             }
@@ -2667,8 +2667,8 @@ impl CompilerAsm {
                 self.emitir_linea(a.mov_qword_ptr_imm(fp, oa, 0));
                 self.emitir_linea(format!("{}:", lloop));
                 self.compilar_expresion_asm(cantidad);
-                self.emitir_linea(a.ldr_reg_mem(tmp, fp, oa));
-                self.emitir_linea(a.cmp_reg_reg(tmp, ret));
+                self.emitir_linea(a.ldr_reg_mem(temporal, fp, oa));
+                self.emitir_linea(a.cmp_reg_reg(temporal, ret));
                 self.emitir_linea(a.jump_if_ge(&lend));
                 let previo = self.bucle_actual.replace((lend.clone(), lloop.clone()));
                 for d in bloque {
@@ -2676,10 +2676,10 @@ impl CompilerAsm {
                 }
                 self.bucle_actual = previo;
                 // incrementar contador: [fp - oa] += 1
-                self.emitir_linea(a.ldr_reg_mem(tmp, fp, oa));
+                self.emitir_linea(a.ldr_reg_mem(temporal, fp, oa));
                 self.emitir_linea(a.mov_reg_imm(a.tmp2_reg(), 1));
-                self.emitir_linea(a.add_reg_reg(tmp, a.tmp2_reg()));
-                self.emitir_linea(a.str_reg_mem(tmp, fp, oa));
+                self.emitir_linea(a.add_reg_reg(temporal, a.tmp2_reg()));
+                self.emitir_linea(a.str_reg_mem(temporal, fp, oa));
                 self.emitir_linea(a.jump(&lloop));
                 self.emitir_linea(format!("{}:", lend));
             }
@@ -2784,30 +2784,54 @@ impl CompilerAsm {
     fn emitir_operacion_asm(&mut self, operador: &Operador) {
         let a = self.arch;
         let ret = a.ret_reg();
-        let tmp = a.temporal_reg();
+        let temporal = a.temporal_reg();
         let op_lineas: Vec<String> = match operador {
-            Operador::Suma => vec![a.add_reg_reg(ret, tmp)],
-            Operador::Resta => vec![a.sub_reg_reg(ret, tmp)],
-            Operador::Multiplicacion => vec![a.mul_reg_reg(ret, tmp)],
-            Operador::Division => a.div_reg(tmp),
-            Operador::Modulo => a.mod_reg(tmp),
+            Operador::Suma => vec![a.add_reg_reg(ret, temporal)],
+            Operador::Resta => vec![a.sub_reg_reg(ret, temporal)],
+            Operador::Multiplicacion => vec![a.mul_reg_reg(ret, temporal)],
+            Operador::Division => a.div_reg(temporal),
+            Operador::Modulo => a.mod_reg(temporal),
             Operador::Mayor => {
-                vec![a.cmp_reg_reg(ret, tmp), a.fijar_g(ret), a.movzx(ret, ret)]
+                vec![
+                    a.cmp_reg_reg(ret, temporal),
+                    a.fijar_g(ret),
+                    a.movzx(ret, ret),
+                ]
             }
             Operador::Menor => {
-                vec![a.cmp_reg_reg(ret, tmp), a.fijar_l(ret), a.movzx(ret, ret)]
+                vec![
+                    a.cmp_reg_reg(ret, temporal),
+                    a.fijar_l(ret),
+                    a.movzx(ret, ret),
+                ]
             }
             Operador::MayorIgual => {
-                vec![a.cmp_reg_reg(ret, tmp), a.fijar_ge(ret), a.movzx(ret, ret)]
+                vec![
+                    a.cmp_reg_reg(ret, temporal),
+                    a.fijar_ge(ret),
+                    a.movzx(ret, ret),
+                ]
             }
             Operador::MenorIgual => {
-                vec![a.cmp_reg_reg(ret, tmp), a.fijar_le(ret), a.movzx(ret, ret)]
+                vec![
+                    a.cmp_reg_reg(ret, temporal),
+                    a.fijar_le(ret),
+                    a.movzx(ret, ret),
+                ]
             }
             Operador::IgualIgual => {
-                vec![a.cmp_reg_reg(ret, tmp), a.fijar_e(ret), a.movzx(ret, ret)]
+                vec![
+                    a.cmp_reg_reg(ret, temporal),
+                    a.fijar_e(ret),
+                    a.movzx(ret, ret),
+                ]
             }
             Operador::Diferente => {
-                vec![a.cmp_reg_reg(ret, tmp), a.fijar_ne(ret), a.movzx(ret, ret)]
+                vec![
+                    a.cmp_reg_reg(ret, temporal),
+                    a.fijar_ne(ret),
+                    a.movzx(ret, ret),
+                ]
             }
             // AND lógico: normalizar ambos operandos a 0/1 y combinar bit a bit
             Operador::Y => {
@@ -2815,9 +2839,9 @@ impl CompilerAsm {
                 // Guardar lhs booleano en pila
                 lines.push(a.empujar_reg(a.ret_reg()));
                 // Normalizar rhs y recuperar el lhs en `ret`
-                lines.extend(a.bool_normalize(tmp));
+                lines.extend(a.bool_normalize(temporal));
                 lines.push(a.desapilar_reg(a.ret_reg()));
-                lines.push(a.and_reg_reg(ret, tmp));
+                lines.push(a.and_reg_reg(ret, temporal));
                 lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
                 lines
             }
@@ -2827,9 +2851,9 @@ impl CompilerAsm {
                 // Guardar lhs booleano en pila
                 lines.push(a.empujar_reg(a.ret_reg()));
                 // Normalizar rhs y recuperar el lhs en `ret`
-                lines.extend(a.bool_normalize(tmp));
+                lines.extend(a.bool_normalize(temporal));
                 lines.push(a.desapilar_reg(a.ret_reg()));
-                lines.push(a.or_reg_reg(ret, tmp));
+                lines.push(a.or_reg_reg(ret, temporal));
                 lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
                 lines
             }
@@ -2843,7 +2867,7 @@ impl CompilerAsm {
     fn compilar_expresion_asm(&mut self, expr: &Expresion) -> String {
         let a = self.arch;
         let ret = a.ret_reg();
-        let tmp = a.temporal_reg();
+        let temporal = a.temporal_reg();
         let fp = a.fp_reg();
 
         match expr {
@@ -3007,7 +3031,7 @@ impl CompilerAsm {
                         | Operador::MenorIgual
                         | Operador::IgualIgual
                         | Operador::Diferente => {
-                            let set = match operador {
+                            let fijar = match operador {
                                 Operador::Mayor => "seta",
                                 Operador::Menor => "setb",
                                 Operador::MayorIgual => "setae",
@@ -3016,7 +3040,7 @@ impl CompilerAsm {
                                 _ => "setne",
                             };
                             self.emitir_linea("    ucomisd xmm1, xmm0");
-                            self.emitir_linea(format!("    {} al", set));
+                            self.emitir_linea(format!("    {} al", fijar));
                             self.emitir_linea("    movzx rax, al");
                             return ret.to_string();
                         }
@@ -3032,7 +3056,7 @@ impl CompilerAsm {
                 // dejando el operando derecho en un registro que nadie leía).
                 let libre = self.reservar_reg();
                 let uso_empujar = libre.is_none();
-                let reg_right = libre.unwrap_or(tmp);
+                let reg_right = libre.unwrap_or(temporal);
                 if uso_empujar {
                     self.emitir_linea(a.empujar_reg(ret));
                     self.compilar_expresion_asm(derecha);
@@ -3041,7 +3065,7 @@ impl CompilerAsm {
                 } else {
                     self.emitir_linea(a.mov_reg_reg(reg_right, ret)); // salvar izq
                     self.compilar_expresion_asm(derecha);
-                    self.emitir_linea(a.mov_reg_reg(tmp, ret)); // derecha en tmp
+                    self.emitir_linea(a.mov_reg_reg(temporal, ret)); // derecha en tmp
                     self.emitir_linea(a.mov_reg_reg(ret, reg_right)); // izq en ret
                     self.liberar_reg(reg_right);
                 }
@@ -3114,10 +3138,10 @@ impl CompilerAsm {
                         .iter()
                         .any(|m| m == "nuevo" || m == "constructor");
                     // 1) Asignar memoria para el struct
-                    self.emitir_linea(a.mov_reg_imm(tmp, struct_tamano as i64));
+                    self.emitir_linea(a.mov_reg_imm(temporal, struct_tamano as i64));
                     self.emitir_linea(a.call("malloc"));
                     // 2) Guardar puntero del struct en tmp
-                    self.emitir_linea(a.mov_reg_reg(tmp, ret));
+                    self.emitir_linea(a.mov_reg_reg(temporal, ret));
                     if tiene_nuevo {
                         // 3) Llamar al constructor: self = puntero, args después
                         let self_reg = a.arg_regs()[0]; // primer arg = self
@@ -3152,7 +3176,7 @@ impl CompilerAsm {
                         }
                     }
                     // 4) Restaurar puntero del struct en ret
-                    self.emitir_linea(a.mov_reg_reg(ret, tmp));
+                    self.emitir_linea(a.mov_reg_reg(ret, temporal));
                 } else {
                     self.emitir_linea(a.xor_reg_reg(ret, ret));
                 }
@@ -3163,7 +3187,7 @@ impl CompilerAsm {
 
             Expresion::Arreglo(elementos) => {
                 let count = elementos.len();
-                self.emitir_linea(a.mov_reg_imm(tmp, (count * 8) as i64));
+                self.emitir_linea(a.mov_reg_imm(temporal, (count * 8) as i64));
                 self.emitir_linea(a.call("malloc"));
                 // Guardar el puntero del array UNA sola vez: queda en el tope de
                 // la pila durante todo el bucle. (Antes se volvía a `push ret`
@@ -3176,12 +3200,12 @@ impl CompilerAsm {
                     // Mover el valor a tmp2 para no perderlo
                     self.emitir_linea(a.mov_reg_reg(a.tmp2_reg(), ret));
                     // Restaurar el puntero del array desde [sp] (sin pop)
-                    self.emitir_linea(a.ldr_reg_mem(tmp, a.sp_reg(), 0));
+                    self.emitir_linea(a.ldr_reg_mem(temporal, a.sp_reg(), 0));
                     match a {
                         DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
                             // mov [tmp + i*8], tmp2
                             self.emitir_linea(a.str_mem_index(
-                                tmp,
+                                temporal,
                                 &format!("{}", i),
                                 8,
                                 a.tmp2_reg(),
@@ -3189,7 +3213,7 @@ impl CompilerAsm {
                         }
                         DestinoArch::RiscV64 => {
                             self.emitir_linea(a.str_mem_index(
-                                tmp,
+                                temporal,
                                 &format!("{}", i),
                                 8,
                                 a.tmp2_reg(),
@@ -3199,9 +3223,14 @@ impl CompilerAsm {
                             // ARM no admite índice inmediato: sumar el offset al
                             // puntero y hacer `str tmp2, [tmp]`.
                             if i > 0 {
-                                self.emitir_linea(format!("    add {}, {}, #{}", tmp, tmp, i * 8));
+                                self.emitir_linea(format!(
+                                    "    add {}, {}, #{}",
+                                    temporal,
+                                    temporal,
+                                    i * 8
+                                ));
                             }
-                            self.emitir_linea(a.str_reg_mem(a.tmp2_reg(), tmp, 0));
+                            self.emitir_linea(a.str_reg_mem(a.tmp2_reg(), temporal, 0));
                         }
                     }
                 }
@@ -3230,11 +3259,11 @@ impl CompilerAsm {
                     }
                 }
                 // Restaurar base del array desde pila (rsp + 0 después del push)
-                self.emitir_linea(a.desapilar_reg(tmp));
+                self.emitir_linea(a.desapilar_reg(temporal));
                 // Calcular dirección final: base + index*8
-                self.emitir_linea(a.add_reg_reg(tmp, ret));
+                self.emitir_linea(a.add_reg_reg(temporal, ret));
                 // Cargar valor desde [tmp]
-                self.emitir_linea(a.ldr_reg_mem(ret, tmp, 0));
+                self.emitir_linea(a.ldr_reg_mem(ret, temporal, 0));
                 ret.to_string()
             }
 
@@ -3259,13 +3288,13 @@ impl CompilerAsm {
                         match &brazo.patron {
                             Patron::Literal(lit) => {
                                 // Cargar el valor original desde el stack
-                                self.emitir_linea(a.ldr_reg_mem(tmp, a.sp_reg(), 0));
+                                self.emitir_linea(a.ldr_reg_mem(temporal, a.sp_reg(), 0));
                                 // Compilar el literal (resultado en ret/rax)
                                 let prev_stack = self.pila_offset;
                                 self.compilar_expresion_asm(lit);
                                 self.pila_offset = prev_stack;
                                 // Comparar: tmp (original) vs ret (literal)
-                                self.emitir_linea(a.cmp_reg_reg(tmp, ret));
+                                self.emitir_linea(a.cmp_reg_reg(temporal, ret));
                                 // Saltar al siguiente brazo si NO son iguales (jne)
                                 match a {
                                     DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
@@ -3416,8 +3445,8 @@ impl CompilerAsm {
                 // 1) Compilar objeto → puntero al struct en ret
                 self.compilar_expresion_asm(objeto);
                 // 2) Guardar puntero del objeto (push o registro temporal)
-                let obj_reg = self.reservar_reg().unwrap_or(tmp);
-                let uso_empujar = obj_reg == tmp && self.reg_pool.iter().all(|&x| x);
+                let obj_reg = self.reservar_reg().unwrap_or(temporal);
+                let uso_empujar = obj_reg == temporal && self.reg_pool.iter().all(|&x| x);
                 if uso_empujar {
                     self.emitir_linea(a.empujar_reg(ret));
                 } else {
@@ -3427,14 +3456,14 @@ impl CompilerAsm {
                 self.compilar_expresion_asm(valor);
                 // 4) Restaurar puntero del objeto en tmp
                 if uso_empujar {
-                    self.emitir_linea(a.desapilar_reg(tmp));
+                    self.emitir_linea(a.desapilar_reg(temporal));
                 } else {
-                    self.emitir_linea(a.mov_reg_reg(tmp, obj_reg));
+                    self.emitir_linea(a.mov_reg_reg(temporal, obj_reg));
                     self.liberar_reg(obj_reg);
                 }
                 // 5) Almacenar valor en el campo
                 let co = self.buscar_campo_offset(objeto, campo);
-                self.emitir_linea(a.texto_campo(tmp, co, ret));
+                self.emitir_linea(a.texto_campo(temporal, co, ret));
                 String::new()
             }
             Expresion::ArraySet { array, valor } => {
@@ -3453,7 +3482,7 @@ impl CompilerAsm {
                         self.compilar_expresion_asm(objetivo); // valor viejo
                         self.emitir_linea(a.empujar_reg(ret));
                         self.compilar_expresion_asm(valor);
-                        self.emitir_linea(a.mov_reg_reg(tmp, ret));
+                        self.emitir_linea(a.mov_reg_reg(temporal, ret));
                         self.emitir_linea(a.desapilar_reg(ret));
                         self.emitir_operacion_asm(operador);
                         // Guardar el resultado en la variable (mismo criterio que `=`).
@@ -3472,11 +3501,11 @@ impl CompilerAsm {
                         self.emitir_linea(a.ldr_campo(ret, ret, co)); // viejo
                         self.emitir_linea(a.empujar_reg(ret));
                         self.compilar_expresion_asm(valor);
-                        self.emitir_linea(a.mov_reg_reg(tmp, ret));
+                        self.emitir_linea(a.mov_reg_reg(temporal, ret));
                         self.emitir_linea(a.desapilar_reg(ret));
                         self.emitir_operacion_asm(operador);
-                        self.emitir_linea(a.desapilar_reg(tmp)); // puntero
-                        self.emitir_linea(a.texto_campo(tmp, co, ret));
+                        self.emitir_linea(a.desapilar_reg(temporal)); // puntero
+                        self.emitir_linea(a.texto_campo(temporal, co, ret));
                     }
                     Expresion::Index { objeto, indice } => {
                         // Base e índice se evalúan una sola vez.
@@ -3494,17 +3523,17 @@ impl CompilerAsm {
                                 self.emitir_linea("    slli a0, a0, 3");
                             }
                         }
-                        self.emitir_linea(a.desapilar_reg(tmp));
-                        self.emitir_linea(a.add_reg_reg(tmp, ret)); // dirección
-                        self.emitir_linea(a.empujar_reg(tmp));
-                        self.emitir_linea(a.ldr_reg_mem(ret, tmp, 0)); // viejo
+                        self.emitir_linea(a.desapilar_reg(temporal));
+                        self.emitir_linea(a.add_reg_reg(temporal, ret)); // dirección
+                        self.emitir_linea(a.empujar_reg(temporal));
+                        self.emitir_linea(a.ldr_reg_mem(ret, temporal, 0)); // viejo
                         self.emitir_linea(a.empujar_reg(ret));
                         self.compilar_expresion_asm(valor);
-                        self.emitir_linea(a.mov_reg_reg(tmp, ret));
+                        self.emitir_linea(a.mov_reg_reg(temporal, ret));
                         self.emitir_linea(a.desapilar_reg(ret));
                         self.emitir_operacion_asm(operador);
-                        self.emitir_linea(a.desapilar_reg(tmp)); // dirección
-                        self.emitir_linea(a.str_reg_mem(ret, tmp, 0));
+                        self.emitir_linea(a.desapilar_reg(temporal)); // dirección
+                        self.emitir_linea(a.str_reg_mem(ret, temporal, 0));
                     }
                     _ => {
                         self.compilar_expresion_asm(objetivo);
@@ -4511,10 +4540,10 @@ fn optimizar_condiciones(texto: &str) -> String {
             let f = lines[i + 5].trim();
             let reg = a.strip_prefix("mov rax, ");
             let cmp = b.strip_prefix("cmp rax, ");
-            let set = c.strip_prefix("set").and_then(|x| x.strip_suffix(" al"));
-            if let (Some(reg), Some(cmp), Some(set)) = (reg, cmp, set) {
+            let fijar = c.strip_prefix("set").and_then(|x| x.strip_suffix(" al"));
+            if let (Some(reg), Some(cmp), Some(fijar)) = (reg, cmp, fijar) {
                 if d == "movzx rax, al" && e == "test rax, rax" && f.starts_with("jz ") {
-                    let inverso = match set {
+                    let inverso = match fijar {
                         "le" => "jg",
                         "l" => "jge",
                         "ge" => "jl",
@@ -4572,15 +4601,15 @@ fn optimizar_regs_calle_saved(texto: &str) -> String {
         );
         let mut quitados = 0usize;
         for reg in ["r12", "r13", "r14", "r15", "rbx"] {
-            let push = format!("push {reg}");
-            let pop = format!("pop {reg}");
-            if bloque.iter().any(|x| x.trim() == push) {
+            let empujar = format!("push {reg}");
+            let desapilar = format!("pop {reg}");
+            if bloque.iter().any(|x| x.trim() == empujar) {
                 let usos = cuerpo
                     .lines()
-                    .filter(|x| x.trim() != push && x.trim() != pop)
+                    .filter(|x| x.trim() != empujar && x.trim() != desapilar)
                     .any(|x| x.contains(reg));
                 if !usos {
-                    bloque.retain(|x| x.trim() != push && x.trim() != pop);
+                    bloque.retain(|x| x.trim() != empujar && x.trim() != desapilar);
                     quitados += 1;
                 }
             }
@@ -4821,12 +4850,12 @@ c.sumar(5)";
         assert!(salida.contains("mov rcx, 7"));
         assert!(salida.contains("jg .Lx"));
 
-        for set in ["setl", "setge", "setg", "sete", "setne", "setz"] {
+        for fijar in ["setl", "setge", "setg", "sete", "setne", "setz"] {
             let t = format!(
                 "f:
     mov rax, rcx
     cmp rax, rdx
-    {set} al
+    {fijar} al
     movzx rax, al
     test rax, rax
     jz .L
