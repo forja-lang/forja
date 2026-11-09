@@ -100,17 +100,19 @@ impl StdlibIndex {
     }
 
     pub fn cargar_stdlib(&mut self, stdlib_dir: &str) {
-        let dir = std::path::Path::new(stdlib_dir);
-        if !dir.is_dir() {
+        let directorio = std::path::Path::new(stdlib_dir);
+        if !directorio.is_dir() {
             return;
         }
 
-        for entry in std::fs::read_dir(dir).unwrap_or_else(|_| std::fs::read_dir(".").unwrap()) {
-            let entry = match entry {
+        for entrada in
+            std::fs::read_dir(directorio).unwrap_or_else(|_| std::fs::read_dir(".").unwrap())
+        {
+            let entrada = match entrada {
                 Ok(e) => e,
                 _ => continue,
             };
-            let path = entry.path();
+            let path = entrada.path();
             if path.extension().and_then(|e| e.to_str()) != Some("fa") {
                 continue;
             }
@@ -154,11 +156,11 @@ impl StdlibIndex {
 
         // Índice inverso: nombre → lista de funciones (para búsqueda rápida)
         for (_mod_name, module) in self.modules.clone().iter() {
-            for func in &module.functions {
+            for funcion in &module.functions {
                 self.functions
-                    .entry(func.name.clone())
+                    .entry(funcion.name.clone())
                     .or_default()
-                    .push(func.clone());
+                    .push(funcion.clone());
             }
             for class in &module.classes {
                 for method in &class.methods {
@@ -238,7 +240,7 @@ impl StdlibIndex {
                         Some(t) => format_tipo(t),
                         None => String::new(),
                     };
-                    let func = FunctionInfo {
+                    let funcion = FunctionInfo {
                         name: nombre.clone(),
                         module: module_name.to_string(),
                         params,
@@ -247,7 +249,7 @@ impl StdlibIndex {
                         is_method: false,
                         class_name: None,
                     };
-                    module.functions.push(func);
+                    module.functions.push(funcion);
                 }
                 Declaracion::Clase {
                     nombre,
