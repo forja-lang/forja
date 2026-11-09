@@ -3,8 +3,8 @@ use forja::lexer::Lexer;
 use forja::optimizer::{DeadCodeEliminator, Optimizer};
 use forja::parser::Parser;
 
-fn optimizar(source: &str) -> Vec<Declaracion> {
-    let mut lexer = Lexer::new(source);
+fn optimizar(fuente: &str) -> Vec<Declaracion> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -12,8 +12,8 @@ fn optimizar(source: &str) -> Vec<Declaracion> {
     opt.optimizar(&programa).declaraciones
 }
 
-fn dce(source: &str) -> Vec<Declaracion> {
-    let mut lexer = Lexer::new(source);
+fn dce(fuente: &str) -> Vec<Declaracion> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
