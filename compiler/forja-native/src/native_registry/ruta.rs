@@ -17,10 +17,10 @@ pub fn native_ruta_normalizar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
     let normalized = p.components().collect::<std::path::PathBuf>();
-    let out = normalized.to_string_lossy().replace('\\', "/");
+    let salida = normalized.to_string_lossy().replace('\\', "/");
     Ok({
-        let idx = vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -28,10 +28,10 @@ pub fn native_ruta_unir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFa
     let base = obtener_texto(vm, args[0])?;
     let part = obtener_texto(vm, args[1])?;
     let p = std::path::Path::new(&base).join(&part);
-    let out = p.to_string_lossy().replace('\\', "/");
+    let salida = p.to_string_lossy().replace('\\', "/");
     Ok({
-        let idx = vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -42,8 +42,8 @@ pub fn native_ruta_extension(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
         .map(|e| e.to_string_lossy().to_string())
         .unwrap_or_default();
     Ok({
-        let idx = vm.alloc_str(Arc::from(ext.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(ext.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -53,10 +53,10 @@ pub fn native_ruta_sin_extension(
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
-    let out = p.with_extension("").to_string_lossy().replace('\\', "/");
+    let salida = p.with_extension("").to_string_lossy().replace('\\', "/");
     Ok({
-        let idx = vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -65,13 +65,13 @@ pub fn native_ruta_nombre_archivo(
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
-    let name = std::path::Path::new(&s)
+    let nombre = std::path::Path::new(&s)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     Ok({
-        let idx = vm.alloc_str(Arc::from(name.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(nombre.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -82,8 +82,8 @@ pub fn native_ruta_dir_padre(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default();
     Ok({
-        let idx = vm.alloc_str(Arc::from(parent.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(parent.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -98,10 +98,10 @@ pub fn native_ruta_absoluta(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
             Err(_) => return Ok(ValorFast::nulo()),
         }
     };
-    let out = abs.to_string_lossy().replace('\\', "/");
+    let salida = abs.to_string_lossy().replace('\\', "/");
     Ok({
-        let idx = vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -119,7 +119,7 @@ pub fn native_ruta_separador(
 ) -> Result<ValorFast, ErrFast> {
     let sep = std::path::MAIN_SEPARATOR.to_string();
     Ok({
-        let idx = _vm.alloc_str(Arc::from(sep.as_str()));
-        ValorFast::texto(idx)
+        let indice = _vm.alloc_str(Arc::from(sep.as_str()));
+        ValorFast::texto(indice)
     })
 }
