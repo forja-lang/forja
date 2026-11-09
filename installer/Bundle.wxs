@@ -7,7 +7,7 @@
      relanza este mismo .exe elevado (UAC) y ahí sí escribe donde eligió; el
      PATH sigue siendo del usuario. Sin elección protegida, cero UAC.
 
-       wix build -arch x64 -d Version=0.10.1 -o forja-setup-x64.exe installer\Bundle.wxs -->
+       wix build -arch x64 -d Version=0.10.2 -o forja-setup-x64.exe installer\Bundle.wxs -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Bundle Name="Forja"
           Version="$(var.Version)"
