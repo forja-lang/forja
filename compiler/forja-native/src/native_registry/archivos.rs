@@ -39,8 +39,8 @@ pub fn native_archivo_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
     match std::fs::read_to_string(&ruta) {
         Ok(contenido) => {
-            let idx = vm.alloc_str(Arc::from(contenido.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(contenido.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
             "{}: {}",
@@ -260,8 +260,8 @@ pub fn native_directorio_listar(
                 }
             }
             let resultado = nombres.join("\n");
-            let idx = vm.alloc_str(Arc::from(resultado.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
             "{}: {}",
@@ -305,8 +305,8 @@ pub fn native_archivo_info(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
                 },
                 modificado
             );
-            let idx = vm.alloc_str(Arc::from(info.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(info.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
             "{}: {}",
@@ -337,13 +337,13 @@ pub fn native_archivo_leer_binario(
         ));
     }
     match std::fs::read(&ruta) {
-        Ok(bytes) => {
-            let hex_str = bytes
+        Ok(octetos) => {
+            let hex_texto = octetos
                 .iter()
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
-            let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
             "{}: {}",
@@ -368,24 +368,24 @@ pub fn native_archivo_escribir_binario(
         ));
     }
     let ruta = obtener_texto(vm, args[0])?;
-    let hex_str = obtener_texto(vm, args[1])?;
+    let hex_texto = obtener_texto(vm, args[1])?;
     if ruta.trim().is_empty() {
         return Err(ErrFast::TipoInv(
             "ruta_invalida: la ruta no puede estar vacía".into(),
         ));
     }
     // Decodificar hex a bytes
-    let bytes: Vec<u8> = (0..hex_str.len())
+    let octetos: Vec<u8> = (0..hex_texto.len())
         .step_by(2)
         .filter_map(|i| {
-            if i + 1 < hex_str.len() {
-                u8::from_str_radix(&hex_str[i..i + 2], 16).ok()
+            if i + 1 < hex_texto.len() {
+                u8::from_str_radix(&hex_texto[i..i + 2], 16).ok()
             } else {
                 None
             }
         })
         .collect();
-    match std::fs::write(&ruta, &bytes) {
+    match std::fs::write(&ruta, &octetos) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!(
             "{}: {}",
