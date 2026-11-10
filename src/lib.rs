@@ -718,6 +718,21 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
             final_decls.push(decl);
         }
     }
+    // Mismo control que en la ruta de disco: nombres exportados por dos módulos.
+    let ambiguos = forja_hir::imports::nombres_ambiguos(&alias);
+    if !ambiguos.is_empty() {
+        if let Some((nombre, modulos)) =
+            forja_hir::imports::llamadas_ambiguas(codigo_fuente, &ambiguos).first()
+        {
+            return Err(format!(
+                "el nombre '{}' no es único: lo exportan {}. Llamalo con el módulo adelante (ej: '{}.{}').",
+                nombre,
+                modulos.join(", "),
+                modulos[0],
+                nombre
+            ));
+        }
+    }
     for decl in &mut final_decls {
         reescribir_llamadas_de_modulo(decl, &alias);
     }
@@ -1679,10 +1694,6 @@ fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
 
 /// Fases compartidas: type checker → préstamos → mono → optimizador → backend.
 fn compilar_a_llvm_programa(mut programa: ast::Programa) -> Result<String, Vec<error::ErrorForja>> {
-    let dbg = std::env::var("FORJA_DEBUG_AST").is_ok();
-    if dbg {
-        eprintln!("[parse] {:?}", programa.declaraciones.first());
-    }
     // FASE 4: Type Checker
     let mut tipo_checker = semantics::TipoChecker::nuevo();
     tipo_checker.analizar(&programa)?;
@@ -1693,17 +1704,11 @@ fn compilar_a_llvm_programa(mut programa: ast::Programa) -> Result<String, Vec<e
 
     // FASE 5.5: Monomorfización
     monomorphize_programa(&mut programa);
-    if std::env::var("FORJA_DEBUG_AST").is_ok() {
-        eprintln!("[mono] {:?}", programa.declaraciones.first());
-    }
 
     // FASE 6: Optimizaciones de AST — punto único (`optimizer_pipeline`).
     // Nivel básico: const-fold → dce → const-prop.
     let programa = optimizer_pipeline::PipelineAst::basico().ejecutar(programa);
 
-    if std::env::var("FORJA_DEBUG_AST").is_ok() {
-        eprintln!("[AST pipeline] {:?}", programa.declaraciones.first());
-    }
     // FASE 7: Backend LLVM (generación de texto IR)
     let ir = backend_llvm::compilar_a_llvm_texto(&programa.declaraciones).map_err(|e| {
         vec![error::ErrorForja::nuevo(

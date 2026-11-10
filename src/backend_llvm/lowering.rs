@@ -717,7 +717,6 @@ impl Lowering {
                 if ultima_declaracion.get(nombre.as_str()).copied() != Some(idx) {
                     continue; // redeclarado más adelante (programa del usuario)
                 }
-                eprintln!("[DBG] var {nombre}: valor={valor:?}");
                 let t = self.tipo_declarado(tipo).unwrap_or_else(|| {
                     valor
                         .as_ref()

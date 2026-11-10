@@ -593,3 +593,45 @@ escribir(a_texto(primero([7, 8])))
 "#;
     forja_test_support::esperar_salida(fuente, &["7"]);
 }
+
+/// Dos módulos importados que exportan el mismo nombre: la llamada sin
+/// calificar resolvía a la última definición, en silencio (N17).
+///
+/// Se usa `ejecutar_desde` porque los imports se resuelven en esa ruta
+/// (`compilar_pipeline_completa` no resuelve imports).
+#[test]
+fn llamada_sin_calificar_a_nombre_ambiguo_es_error() {
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let fuente = r#"
+importar "std/json"
+importar "std/toml"
+variable a = parsear("{\"x\": 1}")
+escribir(a_texto(a))
+"#;
+    let err = forja_test_support::ejecutar_desde(fuente, raiz)
+        .expect_err("la llamada ambigua debía fallar");
+    assert!(
+        err.contains("no es único"),
+        "se esperaba el aviso de nombre ambiguo, llegó: {err}"
+    );
+}
+
+/// La misma llamada, calificada, funciona.
+#[test]
+fn llamada_calificada_a_nombre_ambiguo_funciona() {
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let fuente = r#"
+importar "std/json"
+importar "std/toml"
+funcion desenvolver(v) {
+    coincidir (v) {
+        caso Ok(x) -> { retornar x }
+        caso _ -> { retornar nulo }
+    }
+}
+variable a = desenvolver(json.parsear("{\"x\": 1}"))
+escribir(a_texto(a["x"]))
+"#;
+    let salida = forja_test_support::ejecutar_desde(fuente, raiz).expect("debía ejecutarse");
+    assert_eq!(salida, vec!["1".to_string()]);
+}
