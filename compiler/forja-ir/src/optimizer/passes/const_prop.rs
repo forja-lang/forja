@@ -41,6 +41,7 @@ impl ConstPropagator {
             Declaracion::Variable {
                 mutable: false,
                 nombre,
+                tipo,
                 valor: Some(val),
                 ..
             } => {
@@ -49,10 +50,13 @@ impl ConstPropagator {
                     self.constantes.insert(nombre.clone(), cv);
                     self.cambios_realizados += 1;
                 }
+                // `tipo` se conserva: sin la anotación se pierde la coerción a
+                // `Exacto`/`Decimal` y `variable x: Exacto = 456` quedaba como
+                // entero (y `x / 1000` daba 0).
                 vec![Declaracion::Variable {
                     mutable: false,
                     nombre: nombre.clone(),
-                    tipo: None,
+                    tipo: tipo.clone(),
                     valor: Some(valor_opt),
                     linea: 0,
                     columna: 0,
@@ -61,6 +65,7 @@ impl ConstPropagator {
             Declaracion::Variable {
                 mutable: true,
                 nombre,
+                tipo,
                 valor,
                 ..
             } => {
@@ -69,7 +74,7 @@ impl ConstPropagator {
                 vec![Declaracion::Variable {
                     mutable: true,
                     nombre: nombre.clone(),
-                    tipo: None,
+                    tipo: tipo.clone(),
                     valor: valor_opt,
                     linea: 0,
                     columna: 0,

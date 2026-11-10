@@ -430,6 +430,33 @@ impl Lowering {
                 self.linea(&format!("{} = call double @forja_a_decimal(ptr {})", d, r));
                 d
             }
+            // Entero/Decimal → Exacto (coerción por tipo declarado).
+            (V::Int(r), T::Exacto) => {
+                let e = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_desde_entero(i64 {})",
+                    e, r
+                ));
+                e
+            }
+            (V::Dec(r), T::Exacto) => {
+                let d = self.r();
+                self.linea(&format!("{} = fmul double {}, 10000000000.0", d, r));
+                let ancho = self.r();
+                self.linea(&format!("{} = fptosi double {} to i128", ancho, d));
+                let alto = self.r();
+                self.linea(&format!("{} = lshr i128 {}, 64", alto, ancho));
+                let alto64 = self.r();
+                self.linea(&format!("{} = trunc i128 {} to i64", alto64, alto));
+                let bajo = self.r();
+                self.linea(&format!("{} = trunc i128 {} to i64", bajo, ancho));
+                let e = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_nuevo(i64 {}, i64 {}, i64 10)",
+                    e, alto64, bajo
+                ));
+                e
+            }
             (V::Int(r), T::Texto) => {
                 let d = self.r();
                 self.linea(&format!("{} = call ptr @forja_a_texto(i64 {})", d, r));
