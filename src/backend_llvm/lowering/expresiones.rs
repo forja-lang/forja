@@ -1859,7 +1859,7 @@ impl Lowering {
         match v {
             V::Clase(r, clase) => Ok((r, clase)),
             other => Err(format!(
-                "se esperaba un objeto para acceder a un miembro, no un {}",
+                "no se puede acceder a un miembro de un {} en la ruta nativa: si guarda objetos de varias clases (campo o parámetro sin anotar) hace falta dispatch dinámico, que el backend LLVM todavía no baja. Anotá el tipo concreto o compilá con la VM",
                 other.t().nombre()
             )),
         }
