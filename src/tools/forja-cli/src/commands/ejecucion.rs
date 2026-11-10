@@ -4,12 +4,21 @@ use super::*;
 
 /// Compila LLVM nativo de Forja a un ejecutable con clang.
 pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<(), String> {
-    // OJO: no se resuelven `importar` acá. La stdlib usa constructos que el
-    // backend todavía no baja (`coincidir` sobre funciones sin tipo de retorno),
-    // así que resolverla haría fallar AOT en casi cualquier programa. Los
-    // builtins nativos (`tiempo_ms`, `a_texto`, `longitud`, …) cubren lo común.
-    // `compilar_a_llvm_desde` queda listo para cuando eso se cierre.
-    let ir = forja::compilar_a_llvm(fuente).map_err(|e| format!("{e:?}"))?;
+    // `compilar_a_llvm_desde` resuelve `importar` y poda lo inalcanzable: la
+    // stdlib entera se inlinearía y sus módulos sin usar chocan con el backend
+    // (`coincidir` sobre funciones nativas sin tipo declarado). Con la poda,
+    // sólo se baja lo que el programa realmente llama.
+    let raiz = {
+        let mut r = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        for ancestro in r.clone().ancestors() {
+            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
+                r = ancestro.to_path_buf();
+                break;
+            }
+        }
+        r
+    };
+    let ir = forja::compilar_a_llvm_desde(fuente, &raiz).map_err(|e| format!("{e:?}"))?;
     let directorio = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
     std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
     let ll = directorio.join("main.ll");

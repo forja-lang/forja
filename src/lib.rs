@@ -1412,7 +1412,205 @@ pub fn compilar_a_llvm_desde(
             "Revisá los `importar` del programa.",
         )]
     })?;
-    compilar_a_llvm_programa(programa)
+    // La stdlib entera se inlinearía en el programa y el backend choca con
+    // módulos que el programa ni usa (usan funciones nativas cuyo tipo no está
+    // declarado). Se poda lo inalcanzable desde las sentencias de nivel
+    // superior antes de bajar a LLVM.
+    compilar_a_llvm_programa(podar_inalcanzable(programa))
+}
+
+/// Deja sólo las funciones, clases y enums alcanzables desde las sentencias de
+/// nivel superior del programa (siguiendo llamadas, instanciaciones y valores de
+/// función). Es un DCE de programa completo que la ruta nativa necesita porque
+/// trabaja con tipos estáticos.
+#[cfg(not(target_arch = "wasm32"))]
+fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
+    use ast::{Declaracion, Expresion};
+    use std::collections::HashSet;
+
+    fn expr(e: &Expresion, fns: &mut HashSet<String>, clases: &mut HashSet<String>) {
+        match e {
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                fns.insert(nombre.clone());
+                for a in argumentos {
+                    expr(a, fns, clases);
+                }
+            }
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
+                expr(objeto, fns, clases);
+                for a in argumentos {
+                    expr(a, fns, clases);
+                }
+            }
+            Expresion::Identificador { nombre, .. } => {
+                // valor de función pasado como dato
+                fns.insert(nombre.clone());
+            }
+            Expresion::Instanciacion { clase, argumentos } => {
+                clases.insert(clase.clone());
+                for a in argumentos {
+                    expr(a, fns, clases);
+                }
+            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                expr(izquierda, fns, clases);
+                expr(derecha, fns, clases);
+            }
+            Expresion::Unaria { expr: e, .. } | Expresion::Grupo(e) => expr(e, fns, clases),
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                expr(condicion, fns, clases);
+                expr(si_verdadero, fns, clases);
+                expr(si_falso, fns, clases);
+            }
+            Expresion::AccesoMiembro { objeto, .. } => expr(objeto, fns, clases),
+            Expresion::Index { objeto, indice } => {
+                expr(objeto, fns, clases);
+                expr(indice, fns, clases);
+            }
+            Expresion::Arreglo(items) => {
+                for i in items {
+                    expr(i, fns, clases);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares {
+                    expr(k, fns, clases);
+                    expr(v, fns, clases);
+                }
+            }
+            Expresion::Asignacion { valor, .. }
+            | Expresion::AsignacionCampo { valor, .. }
+            | Expresion::AsignacionCompuesta { valor, .. } => expr(valor, fns, clases),
+            Expresion::Try(inner) => expr(inner, fns, clases),
+            Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
+                sentencias(cuerpo, fns, clases)
+            }
+            Expresion::Ok(v) | Expresion::Error(v) | Expresion::Algo(v) => expr(v, fns, clases),
+            Expresion::Coincidir { expr: e, brazos } => {
+                expr(e, fns, clases);
+                for b in brazos {
+                    sentencias(&b.cuerpo, fns, clases);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn sentencias(cuerpo: &[Declaracion], fns: &mut HashSet<String>, clases: &mut HashSet<String>) {
+        for d in cuerpo {
+            match d {
+                Declaracion::Variable { valor: Some(v), .. } => expr(v, fns, clases),
+                Declaracion::Variable { valor: None, .. } => {}
+                Declaracion::Asignacion { valor, .. }
+                | Declaracion::AsignacionMiembro { valor, .. }
+                | Declaracion::AsignacionIndex { valor, .. } => expr(valor, fns, clases),
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
+                    expr(condicion, fns, clases);
+                    sentencias(bloque_verdadero, fns, clases);
+                    if let Some(b) = bloque_falso {
+                        sentencias(b, fns, clases);
+                    }
+                }
+                Declaracion::Mientras { condicion, bloque } => {
+                    expr(condicion, fns, clases);
+                    sentencias(bloque, fns, clases);
+                }
+                Declaracion::Para {
+                    inicializacion,
+                    condicion,
+                    incremento,
+                    bloque,
+                } => {
+                    if let Some(i) = inicializacion {
+                        sentencias(std::slice::from_ref(i.as_ref()), fns, clases);
+                    }
+                    if let Some(c) = condicion {
+                        expr(c, fns, clases);
+                    }
+                    if let Some(i) = incremento {
+                        sentencias(std::slice::from_ref(i.as_ref()), fns, clases);
+                    }
+                    sentencias(bloque, fns, clases);
+                }
+                Declaracion::Repetir { cantidad, bloque } => {
+                    expr(cantidad, fns, clases);
+                    sentencias(bloque, fns, clases);
+                }
+                Declaracion::Retornar { valor: Some(v) } => expr(v, fns, clases),
+                Declaracion::Retornar { valor: None } => {}
+                Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                    fns.insert(nombre.clone());
+                    for a in argumentos {
+                        expr(a, fns, clases);
+                    }
+                }
+                Declaracion::Expresion(e) => expr(e, fns, clases),
+                Declaracion::AccesoMiembro { objeto, .. } => expr(objeto, fns, clases),
+                Declaracion::Cuando {
+                    condicion, cuerpo, ..
+                } => {
+                    expr(condicion, fns, clases);
+                    sentencias(cuerpo, fns, clases);
+                }
+                Declaracion::AsignacionMultiple { valor, .. } => expr(valor, fns, clases),
+                _ => {}
+            }
+        }
+    }
+
+    let mut fns: HashSet<String> = HashSet::new();
+    let mut clases: HashSet<String> = HashSet::new();
+    // Raíces: sentencias de nivel superior.
+    sentencias(&programa.declaraciones, &mut fns, &mut clases);
+    // Cierre transitivo: cada función alcanzada arrastra lo que llama.
+    loop {
+        let mut nuevas_fns = fns.clone();
+        let mut nuevas_clases = clases.clone();
+        for d in &programa.declaraciones {
+            match d {
+                Declaracion::Funcion { nombre, cuerpo, .. } if fns.contains(nombre) => {
+                    sentencias(cuerpo, &mut nuevas_fns, &mut nuevas_clases);
+                }
+                Declaracion::Clase {
+                    nombre, metodos, ..
+                } if clases.contains(nombre) => {
+                    for m in metodos {
+                        sentencias(&m.cuerpo, &mut nuevas_fns, &mut nuevas_clases);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if nuevas_fns == fns && nuevas_clases == clases {
+            break;
+        }
+        fns = nuevas_fns;
+        clases = nuevas_clases;
+    }
+
+    programa.declaraciones.retain(|d| match d {
+        Declaracion::Funcion {
+            nombre,
+            externa: false,
+            ..
+        } => fns.contains(nombre) || nombre == "main",
+        Declaracion::Clase { nombre, .. } => clases.contains(nombre),
+        Declaracion::Implementacion { clase_nombre, .. } => clases.contains(clase_nombre),
+        _ => true,
+    });
+    programa
 }
 
 /// Fases compartidas: type checker → préstamos → mono → optimizador → backend.

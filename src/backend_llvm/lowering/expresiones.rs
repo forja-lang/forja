@@ -786,6 +786,22 @@ impl Lowering {
             self.linea("call void @forja_nueva_linea()");
             return Ok(V::Int("0".into()));
         }
+        // Funciones nativas de la stdlib (`_sistema_*`) que tienen equivalente
+        // directo en el runtime nativo.
+        if let Some(real) = match nombre {
+            "_sistema_tiempo_actual_ms" | "_sistema_tiempo_ms" => Some("forja_tiempo_ms"),
+            _ => None,
+        } {
+            let mut lista = Vec::new();
+            for a in argumentos {
+                let v = self.expr(a)?;
+                let x = self.como(&v, T::Int);
+                lista.push(format!("i64 {}", x));
+            }
+            let r = self.r();
+            self.linea(&format!("{} = call i64 @{}({})", r, real, lista.join(", ")));
+            return Ok(V::Int(r));
+        }
         // `absoluto` de un Exacto se resuelve con el builtin: la versión de la
         // stdlib no está tipada y convertiría el Exacto a entero.
         if nombre == "absoluto"

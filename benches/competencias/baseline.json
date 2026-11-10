@@ -1,54 +1,54 @@
 {
   "casos": {
     "concurrencia": {
-      "forja_ms": 44,
-      "ratio": 1.05,
-      "rust_ms": 42
+      "forja_ms": 48,
+      "ratio": 1.02,
+      "rust_ms": 47
     },
     "dispatch": {
-      "forja_ms": 62,
-      "ratio": 0.93,
-      "rust_ms": 67
+      "forja_ms": 66,
+      "ratio": 1.03,
+      "rust_ms": 64
     },
     "erroresanidados": {
-      "forja_ms": 264,
+      "forja_ms": 261,
       "ratio": 0.19,
-      "rust_ms": 1395
+      "rust_ms": 1392
     },
     "ffi": {
       "forja_ms": 47,
-      "ratio": 0.98,
-      "rust_ms": 48
+      "ratio": 1.04,
+      "rust_ms": 45
     },
     "hash": {
-      "forja_ms": 291,
-      "ratio": 0.87,
-      "rust_ms": 335
+      "forja_ms": 387,
+      "ratio": 1.01,
+      "rust_ms": 382
     },
     "memcache": {
-      "forja_ms": 258,
-      "ratio": 0.98,
-      "rust_ms": 264
+      "forja_ms": 264,
+      "ratio": 0.94,
+      "rust_ms": 282
     },
     "overflowpanic": {
-      "forja_ms": 46,
-      "ratio": 0.65,
-      "rust_ms": 71
+      "forja_ms": 51,
+      "ratio": 0.61,
+      "rust_ms": 84
     },
     "parseo": {
-      "forja_ms": 527,
+      "forja_ms": 546,
       "ratio": 1.03,
-      "rust_ms": 511
+      "rust_ms": 531
     },
     "stress": {
-      "forja_ms": 108,
-      "ratio": 0.4,
-      "rust_ms": 268
+      "forja_ms": 118,
+      "ratio": 0.42,
+      "rust_ms": 279
     },
     "vectores": {
-      "forja_ms": 90,
-      "ratio": 1.34,
-      "rust_ms": 67
+      "forja_ms": 113,
+      "ratio": 1.51,
+      "rust_ms": 75
     }
   },
   "nota": "Ratio = forja/rust (pared, m\u00ednimo de N). Regenerar con scripts/bench-competencias.sh --update"

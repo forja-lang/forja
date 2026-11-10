@@ -460,8 +460,18 @@ pub(crate) fn cmd_llvm(args: &[String]) {
             process::exit(1);
         }
     };
-    // Sin resolver imports: ver la nota en `compilar_llvm_a`.
-    match forja::compilar_a_llvm(&fuente) {
+    // Igual que `forja aot`: resolver imports + podar lo inalcanzable.
+    let raiz = {
+        let mut r = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        for ancestro in r.clone().ancestors() {
+            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
+                r = ancestro.to_path_buf();
+                break;
+            }
+        }
+        r
+    };
+    match forja::compilar_a_llvm_desde(&fuente, &raiz) {
         Ok(ir) => {
             let out = args
                 .get(1)
