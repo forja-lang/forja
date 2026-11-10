@@ -800,42 +800,45 @@ impl Lowering {
         // `self.vars` ya tiene los globals registrados: el init los necesita.
         self.prologo.clear();
         self.termina = false;
-        for (nombre, t, valor, es_global) in &iniciales {
-            let slot = if *es_global {
-                format!("@g_{}", nombre)
-            } else {
-                let slot = self.alloca(t, nombre);
-                self.vars.insert(
-                    nombre.clone(),
-                    Var {
-                        slot: slot.clone(),
-                        t: t.clone(),
-                    },
-                );
-                slot
-            };
-            if let Some(v) = valor {
-                let val = self.expr(v)?;
-                self.guardar(&slot, val, t);
-            }
-        }
-        for d in decls {
-            if matches!(
-                d,
+        // Una sola pasada en orden de fuente: inicializaciones de variables y
+        // sentencias sueltas intercaladas como en el programa.
+        for (idx, d) in decls.iter().enumerate() {
+            match d {
                 Declaracion::Funcion { .. }
-                    | Declaracion::Clase { .. }
-                    | Declaracion::Rasgo { .. }
-                    | Declaracion::Implementacion { .. }
-                    | Declaracion::Importar(_)
-                    | Declaracion::ImportarExterna(_)
-                    | Declaracion::Enum { .. }
-            ) {
-                continue;
+                | Declaracion::Clase { .. }
+                | Declaracion::Rasgo { .. }
+                | Declaracion::Implementacion { .. }
+                | Declaracion::Importar(_)
+                | Declaracion::ImportarExterna(_)
+                | Declaracion::Enum { .. } => {}
+                Declaracion::Variable { nombre, .. } => {
+                    if ultima_declaracion.get(nombre.as_str()).copied() != Some(idx) {
+                        continue; // redeclarada más adelante
+                    }
+                    if let Some((_, t, valor, es_global)) =
+                        iniciales.iter().find(|(n, _, _, _)| n == nombre)
+                    {
+                        let slot = if *es_global {
+                            format!("@g_{}", nombre)
+                        } else {
+                            let slot = self.alloca(t, nombre);
+                            self.vars.insert(
+                                nombre.clone(),
+                                Var {
+                                    slot: slot.clone(),
+                                    t: t.clone(),
+                                },
+                            );
+                            slot
+                        };
+                        if let Some(v) = valor {
+                            let val = self.expr(v)?;
+                            self.guardar(&slot, val, t);
+                        }
+                    }
+                }
+                _ => self.sentencia(d)?,
             }
-            if matches!(d, Declaracion::Variable { .. }) {
-                continue; // ya inicializada arriba
-            }
-            self.sentencia(d)?;
         }
         let prologo_inicializar = std::mem::take(&mut self.prologo);
         let mut cuerpo_inicializar_fn = prologo_inicializar;
@@ -1269,11 +1272,19 @@ fn primer_retorno(cuerpo: &[Declaracion]) -> Option<T> {
                 return Some(match e {
                     Expresion::LiteralTexto(_) => T::Texto,
                     Expresion::LiteralDecimal(_) => T::Dec,
+                    Expresion::LiteralExacto(..) => T::Exacto,
                     Expresion::Arreglo(_) => T::Arreglo,
                     Expresion::Mapa(_) => T::Mapa,
                     Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+                    // `Algo`/`Ninguno` y `Ok`/`Error` son los tipos del preludio:
+                    // sin esto una función de la stdlib sin anotación se tomaba
+                    // como Entero y el `coincidir` de quien la llama fallaba.
+                    Expresion::Algo(_) | Expresion::Nada | Expresion::Ninguno => {
+                        T::Enum("Opcion".to_string())
+                    }
+                    Expresion::Ok(_) | Expresion::Error(_) => T::Enum("Resultado".to_string()),
                     _ => T::Int,
-                })
+                });
             }
             Declaracion::Si {
                 bloque_verdadero,

@@ -21,6 +21,9 @@ FORJA="${FORJA:-$ROOT/target/release/forja$( [ "$(uname -s)" != "Linux" ] && ech
 REPS="${REPETICIONES:-3}"
 BASE="$DIR/baseline.json"
 OUT="$DIR/../..//target/bench-competencias"
+# Limpio: un binario viejo (p. ej. el de un fallback a bytecode) se mediría
+# como si fuera nativo.
+rm -rf "$OUT"
 mkdir -p "$OUT"
 
 ACTUALIZAR=0
@@ -76,6 +79,14 @@ for fila in "${CASOS[@]}"; do
     if ! "$FORJA" aot "$fsrc" "$OUT/$caso" > "$OUT/$caso.build.log" 2>&1; then
         echo "❌ $caso: Forja no compiló (ver $OUT/$caso.build.log)" >&2
         tail -3 "$OUT/$caso.build.log" >&2
+        fallo=1
+        continue
+    fi
+    # Si AOT degradó a bytecode, lo medido sería el intérprete: no vale como
+    # número nativo. Se trata como fallo para no publicar tablas falsas.
+    if grep -q "fallback de bytecode" "$OUT/$caso.build.log"; then
+        echo "❌ $caso: AOT no compiló nativo (degradó a bytecode)" >&2
+        grep "AOT nativo no disponible" "$OUT/$caso.build.log" | head -1 >&2
         fallo=1
         continue
     fi
