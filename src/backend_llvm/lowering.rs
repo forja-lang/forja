@@ -186,6 +186,8 @@ pub struct Lowering {
     tipos_pre: HashMap<String, T>,
     /// tipos de las variables de nivel superior, visibles antes de emitirlas.
     tipos_top: HashMap<String, T>,
+    /// variables cuyo arreglo guarda textos (punteros) en sus casillas.
+    arreglos_texto: HashMap<String, bool>,
     etiquetas: Vec<(String, String)>, // (romper, continuar)
     ret_actual: T,
     termina: bool,
@@ -280,6 +282,7 @@ impl Lowering {
             consts: HashMap::new(),
             tipos_pre: HashMap::new(),
             tipos_top: HashMap::new(),
+            arreglos_texto: HashMap::new(),
             etiquetas: Vec::new(),
             ret_actual: T::Int,
             termina: false,
@@ -861,6 +864,10 @@ impl Lowering {
                         if let Some(v) = valor {
                             let val = self.expr(v)?;
                             self.guardar(&slot, val, t);
+                            // recordar arreglos de textos también a nivel superior
+                            if self.arreglo_de_texto(v) {
+                                self.arreglos_texto.insert(nombre.clone(), true);
+                            }
                         }
                     }
                 }
@@ -994,6 +1001,8 @@ impl Lowering {
             Expresion::LiteralNumero(_) => T::Int,
             Expresion::Arreglo(_) => T::Arreglo,
             Expresion::Mapa(_) => T::Mapa,
+            // `partes[0]` de un arreglo de textos es Texto (puntero), no Entero.
+            Expresion::Index { objeto, .. } if self.arreglo_de_texto(objeto) => T::Texto,
             Expresion::LiteralExacto(..) => T::Exacto,
             Expresion::CanalNuevo(_) => T::Canal,
             Expresion::Closure { .. } => T::Closure,

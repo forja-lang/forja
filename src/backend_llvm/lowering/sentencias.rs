@@ -191,12 +191,21 @@ impl Lowering {
                     Some(e) => Some(self.expr(e)?),
                     None => None,
                 };
+                // El tipo del valor evaluado manda sobre el pre-escaneo: el
+                // pre-escaneo corre antes de emitir el cuerpo, así que no sabe
+                // que `partes[0]` de un arreglo de textos es Texto.
                 let t = self
                     .tipo_declarado(tipo)
+                    .or_else(|| v.as_ref().map(|v| v.t()).filter(|t| *t != T::Nulo))
                     .or_else(|| self.tipos_pre.get(nombre).cloned())
-                    .or_else(|| v.as_ref().map(|v| v.t()))
                     .unwrap_or(T::Int);
                 let slot = self.alloca(&t, nombre);
+                // recordar si el arreglo guarda textos (para leer sus casillas)
+                if let Some(e) = valor {
+                    if self.arreglo_de_texto(e) {
+                        self.arreglos_texto.insert(nombre.clone(), true);
+                    }
+                }
                 let inicial = v.unwrap_or(V::Nulo);
                 self.guardar(&slot, inicial, &t);
                 self.vars.insert(nombre.clone(), Var { slot, t });

@@ -307,6 +307,14 @@ variable pi: Exacto = 314159265358979323846e-20
 escribir(pi)
 variable r: Exacto = 1 - 0.9
 escribir(r)
+variable cien: Exacto = 1000
+variable frac: Exacto = 456
+escribir(frac / cien)
+// split + índice de arreglo de textos (lo usa std/matematica)
+variable partes = "123.456".dividir(".")
+escribir(partes[0])
+escribir(partes[1])
+escribir(a_numero(partes[0]))
 "#;
     if let Some(salida) = ejecutar_nativo(fuente) {
         assert_eq!(
@@ -315,6 +323,10 @@ escribir(r)
 59.97
 3.14159265358979323846
 0.1
+0.45600000000000000000
+123
+456
+123
 "
         );
     }

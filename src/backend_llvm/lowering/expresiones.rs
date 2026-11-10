@@ -327,6 +327,13 @@ impl Lowering {
                 ));
                 let v = self.r();
                 self.linea(&format!("{} = load i64, ptr {}", v, p));
+                // Las casillas son i64; si el arreglo sabemos que guarda textos
+                // (literal de textos, `dividir`) el valor es un puntero.
+                if self.arreglo_de_texto(objeto) {
+                    let ptr = self.r();
+                    self.linea(&format!("{} = inttoptr i64 {} to ptr", ptr, v));
+                    return Ok(V::Texto(ptr));
+                }
                 Ok(V::Int(v))
             }
             Expresion::Asignacion { variable, valor } => {
@@ -1803,6 +1810,24 @@ impl Lowering {
                 i
             }
             _ => self.como(v, T::Int),
+        }
+    }
+
+    /// ¿El arreglo guarda textos? Se sabe para los literales de textos y para
+    /// lo que devuelve `dividir` (split).
+    pub(super) fn arreglo_de_texto(&self, e: &Expresion) -> bool {
+        match e {
+            Expresion::Arreglo(items) => items
+                .first()
+                .map(|i| self.tipo_estatico(i) == T::Texto)
+                .unwrap_or(false),
+            Expresion::LlamadaFuncion { nombre, .. } => nombre == "dividir",
+            // `texto.dividir(".")` llega como método.
+            Expresion::LlamadaMetodo { metodo, .. } => metodo == "dividir",
+            Expresion::Identificador { nombre, .. } => {
+                self.arreglos_texto.get(nombre).copied().unwrap_or(false)
+            }
+            _ => false,
         }
     }
 
