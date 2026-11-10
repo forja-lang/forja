@@ -31,6 +31,7 @@ mod binario;
 #[cfg(feature = "net")]
 mod bittorrent;
 mod codificacion;
+mod compartido;
 mod crypto;
 mod csv;
 mod env_ext;
@@ -165,6 +166,7 @@ impl NativoRegistro {
         reg.registrar_xhb();
         reg.registrar_seleccionar();
         reg.registrar_mapas();
+        reg.registrar_compartido();
         reg
     }
 

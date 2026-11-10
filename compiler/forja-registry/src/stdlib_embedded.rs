@@ -23,7 +23,9 @@ pub const CODIFICACION: &str = include_str!("../../../library/std/codificacion.f
 pub const COLECCIONES: &str = include_str!("../../../library/std/colecciones.fa");
 pub const CONCURRENCIA: &str = include_str!("../../../library/std/concurrencia.fa");
 pub const CRYPTO: &str = include_str!("../../../library/std/crypto.fa");
+pub const COMPARTIDO: &str = include_str!("../../../library/std/compartido.fa");
 pub const CSV: &str = include_str!("../../../library/std/csv.fa");
+pub const DATOS: &str = include_str!("../../../library/std/datos.fa");
 pub const ENV: &str = include_str!("../../../library/std/env.fa");
 pub const FECHA: &str = include_str!("../../../library/std/fecha.fa");
 pub const FFI: &str = include_str!("../../../library/std/ffi.fa");
@@ -149,8 +151,18 @@ pub const MODULOS: &[ModuloEmbebido] = &[
         es_gui: false,
     },
     ModuloEmbebido {
+        nombre: "std/compartido",
+        fuente: COMPARTIDO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
         nombre: "std/csv",
         fuente: CSV,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/datos",
+        fuente: DATOS,
         es_gui: false,
     },
     ModuloEmbebido {
