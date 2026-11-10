@@ -575,3 +575,21 @@ mientras (i < 3) {
 "#;
     assert!(verificar(src).is_ok());
 }
+
+/// Un parámetro (o local) llamado igual que una función debe conservar su
+/// propio tipo, no el de la función homónima. Antes, al inlinearse dos módulos
+/// donde uno tenía `funcion valores(...)`, un parámetro `valores` tomaba el
+/// tipo `Funcion` y `variable copia = valores; copia[0]` fallaba con
+/// "'copia' no es un arreglo" (ver N20 en plans/PLAN_WEB_Y_GUI.md).
+#[test]
+fn parametro_homonimo_de_una_funcion_conserva_su_tipo() {
+    let fuente = r#"
+funcion valores() { retornar 1 }
+funcion primero(valores) {
+    variable copia = valores
+    retornar copia[0]
+}
+escribir(a_texto(primero([7, 8])))
+"#;
+    forja_test_support::esperar_salida(fuente, &["7"]);
+}
