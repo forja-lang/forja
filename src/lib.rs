@@ -590,11 +590,24 @@ pub fn resolver_imports(
                 .map_err(|e| format!("{}", e[0]))?;
             let alias = ruta.rsplit('/').next().unwrap_or(ruta.as_str()).to_string();
             let modulo = hir.agregar_modulo(ruta.as_str(), &sub_prog);
-            for nombre in hir.nombres(modulo) {
-                alias_modulos
-                    .entry(alias.clone())
-                    .or_default()
-                    .insert(nombre.to_string());
+            // Lo que el módulo exporta **por sí mismo**: lo que trajo de sus
+            // propios imports también está en `sub_prog`, y contarlo daría
+            // falsos "nombres ambiguos" (arnes “exporta” todo colecciones).
+            let propios = modulo_resolver.nombres_propios.get(ruta.as_str()).cloned();
+            if let Some(propios) = propios {
+                for nombre in propios {
+                    alias_modulos
+                        .entry(alias.clone())
+                        .or_default()
+                        .insert(nombre);
+                }
+            } else {
+                for nombre in hir.nombres(modulo) {
+                    alias_modulos
+                        .entry(alias.clone())
+                        .or_default()
+                        .insert(nombre.to_string());
+                }
             }
             final_decls.extend(sub_prog.declaraciones);
         } else if let ast::Declaracion::ImportarExterna(ref ruta) = decl {
@@ -604,6 +617,22 @@ pub fn resolver_imports(
             final_decls.push(decl);
         } else {
             final_decls.push(decl);
+        }
+    }
+    // Llamadas sin calificar a nombres que exportan dos módulos: con los
+    // imports inlineados resolvían a cualquiera de los dos, en silencio
+    // (`parsear` de csv, json, toml y url).
+    let ambiguos = forja_hir::imports::nombres_ambiguos(&alias_modulos);
+    if !ambiguos.is_empty() {
+        let encontradas = forja_hir::imports::llamadas_ambiguas(codigo_fuente, &ambiguos);
+        if let Some((nombre, modulos)) = encontradas.first() {
+            return Err(format!(
+                "el nombre '{}' no es único: lo exportan {}. Llamalo con el módulo adelante (ej: '{}.{}').",
+                nombre,
+                modulos.join(", "),
+                modulos[0],
+                nombre
+            ));
         }
     }
     for decl in &mut final_decls {
@@ -1650,6 +1679,10 @@ fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
 
 /// Fases compartidas: type checker → préstamos → mono → optimizador → backend.
 fn compilar_a_llvm_programa(mut programa: ast::Programa) -> Result<String, Vec<error::ErrorForja>> {
+    let dbg = std::env::var("FORJA_DEBUG_AST").is_ok();
+    if dbg {
+        eprintln!("[parse] {:?}", programa.declaraciones.first());
+    }
     // FASE 4: Type Checker
     let mut tipo_checker = semantics::TipoChecker::nuevo();
     tipo_checker.analizar(&programa)?;
@@ -1660,11 +1693,17 @@ fn compilar_a_llvm_programa(mut programa: ast::Programa) -> Result<String, Vec<e
 
     // FASE 5.5: Monomorfización
     monomorphize_programa(&mut programa);
+    if std::env::var("FORJA_DEBUG_AST").is_ok() {
+        eprintln!("[mono] {:?}", programa.declaraciones.first());
+    }
 
     // FASE 6: Optimizaciones de AST — punto único (`optimizer_pipeline`).
     // Nivel básico: const-fold → dce → const-prop.
     let programa = optimizer_pipeline::PipelineAst::basico().ejecutar(programa);
 
+    if std::env::var("FORJA_DEBUG_AST").is_ok() {
+        eprintln!("[AST pipeline] {:?}", programa.declaraciones.first());
+    }
     // FASE 7: Backend LLVM (generación de texto IR)
     let ir = backend_llvm::compilar_a_llvm_texto(&programa.declaraciones).map_err(|e| {
         vec![error::ErrorForja::nuevo(

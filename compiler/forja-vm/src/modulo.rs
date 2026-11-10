@@ -60,6 +60,11 @@ pub struct ModuloResolver {
     pub paquete_resolver: Option<PaqueteResolver>,
     /// Caché de módulos enriquecido con metadatos (Fase 2)
     pub cache_modulos: ModuloCache,
+    /// Nombres que exporta **cada módulo por sí mismo** (sin los que trae de sus
+    /// propios imports). Hace falta para detectar nombres ambiguos entre dos
+    /// módulos importados: el programa inlineado ya no distingue de dónde viene
+    /// cada función.
+    pub nombres_propios: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl ModuloResolver {
@@ -69,6 +74,7 @@ impl ModuloResolver {
             cache: HashMap::new(),
             paquete_resolver: None,
             cache_modulos: ModuloCache::nuevo(),
+            nombres_propios: std::collections::HashMap::new(),
         }
     }
 
@@ -177,6 +183,8 @@ impl ModuloResolver {
                 let mut parser = Parser::nuevo(tokens);
                 let mut programa = parser.parsear()?;
 
+                self.nombres_propios
+                    .insert(ruta_key.clone(), nombres_declarados(&programa));
                 // Resolver imports anidados
                 let mut final_decls = Vec::new();
                 let mut alias_modulos: std::collections::HashMap<
@@ -281,6 +289,13 @@ impl ModuloResolver {
                         .bytes()
                         .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
                 );
+
+                // Nombres propios (para detectar ambigüedad entre módulos) bajo
+                // las dos claves posibles: la ruta pedida y la resuelta.
+                let propios = nombres_declarados(&programa);
+                self.nombres_propios
+                    .insert(ruta.to_string(), propios.clone());
+                self.nombres_propios.insert(ruta_str.clone(), propios);
 
                 // Resolver imports anidados
                 let mut final_decls = Vec::new();
@@ -494,6 +509,8 @@ impl ModuloResolver {
         let mut parser = crate::parser::Parser::nuevo(tokens);
         let mut programa = parser.parsear()?;
 
+        self.nombres_propios
+            .insert(nombre_modulo.to_string(), nombres_declarados(&programa));
         // Resolver imports anidados (una stdlib puede importar otra)
         let mut final_decls = Vec::new();
         let mut alias_modulos: std::collections::HashMap<
@@ -531,6 +548,21 @@ impl ModuloResolver {
 }
 
 pub use crate::dedup::dedup_declaraciones;
+
+/// Nombres de nivel superior declarados en el programa (sin contar imports).
+fn nombres_declarados(programa: &Programa) -> Vec<String> {
+    let mut nombres = Vec::new();
+    for decl in &programa.declaraciones {
+        match decl {
+            Declaracion::Funcion { nombre, .. }
+            | Declaracion::Clase { nombre, .. }
+            | Declaracion::Enum { nombre, .. }
+            | Declaracion::Rasgo { nombre, .. } => nombres.push(nombre.clone()),
+            _ => {}
+        }
+    }
+    nombres
+}
 
 /// Registra qué nombres exporta un módulo importado, para poder reescribir
 /// `modulo.funcion(...)` dentro del propio módulo (no sólo en el archivo

@@ -296,3 +296,64 @@ pub fn reescribir_llamadas_de_modulo<A: AliasModulos>(
 
     decl(declaracion, alias);
 }
+
+/// Nombres que exportan **más de un** módulo importado.
+///
+/// Con los imports inlineados, un nombre repetido (`parsear` de csv, json, toml
+/// y url) resuelve a la última definición: la llamada sin calificar puede ir al
+/// módulo equivocado sin que nadie avise.
+pub fn nombres_ambiguos(
+    alias: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut duenios: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (modulo, nombres) in alias {
+        for nombre in nombres {
+            duenios
+                .entry(nombre.clone())
+                .or_default()
+                .push(modulo.clone());
+        }
+    }
+    duenios.retain(|_, modulos| modulos.len() > 1);
+    for modulos in duenios.values_mut() {
+        modulos.sort();
+    }
+    duenios
+}
+
+/// Llamadas **sin calificar** a nombres ambiguos en el fuente original.
+///
+/// Se mira el texto (no el AST) a propósito: después de inlinear imports, una
+/// llamada calificada y una sin calificar se ven igual. Busca `nombre(` que no
+/// venga precedido por `.` (método) ni por `::`/`modulo.`.
+pub fn llamadas_ambiguas(
+    fuente: &str,
+    ambiguos: &std::collections::HashMap<String, Vec<String>>,
+) -> Vec<(String, Vec<String>)> {
+    let bytes: Vec<char> = fuente.chars().collect();
+    let mut salida = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c.is_alphabetic() || c == '_' {
+            let inicio = i;
+            while i < bytes.len() && (bytes[i].is_alphanumeric() || bytes[i] == '_') {
+                i += 1;
+            }
+            let nombre: String = bytes[inicio..i].iter().collect();
+            let previo = if inicio > 0 { bytes[inicio - 1] } else { ' ' };
+            let siguiente = bytes.get(i).copied().unwrap_or(' ');
+            if siguiente == '(' && previo != '.' && previo != ':' {
+                if let Some(modulos) = ambiguos.get(&nombre) {
+                    salida.push((nombre, modulos.clone()));
+                }
+            }
+            continue;
+        }
+        i += 1;
+    }
+    salida.sort();
+    salida.dedup();
+    salida
+}
