@@ -102,7 +102,7 @@ impl GeneradorBytecode {
                                 self.emitir(Opcode::Cargar(Arc::from(nombre.as_str())));
                             }
                         } else if self.funciones_definidas.contains(nombre)
-                            && !self.var_indices.contains_key(nombre)
+                            && !self.es_variable_visible(nombre)
                         {
                             // función usada como valor (callback).
                             self.emitir(Opcode::EmpujarTexto(Arc::from(nombre.as_str())));
@@ -327,6 +327,21 @@ impl GeneradorBytecode {
             }
 
             Expresion::Coincidir { expr, brazos } => {
+                // Un `coincidir` cuyo último patrón no es comodín puede quedarse
+                // sin rama. Antes no hacía nada y el programa seguía en
+                // silencio; ahora se avisa en runtime.
+                let es_fallthrough = |patron: &Patron| match patron {
+                    Patron::Ignorar | Patron::Variable(_) => true,
+                    Patron::Constructor(nombre, subpatrones) => {
+                        subpatrones.is_empty()
+                            && matches!(
+                                nombre.as_str(),
+                                "None" | "Ninguno" | "Nada" | "Error" | "Err"
+                            )
+                    }
+                    _ => false,
+                };
+                let puede_no_matchear = !brazos.last().is_some_and(|b| es_fallthrough(&b.patron));
                 self.generar_expresion(expr);
                 let etiqueta_final = self.nueva_etiqueta();
                 let num_brazos = brazos.len();
@@ -349,9 +364,7 @@ impl GeneradorBytecode {
                             // Ignorar siempre matchea
                             self.emitir(Opcode::Descartar); // remover input de la pila
                             self.generar_cuerpo_match(&brazo.cuerpo);
-                            if !es_ultimo {
-                                self.emitir(Opcode::Salto(etiqueta_final));
-                            }
+                            self.emitir(Opcode::Salto(etiqueta_final));
                         }
                         Patron::Variable(nombre) => {
                             // Variable bindea el valor: asignar a variable
@@ -363,9 +376,7 @@ impl GeneradorBytecode {
                             });
                             self.emitir(Opcode::Guardar(Arc::from(nombre.as_str())));
                             self.generar_cuerpo_match(&brazo.cuerpo);
-                            if !es_ultimo {
-                                self.emitir(Opcode::Salto(etiqueta_final));
-                            }
+                            self.emitir(Opcode::Salto(etiqueta_final));
                         }
                         Patron::Constructor(nombre_ctor, subpatrones) => {
                             // Determinar si es un constructor built-in de Opcion/Resultado
@@ -428,9 +439,9 @@ impl GeneradorBytecode {
                                         self.emitir(Opcode::Descartar);
                                     }
                                     self.generar_cuerpo_match(&brazo.cuerpo);
-                                    if !es_ultimo {
-                                        self.emitir(Opcode::Salto(etiqueta_final));
-                                    }
+                                    // Salto incondicional: después del último brazo
+                                    // puede venir el bloque de "ningún caso coincidió".
+                                    self.emitir(Opcode::Salto(etiqueta_final));
                                     // No matcheó: el objeto original sigue en el stack
                                     self.emitir(Opcode::Etiqueta(etiqueta_siguiente));
                                 }
@@ -497,6 +508,11 @@ impl GeneradorBytecode {
                             }
                         }
                     }
+                }
+                if puede_no_matchear {
+                    // El valor sigue en la pila: se descarta y se avisa.
+                    self.emitir(Opcode::Descartar);
+                    self.emitir(Opcode::Llamar(Arc::from("_coincidencia_sin_rama"), 0));
                 }
                 self.emitir(Opcode::Etiqueta(etiqueta_final));
             }

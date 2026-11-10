@@ -947,7 +947,12 @@ pub fn ejecutar_con_cache(
     #[cfg(not(target_pointer_width = "64"))]
     vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
     Ok(vm.obtener_salida().to_vec())
 }
 
@@ -1014,7 +1019,12 @@ pub fn ejecutar_con_opciones(
         vm.sandbox = sb;
     }
     vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
     Ok(vm.obtener_salida().to_vec())
 }
 
@@ -1034,7 +1044,12 @@ pub fn ejecutar_con_sesion(
     #[cfg(not(target_pointer_width = "64"))]
     vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
     Ok(vm.obtener_salida().to_vec())
 }
 
@@ -1100,7 +1115,12 @@ fn ejecutar_con_opciones_desde_impl(
         vm.fijar_fast_math(true);
     }
     vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
     Ok(vm.obtener_salida().to_vec())
 }
 
@@ -1153,7 +1173,12 @@ pub fn ejecutar_vm(codigo_fuente: &str) -> Result<Vec<String>, String> {
     let (bytecode, _contratos) = compilar_pipeline_completa(codigo_fuente)?;
     let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
     Ok(vm.obtener_salida().to_vec())
 }
 
@@ -1252,7 +1277,12 @@ pub(crate) fn ejecutar_bytecode_en_vm(
     #[cfg(not(target_pointer_width = "64"))]
     vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
     Ok(vm.obtener_salida().to_vec())
 }
 
@@ -1355,7 +1385,12 @@ fn ejecutar_con_pgo_impl(
     }
 
     // 4. Ejecutar
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    // Si el programa falla a mitad de camino, volcar lo impreso hasta ahí:
+    // si no, un error deja al usuario sin contexto de qué llegó a hacer.
+    if let Err(e) = vm.ejecutar() {
+        vm.volcar_salida();
+        return Err(format!("{}", e));
+    }
 
     // 5. Merge con el perfil previo y guardar
     if !solo_usar {

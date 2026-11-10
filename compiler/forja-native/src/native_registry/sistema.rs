@@ -5,6 +5,7 @@ impl NativoRegistro {
         // ─── Sistema / OS ─────────────────────────────────────────────────────
         self.registrar("_args", nativo_args);
         self.registrar("_salir", nativo_salir);
+        self.registrar("_coincidencia_sin_rama", nativo_coincidencia_sin_rama);
         self.registrar("_env", nativo_env);
         self.registrar("_ejecutar", nativo_ejecutar);
         self.registrar("_leer_linea", nativo_leer_linea);
@@ -77,6 +78,17 @@ pub fn nativo_salir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorF
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().flush();
     std::process::exit(codigo);
+}
+
+/// `_coincidencia_sin_rama()` — la emite el compilador al final de un
+/// `coincidir` que puede no matchear ninguna rama.
+pub fn nativo_coincidencia_sin_rama(
+    _vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    Err(ErrFast::SinCoincidencia(
+        "el valor no coincide con ningún 'caso'".to_string(),
+    ))
 }
 
 /// Obtiene el valor de una variable de entorno.

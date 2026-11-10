@@ -540,6 +540,9 @@ pub enum ErrFast {
     /// esto hacía `panic!`: el CLI lo mostraba como crash y los llamadores en
     /// proceso (tests, LSP, WASM) no podían recuperarse.
     Contrato(String),
+    /// `coincidir` se quedó sin rama: ningún `caso` coincidió con el valor.
+    /// Antes el bloque no hacía nada y el programa seguía en silencio.
+    SinCoincidencia(String),
 }
 
 impl std::fmt::Display for ErrFast {
@@ -577,6 +580,11 @@ impl std::fmt::Display for ErrFast {
             ),
             ErrFast::ErrorPropagado(_) => write!(f, "error propagado con '?'"),
             ErrFast::Contrato(m) => write!(f, "contrato violado: {}", m),
+            ErrFast::SinCoincidencia(m) => write!(
+                f,
+                "ningún caso coincidió en el 'coincidir': {}. Agregá un 'caso _' para cubrir el resto",
+                m
+            ),
         }
     }
 }
