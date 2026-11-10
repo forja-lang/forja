@@ -21,6 +21,7 @@ pub fn registrar_sqlite(reg: &mut NativoRegistro) {
     reg.registrar("_sqlite_abrir", nativo_sqlite_abrir);
     reg.registrar("_sqlite_cerrar", nativo_sqlite_cerrar);
     reg.registrar("_sqlite_ejecutar", nativo_sqlite_ejecutar);
+    reg.registrar("_sqlite_ejecutar_lote", nativo_sqlite_ejecutar_lote);
     reg.registrar("_sqlite_consultar", nativo_sqlite_consultar);
     reg.registrar("_sqlite_ultimo_id", nativo_sqlite_ultimo_id);
     reg.registrar("_sqlite_ejecutar_params", nativo_sqlite_ejecutar_params);
@@ -193,6 +194,35 @@ fn nativo_sqlite_ejecutar(
     match conn.execute(&sql, []) {
         Ok(filas) => Ok(ValorFast::entero(filas as i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("sqlite_error_ejecucion: {}", e))),
+    }
+}
+
+/// `_sqlite_ejecutar_lote(indice_conexion, sql)` — ejecuta **varias** sentencias
+/// separadas por `;` (lo que necesita un archivo de migración).
+/// Devuelve 0 si salió bien o -1 si falló.
+fn nativo_sqlite_ejecutar_lote(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_sqlite_ejecutar_lote requiere 2 argumentos: indice_conexion, sql".into(),
+        ));
+    }
+    let idx = obtener_entero(args[0])? as usize;
+    let sql = obtener_texto(vm, args[1])?;
+
+    let conn_arc = obtener_conn(idx)?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
+
+    match conn.execute_batch(&sql) {
+        Ok(()) => Ok(ValorFast::entero(0)),
+        Err(e) => {
+            eprintln!("[sqlite] lote falló: {}", e);
+            Ok(ValorFast::entero(-1))
+        }
     }
 }
 
