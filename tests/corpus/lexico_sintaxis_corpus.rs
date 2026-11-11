@@ -1417,9 +1417,14 @@ caso!(
 // ============================================================================
 
 caso!(
-    bd_crea_nulo,
-    "variable db = BD()\nescribir(db == nulo)",
-    ["verdadero"]
+    bd_crea_conexion,
+    "variable db = BD(\"sqlite:memoria\")\nescribir(db == nulo)",
+    ["falso"]
+);
+falla!(
+    bd_sin_argumento,
+    "variable db = BD()",
+    "BD requiere 1 argumento"
 );
 parsea!(importar_std_slash, "importar std/io\nescribir(1)");
 parsea!(importar_std_comillas, "importar \"std/io\"\nescribir(1)");

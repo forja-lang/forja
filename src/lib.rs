@@ -1669,6 +1669,15 @@ fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
                         sentencias(&m.cuerpo, &mut nuevas_fns, &mut nuevas_clases);
                     }
                 }
+                Declaracion::Implementacion {
+                    clase_nombre,
+                    metodos,
+                    ..
+                } if clases.contains(clase_nombre) => {
+                    for m in metodos {
+                        sentencias(&m.cuerpo, &mut nuevas_fns, &mut nuevas_clases);
+                    }
+                }
                 _ => {}
             }
         }

@@ -267,6 +267,41 @@ void forja_imprimir_arreglo(void *pv) {
     fputc(']', stdout);
 }
 
+/* Repr de un arreglo como Texto (para concatenar): mismo formato que la
+ * impresión y que la VM — `[64,34,90]` / `[a,b]`. */
+char *forja_arreglo_a_texto(void *pv) {
+    ForjaArreglo *a = (ForjaArreglo *)pv;
+    if (!a) return forja_dup("nulo");
+    int64_t n = 2;
+    for (int64_t i = 0; i < a->len; i++) {
+        if (a->tipo == 1) {
+            const char *s = (const char *)(size_t)a->datos[i];
+            n += (int64_t)strlen(s ? s : "nulo");
+        } else {
+            n += 24;
+        }
+        n += 1; /* separador */
+    }
+    char *r = (char *)forja_alloc(n + 1);
+    char *p = r;
+    *p++ = '[';
+    for (int64_t i = 0; i < a->len; i++) {
+        if (i) *p++ = ',';
+        if (a->tipo == 1) {
+            const char *s = (const char *)(size_t)a->datos[i];
+            const char *t = s ? s : "nulo";
+            size_t l = strlen(t);
+            memcpy(p, t, l);
+            p += l;
+        } else {
+            p += sprintf(p, "%lld", (long long)a->datos[i]);
+        }
+    }
+    *p++ = ']';
+    *p = '\0';
+    return r;
+}
+
 /* Reserva capacidad para `n` elementos (no cambia la longitud). */
 void forja_reservar(void *pv, int64_t n) {
     ForjaArreglo *a = (ForjaArreglo *)pv;

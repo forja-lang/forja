@@ -212,6 +212,64 @@ escribir(c.doble())
 }
 
 #[test]
+fn despacho_dinamico_por_rasgo() {
+    // Un campo sin anotar guarda objetos de varias clases: el método se resuelve
+    // por el tag de la clase en tiempo de ejecución.
+    let fuente = r#"
+rasgo Saludo {
+    funcion saludar() -> Texto
+}
+
+clase Formal {
+    constructor() {}
+}
+implementa Saludo para Formal {
+    funcion saludar() -> Texto {
+        retornar "buenas"
+    }
+}
+
+clase Informal {
+    constructor() {}
+}
+implementa Saludo para Informal {
+    funcion saludar() -> Texto {
+        retornar "hola"
+    }
+}
+
+clase Persona {
+    variable saludo
+    constructor(s) {
+        este.saludo = s
+    }
+    funcion hablar() -> Texto {
+        retornar este.saludo.saludar()
+    }
+}
+
+escribir(nuevo Persona(nuevo Formal()).hablar())
+escribir(nuevo Persona(nuevo Informal()).hablar())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "buenas\nhola");
+    }
+}
+
+#[test]
+fn texto_mas_arreglo_usa_la_repr() {
+    // Concatenar un arreglo con Texto da `[1,2,3]`, igual que `escribir(arreglo)`
+    // y que la VM (antes salía la dirección).
+    let fuente = r#"
+variable a = [1, 2, 3]
+escribir("a = " + a)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "a = [1,2,3]");
+    }
+}
+
+#[test]
 fn constructos_no_soportados_fallan_con_mensaje() {
     // Lo que la ruta nativa todavía no baja devuelve error, nunca IR que miente.
     for (fuente, esperado) in [
@@ -227,6 +285,13 @@ variable c = Rojo
 escribir(c)
 ",
             "no está soportado",
+        ),
+        // La indexación es la de arreglos: sobre un Texto leería basura.
+        (
+            "variable s = \"hola\"
+escribir(s[0])
+",
+            "indexar un Texto",
         ),
     ] {
         let err = forja::compilar_a_llvm(fuente).expect_err("debía fallar");
