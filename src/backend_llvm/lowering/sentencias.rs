@@ -87,7 +87,7 @@ impl Lowering {
         } else {
             self.retorno_metodo(m)
         };
-        let tipos: Vec<T> = self.tipos_params(&m.parametros, &m.cuerpo);
+        let tipos: Vec<T> = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
         let mut ps = vec!["ptr %este".to_string()];
         for (i, t) in tipos.iter().enumerate() {
             ps.push(format!("{} %p{}", t.llvm().to_llvm_ir(), i));

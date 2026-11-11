@@ -189,6 +189,9 @@ pub struct Lowering {
     tipos_pre: HashMap<String, T>,
     /// tipos de las variables de nivel superior, visibles antes de emitirlas.
     tipos_top: HashMap<String, T>,
+    /// Tipos que llegan a cada parámetro en las llamadas del programa
+    /// (nombre → por posición → tipo), para los parámetros sin anotar.
+    evidencia: HashMap<String, Vec<Option<T>>>,
     /// variables cuyo arreglo guarda textos (punteros) en sus casillas.
     arreglos_texto: HashMap<String, bool>,
     etiquetas: Vec<(String, String)>, // (romper, continuar)
@@ -286,6 +289,7 @@ impl Lowering {
             consts: HashMap::new(),
             tipos_pre: HashMap::new(),
             tipos_top: HashMap::new(),
+            evidencia: HashMap::new(),
             arreglos_texto: HashMap::new(),
             etiquetas: Vec::new(),
             ret_actual: T::Int,
@@ -574,6 +578,10 @@ impl Lowering {
     pub fn compilar(&mut self, decls: &[Declaracion]) -> Result<String, String> {
         let _ = writeln!(self.header, "; forja → LLVM IR (backend nuevo, ptr opacos)");
 
+        // 0. Tipos que llegan por argumento en cada llamada (los parámetros sin
+        // anotar se tipan con esto: `nuevo Nodo("x")` → ese parámetro es Texto).
+        self.evidencia = evidencia_de_llamadas(decls);
+
         // 1. Firmas, clases y prototipos de FFI.
         for d in decls {
             match d {
@@ -586,7 +594,7 @@ impl Lowering {
                     enlace_nombre,
                     ..
                 } => {
-                    let params = self.tipos_params(parametros, cuerpo);
+                    let params = self.tipos_params(nombre, parametros, cuerpo);
                     let ret = if *externa && tipo_retorno.is_none() {
                         T::Nulo
                     } else {
@@ -632,7 +640,7 @@ impl Lowering {
                     let ms: Vec<(String, Vec<T>, T)> = metodos
                         .iter()
                         .map(|m| {
-                            let params = self.tipos_params(&m.parametros, &m.cuerpo);
+                            let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
                             (m.nombre.clone(), params, self.retorno_metodo(m))
                         })
                         .collect();
@@ -650,7 +658,7 @@ impl Lowering {
                     let ms: Vec<(String, Vec<T>, T)> = metodos
                         .iter()
                         .map(|m| {
-                            let params = self.tipos_params(&m.parametros, &m.cuerpo);
+                            let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
                             (m.nombre.clone(), params, self.retorno_metodo(m))
                         })
                         .collect();
@@ -974,7 +982,7 @@ impl Lowering {
         if m.nombre == "constructor" || m.nombre == "nuevo" {
             return T::Nulo;
         }
-        let params = self.tipos_params(&m.parametros, &m.cuerpo);
+        let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
         self.tipo_declarado(&m.tipo_retorno)
             .or_else(|| self.inferir_retorno(&m.cuerpo, &m.parametros, &params))
             .unwrap_or(T::Nulo)
@@ -984,12 +992,20 @@ impl Lowering {
     /// uso en el cuerpo (`p[i]`, `p[i] = v`, `p.empujar(x)` → Arreglo). Sin esto
     /// `funcion ordenar(mut arr)` sin anotar devolvía un entero que en realidad
     /// era la dirección del arreglo.
-    fn tipos_params(&self, parametros: &[Parametro], cuerpo: &[Declaracion]) -> Vec<T> {
+    fn tipos_params(
+        &self,
+        nombre: &str,
+        parametros: &[Parametro],
+        cuerpo: &[Declaracion],
+    ) -> Vec<T> {
+        let por_llamada = self.evidencia.get(nombre).cloned().unwrap_or_default();
         parametros
             .iter()
-            .map(|p| {
+            .enumerate()
+            .map(|(i, p)| {
                 self.tipo_declarado(&p.tipo)
                     .or_else(|| inferir_parametro(&p.nombre, cuerpo))
+                    .or_else(|| por_llamada.get(i).cloned().flatten())
                     .unwrap_or(T::Int)
             })
             .collect()
@@ -1054,7 +1070,8 @@ impl Lowering {
                     };
                     unificar_retorno(&retornos).unwrap_or(T::Int)
                 }
-                _ => T::Int,
+                // Concat/aritmética, literales, campos: lo que sabe `tipo_estatico`.
+                _ => self_.tipo_estatico(e),
             })
         }
         fn recoger(
@@ -1483,6 +1500,168 @@ fn tipo_builtin(nombre: &str) -> Option<T> {
 mod expresiones;
 mod sentencias;
 
+/// Tipo de una expresión por su forma (sin tabla de variables): literales,
+/// arreglos y objetos. `None` cuando no hay nada seguro que decir.
+fn tipo_por_forma(e: &Expresion) -> Option<T> {
+    Some(match e {
+        Expresion::LiteralTexto(_) => T::Texto,
+        Expresion::LiteralDecimal(_) => T::Dec,
+        Expresion::LiteralExacto(..) => T::Exacto,
+        Expresion::Arreglo(_) => T::Arreglo,
+        Expresion::Mapa(_) => T::Mapa,
+        Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+        _ => return None,
+    })
+}
+
+/// Tipos **no-Entero** que llegan a cada parámetro en las llamadas del programa,
+/// por nombre de función/método (las llamadas a métodos se buscan por nombre,
+/// punteadas incluidas: `x.metodo(...)`). Sólo cuenta lo que se ve por la forma
+/// del argumento y exige que todas las llamadas coincidan.
+///
+/// shortcut: no distingue la clase del método (dos clases con el mismo nombre de
+/// método comparten evidencia) ni mira argumentos que son variables.
+fn evidencia_de_llamadas(decls: &[Declaracion]) -> HashMap<String, Vec<Option<T>>> {
+    fn anotar(mapa: &mut HashMap<String, Vec<Option<T>>>, nombre: &str, args: &[Expresion]) {
+        // Las llamadas punteadas (`x.metodo`) se registran sin el receptor.
+        let clave = nombre.rsplit('.').next().unwrap_or(nombre).to_string();
+        let entrada = mapa.entry(clave).or_default();
+        if entrada.len() < args.len() {
+            entrada.resize(args.len(), None);
+        }
+        for (i, a) in args.iter().enumerate() {
+            let Some(t) = tipo_por_forma(a) else { continue };
+            if t == T::Int {
+                continue;
+            }
+            entrada[i] = match &entrada[i] {
+                None => Some(t),
+                Some(previo) if *previo == t => Some(t),
+                // Dos tipos distintos: no hay nada seguro que concluir.
+                Some(_) => None,
+            };
+        }
+    }
+    fn en_expr(e: &Expresion, mapa: &mut HashMap<String, Vec<Option<T>>>) {
+        match e {
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                anotar(mapa, nombre, argumentos);
+                for a in argumentos {
+                    en_expr(a, mapa);
+                }
+            }
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                anotar(mapa, metodo, argumentos);
+                en_expr(objeto, mapa);
+                for a in argumentos {
+                    en_expr(a, mapa);
+                }
+            }
+            Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
+                en_sentencias(cuerpo, mapa)
+            }
+            Expresion::Coincidir { brazos, expr: o } => {
+                en_expr(o, mapa);
+                for b in brazos {
+                    en_sentencias(&b.cuerpo, mapa);
+                }
+            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                en_expr(izquierda, mapa);
+                en_expr(derecha, mapa);
+            }
+            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => en_expr(expr, mapa),
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                en_expr(condicion, mapa);
+                en_expr(si_verdadero, mapa);
+                en_expr(si_falso, mapa);
+            }
+            Expresion::Index { objeto, indice } => {
+                en_expr(objeto, mapa);
+                en_expr(indice, mapa);
+            }
+            Expresion::Arreglo(items) => {
+                for i in items {
+                    en_expr(i, mapa);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares {
+                    en_expr(k, mapa);
+                    en_expr(v, mapa);
+                }
+            }
+            Expresion::Asignacion { valor, .. }
+            | Expresion::AsignacionCampo { valor, .. }
+            | Expresion::AsignacionCompuesta { valor, .. }
+            | Expresion::ArregloFijar { valor, .. } => en_expr(valor, mapa),
+            Expresion::AccesoMiembro { objeto, .. } => en_expr(objeto, mapa),
+            Expresion::Try(inner)
+            | Expresion::Ok(inner)
+            | Expresion::Error(inner)
+            | Expresion::Algo(inner) => en_expr(inner, mapa),
+            _ => {}
+        }
+    }
+    fn en_sentencias(cuerpo: &[Declaracion], mapa: &mut HashMap<String, Vec<Option<T>>>) {
+        for d in cuerpo {
+            match d {
+                Declaracion::Variable { valor: Some(v), .. } => en_expr(v, mapa),
+                Declaracion::Asignacion { valor, .. }
+                | Declaracion::AsignacionMiembro { valor, .. }
+                | Declaracion::AsignacionIndex { valor, .. } => en_expr(valor, mapa),
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
+                    en_expr(condicion, mapa);
+                    en_sentencias(bloque_verdadero, mapa);
+                    if let Some(b) = bloque_falso {
+                        en_sentencias(b, mapa);
+                    }
+                }
+                Declaracion::Mientras { condicion, bloque } => {
+                    en_expr(condicion, mapa);
+                    en_sentencias(bloque, mapa);
+                }
+                Declaracion::Para { bloque, .. } | Declaracion::Repetir { bloque, .. } => {
+                    en_sentencias(bloque, mapa)
+                }
+                Declaracion::Retornar { valor: Some(v) } => en_expr(v, mapa),
+                Declaracion::Expresion(e) => en_expr(e, mapa),
+                Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                    anotar(mapa, nombre, argumentos);
+                    for a in argumentos {
+                        en_expr(a, mapa);
+                    }
+                }
+                Declaracion::Funcion { cuerpo, .. } => en_sentencias(cuerpo, mapa),
+                Declaracion::Clase { metodos, .. }
+                | Declaracion::Implementacion { metodos, .. } => {
+                    for m in metodos {
+                        en_sentencias(&m.cuerpo, mapa);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut mapa: HashMap<String, Vec<Option<T>>> = HashMap::new();
+    en_sentencias(decls, &mut mapa);
+    mapa
+}
+
 /// Unifica los tipos de retorno de varias implementaciones de un mismo método.
 ///
 /// shortcut: `Entero` y los tipos que se representan como puntero comparten
@@ -1667,6 +1846,30 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
     fn es(e: &Expresion, nombre: &str) -> bool {
         matches!(e, Expresion::Identificador { nombre: n, .. } if n == nombre)
     }
+    fn escapa(cuerpo: &[Declaracion], nombre: &str) -> bool {
+        cuerpo.iter().any(|d| match d {
+            Declaracion::Retornar { valor: Some(v) } => es(v, nombre),
+            Declaracion::Variable { valor: Some(v), .. } => es(v, nombre),
+            Declaracion::Asignacion { valor: v, .. }
+            | Declaracion::AsignacionMiembro { valor: v, .. }
+            | Declaracion::AsignacionIndex { valor: v, .. } => es(v, nombre),
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
+                escapa(bloque_verdadero, nombre)
+                    || bloque_falso
+                        .as_ref()
+                        .map(|b| escapa(b, nombre))
+                        .unwrap_or(false)
+            }
+            Declaracion::Mientras { bloque, .. }
+            | Declaracion::Para { bloque, .. }
+            | Declaracion::Repetir { bloque, .. } => escapa(bloque, nombre),
+            _ => false,
+        })
+    }
     fn en_expr(e: &Expresion, nombre: &str, uso: &mut Uso) {
         match e {
             Expresion::Index { objeto, indice } => {
@@ -1789,7 +1992,7 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
     en_sentencias(cuerpo, nombre, &mut uso);
     if uso.arreglo {
         Some(T::Arreglo)
-    } else if uso.texto {
+    } else if uso.texto && !escapa(cuerpo, nombre) {
         Some(T::Texto)
     } else {
         None

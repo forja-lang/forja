@@ -229,6 +229,8 @@ static void forja_arreglo_crecer(ForjaArreglo *a, int64_t necesarios) {
     a->cap = cap;
 }
 
+void forja_empujar(void *pv, int64_t v);
+
 int64_t forja_arreglo_obtener(void *pv, int64_t i) {
     ForjaArreglo *a = (ForjaArreglo *)pv;
     if (!a || i < 0 || i >= a->len) {
@@ -241,6 +243,11 @@ int64_t forja_arreglo_obtener(void *pv, int64_t i) {
 
 void forja_arreglo_fijar(void *pv, int64_t i, int64_t v) {
     ForjaArreglo *a = (ForjaArreglo *)pv;
+    /* `arr[longitud(arr)] = v` es la forma de empujar de la VM: crece. */
+    if (a && i == a->len) {
+        forja_empujar(a, v);
+        return;
+    }
     if (!a || i < 0 || i >= a->len) {
         fprintf(stderr, "forja: índice %lld fuera de rango (longitud %lld)\n", (long long)i,
                 (long long)(a ? a->len : 0));

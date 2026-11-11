@@ -257,6 +257,81 @@ escribir(nuevo Persona(nuevo Informal()).hablar())
 }
 
 #[test]
+fn campos_de_receptor_sin_tipo_estatico() {
+    // `nodo.siguiente` sobre una variable sin anotar: el offset del campo sale
+    // del tag de la clase (cada clase ubica sus campos distinto).
+    let fuente = r#"
+clase Nodo {
+    variable nombre: Texto
+    siguiente
+    constructor(n: Texto, s) {
+        este.nombre = n
+        este.siguiente = s
+    }
+}
+
+funcion largo(mut nodo) {
+    variable n = 0
+    mientras (nodo != nulo) {
+        n = n + 1
+        nodo = nodo.siguiente
+    }
+    retornar n
+}
+
+variable c = nuevo Nodo("c", nulo)
+variable b = nuevo Nodo("b", c)
+variable a = nuevo Nodo("a", b)
+escribir(largo(a))
+escribir(a.siguiente.nombre)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "3\nb");
+    }
+}
+
+#[test]
+fn escribe_en_el_indice_y_crece_al_final() {
+    // `arr[i] = v` escribe en `i` (antes escribía en 0) y `arr[longitud(arr)] = v`
+    // crece, como en la VM.
+    let fuente = r#"
+variable a = [0, 0, 0]
+a[1] = 7
+escribir(a)
+variable b = []
+b[longitud(b)] = 5
+b[longitud(b)] = 6
+escribir(b)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "[0,7,0]\n[5,6]");
+    }
+}
+
+#[test]
+fn llamada_a_metodo_como_sentencia() {
+    // `p.metodo(x)` como sentencia llega del parser como la función "p.metodo".
+    let fuente = r#"
+clase Caja {
+    variable n: Entero
+    constructor() {
+        este.n = 0
+    }
+    funcion sumar(x) {
+        este.n = este.n + x
+    }
+}
+variable c = nuevo Caja()
+c.sumar(2)
+c.sumar(3)
+escribir(c.n)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "5");
+    }
+}
+
+#[test]
 fn texto_mas_arreglo_usa_la_repr() {
     // Concatenar un arreglo con Texto da `[1,2,3]`, igual que `escribir(arreglo)`
     // y que la VM (antes salía la dirección).

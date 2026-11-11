@@ -208,23 +208,30 @@ impl Lowering {
                 metodo,
                 argumentos,
             } => self.llamada_metodo(objeto, metodo, argumentos),
-            Expresion::AccesoMiembro { objeto, miembro } => {
-                let (obj, clase) = self.receptor_clase(objeto)?;
-                self.campo_obtener(&obj, &clase, miembro)
-            }
+            Expresion::AccesoMiembro { objeto, miembro } => match self.expr(objeto)? {
+                V::Clase(obj, clase) => self.campo_obtener(&obj, &clase, miembro),
+                otro => self.despacho_campo_obtener(&otro, miembro),
+            },
             Expresion::Instanciacion { clase, argumentos } => self.instanciar(clase, argumentos),
             Expresion::Arreglo(items) => {
                 let n = items.len().to_string();
                 // tag: 1 si los elementos son texto (para `escribir`), 0 si no.
-                let tag = if items
-                    .first()
-                    .map(|e| self.tipo_estatico(e) == T::Texto)
-                    .unwrap_or(false)
+                let con_texto = items
+                    .iter()
+                    .any(|e| self.tipo_estatico(e) == T::Texto);
+                // El runtime guarda un solo `tipo` por arreglo: mezclar textos y
+                // números guardaría el puntero en una casilla de entero.
+                if con_texto
+                    && items
+                        .iter()
+                        .any(|e| self.tipo_estatico(e) != T::Texto)
                 {
-                    "1"
-                } else {
-                    "0"
-                };
+                    return Err(
+                        "arreglo heterogéneo (textos y números en el mismo literal): la ruta nativa guarda un solo tipo por arreglo. Usá un arreglo de textos o de números, o compilá con la VM"
+                            .to_string(),
+                    );
+                }
+                let tag = if con_texto { "1" } else { "0" };
                 let r = self.r();
                 self.linea(&format!(
                     "{} = call ptr @forja_arreglo_nuevo(i64 {}, i64 {})",
@@ -360,27 +367,27 @@ impl Lowering {
                 campo,
                 valor,
             } => {
-                let (obj, clase) = self.receptor_clase(objeto)?;
-                let idx = self.indice_campo(&clase, campo)?;
-                let t = self.tipo_campo(&clase, campo)?;
+                let receptor = self.expr(objeto)?;
                 let v = self.expr(valor)?;
-                let r = self.como(&v, t.clone());
-                let p = self.r();
-                self.linea(&format!(
-                    "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
-                    p, clase, obj, idx
-                ));
-                self.linea(&format!("store {} {}, ptr {}", t.llvm().to_llvm_ir(), r, p));
+                self.fijar_campo(&receptor, campo, &v)?;
                 Ok(v)
             }
             Expresion::ArregloFijar { array, valor } => {
-                let arr = self.expr(array)?;
+                // El parser entrega `arr[i] = v` como `ArregloFijar` sobre el
+                // `Index` completo: hay que escribir en `i`, no leer `arr[i]`.
+                let (objeto, indice) = match array.as_ref() {
+                    Expresion::Index { objeto, indice } => (objeto.as_ref(), indice.as_ref()),
+                    _ => return Err("asignación a un índice con receptor no soportado".into()),
+                };
+                let arr = self.expr(objeto)?;
                 let a = self.como(&arr, T::Arreglo);
+                let iv = self.expr(indice)?;
+                let i = self.como(&iv, T::Int);
                 let v = self.expr(valor)?;
-                let x = self.como(&v, T::Int);
+                let x = self.como_slot(&v);
                 self.linea(&format!(
-                    "call void @forja_arreglo_fijar(ptr {}, i64 0, i64 {})",
-                    a, x
+                    "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
+                    a, i, x
                 ));
                 Ok(v)
             }
@@ -402,16 +409,8 @@ impl Lowering {
                         self.guardar(&slot, nuevo.clone(), &t);
                     }
                     Expresion::AccesoMiembro { objeto, miembro } => {
-                        let (obj, clase) = self.receptor_clase(objeto)?;
-                        let idx = self.indice_campo(&clase, miembro)?;
-                        let t = self.tipo_campo(&clase, miembro)?;
-                        let r = self.como(&nuevo, t.clone());
-                        let p = self.r();
-                        self.linea(&format!(
-                            "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
-                            p, clase, obj, idx
-                        ));
-                        self.linea(&format!("store {} {}, ptr {}", t.llvm().to_llvm_ir(), r, p));
+                        let receptor = self.expr(objeto)?;
+                        self.fijar_campo(&receptor, miembro, &nuevo)?;
                     }
                     _ => return Err("asignación compuesta sobre un objetivo no soportado".into()),
                 }
@@ -1032,6 +1031,28 @@ impl Lowering {
                 _ => V::Int(r),
             });
         }
+        // `a.b(x)` como sentencia llega del parser como la función "a.b" (sólo
+        // las expresiones arman `LlamadaMetodo`): se reescribe al método sobre el
+        // receptor, que además resuelve el despacho dinámico si hace falta.
+        if let Some((prefijo, ultimo)) = nombre.rsplit_once('.') {
+            let mut receptor = None;
+            for seg in prefijo.split('.') {
+                receptor = Some(match receptor {
+                    None => Expresion::Identificador {
+                        nombre: seg.to_string(),
+                        linea: 0,
+                        columna: 0,
+                    },
+                    Some(previo) => Expresion::AccesoMiembro {
+                        objeto: Box::new(previo),
+                        miembro: seg.to_string(),
+                    },
+                });
+            }
+            if let Some(receptor) = receptor {
+                return self.llamada_metodo(&receptor, ultimo, argumentos);
+            }
+        }
         Err(format!(
             "función `{nombre}` no declarada (ni builtin, ni `funcion`, ni `funcion externa`)"
         ))
@@ -1348,7 +1369,7 @@ impl Lowering {
             v.sort_by(|a, b| a.0.cmp(&b.0));
             v
         };
-        let tipos = self.tipos_params(parametros, cuerpo);
+        let tipos = self.tipos_params("", parametros, cuerpo);
         let ret = self
             .inferir_retorno(cuerpo, parametros, &tipos)
             .unwrap_or(T::Int);
@@ -1886,14 +1907,25 @@ impl Lowering {
 
     // ── objetos ──────────────────────────────────────────────────────────
 
-    fn receptor_clase(&mut self, e: &Expresion) -> Result<(String, String), String> {
-        let v = self.expr(e)?;
-        match v {
-            V::Clase(r, clase) => Ok((r, clase)),
-            other => Err(format!(
-                "no se puede acceder a un campo de un {} en la ruta nativa: el receptor no tiene tipo estático (campo o parámetro sin anotar) y cada clase ubica sus campos distinto. Anotá el tipo concreto o compilá con la VM",
-                other.t().nombre()
-            )),
+    /// Escribe un campo: directo si el receptor es de una clase conocida,
+    /// por tag si no tiene tipo estático.
+    fn fijar_campo(&mut self, receptor: &V, campo: &str, valor: &V) -> Result<(), String> {
+        match receptor {
+            V::Clase(obj, clase) => {
+                let obj = obj.clone();
+                let clase = clase.clone();
+                let idx = self.indice_campo(&clase, campo)?;
+                let t = self.tipo_campo(&clase, campo)?;
+                let r = self.como(valor, t.clone());
+                let p = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
+                    p, clase, obj, idx
+                ));
+                self.linea(&format!("store {} {}, ptr {}", t.llvm().to_llvm_ir(), r, p));
+                Ok(())
+            }
+            otro => self.despacho_campo_fijar(otro, campo, valor),
         }
     }
 
@@ -2129,9 +2161,9 @@ impl Lowering {
     /// la clase se decide en ejecución por el tag de la palabra 0 del objeto.
     ///
     /// shortcut: el `switch` lista todas las clases que declaran el método y
-    /// exige que todas coincidan en el tipo de retorno; con muchas
-    /// implementaciones el código crece. Upgrade: vtable por (rasgo, clase) con
-    /// la firma del rasgo.
+    /// unifica el tipo de retorno (`Entero` y punteros comparten `i64`); con
+    /// muchas implementaciones el código crece. Upgrade: vtable por (rasgo,
+    /// clase) con la firma del rasgo.
     fn despacho_dinamico(
         &mut self,
         receptor: &V,
@@ -2170,53 +2202,17 @@ impl Lowering {
             .iter()
             .map(|a| self.expr(a))
             .collect::<Result<_, _>>()?;
-        let obj = self.como(receptor, T::Arreglo); // puntero opaco al objeto
-        let nulo = self.r();
-        self.linea(&format!("{} = icmp eq ptr {}, null", nulo, obj));
-        let error = self.bloque("metodo.nulo");
-        let con_tag = self.bloque("metodo.tag");
-        self.linea(&format!(
-            "br i1 {}, label %{}, label %{}",
-            nulo, error, con_tag
-        ));
-        self.etiqueta(&error);
-        let sobre_nulo =
-            self.texto_constante(&format!("método `{metodo}` llamado sobre un objeto nulo"));
-        self.linea(&format!(
-            "call void @forja_imprimir_texto(ptr {})",
-            sobre_nulo
-        ));
-        self.linea("call void @forja_nueva_linea()");
-        self.linea("call void @exit(i32 1)");
-        self.linea("unreachable");
-        self.etiqueta(&con_tag);
-        let tag = self.r();
-        self.linea(&format!("{} = load i64, ptr {}", tag, obj));
-        let fin = self.bloque("metodo.fin");
-        let desconocido = self.bloque("metodo.sin_clase");
-        let slot = if matches!(ret, T::Nulo) {
-            None
-        } else {
-            Some(self.alloca(&ret, "metodo.res"))
-        };
-        let etiquetas: Vec<String> = candidatas
-            .iter()
-            .map(|_| self.bloque("metodo.caso"))
-            .collect();
-        let ramas: Vec<String> = candidatas
-            .iter()
-            .zip(&etiquetas)
-            .map(|((t, ..), e)| format!("i64 {}, label %{}", t, e))
-            .collect();
-        self.linea(&format!(
-            "switch i64 {}, label %{} [ {} ]",
-            tag,
-            desconocido,
-            ramas.join(" ")
-        ));
-        for ((_, clase, params, ret_c), etiqueta) in candidatas.iter().zip(&etiquetas) {
-            self.etiqueta(etiqueta);
-            let mut lista = vec![format!("ptr {}", obj)];
+        let tags: Vec<u64> = candidatas.iter().map(|(t, ..)| *t).collect();
+        let mut d = self.abrir_despacho(
+            receptor,
+            &tags,
+            &ret,
+            &format!("método `{metodo}` llamado sobre un objeto nulo"),
+        );
+        let casos = d.casos.clone();
+        for ((_, clase, params, ret_c), caso) in candidatas.iter().zip(&casos) {
+            self.etiqueta(caso);
+            let mut lista = vec![format!("ptr {}", d.obj)];
             for (i, v) in valores.iter().enumerate() {
                 let t = params.get(i).cloned().unwrap_or_else(|| v.t());
                 lista.push(format!("{} {}", t.llvm().to_llvm_ir(), self.como(v, t)));
@@ -2240,36 +2236,211 @@ impl Lowering {
                 ));
                 // Cada implementación convierte su retorno a la representación
                 // común (`Entero` y puntero comparten `i64`).
-                let valor = self.como(&valor_desde(&r, ret_c), ret.clone());
-                self.linea(&format!(
-                    "store {} {}, ptr {}",
-                    ret.llvm().to_llvm_ir(),
-                    valor,
-                    slot.clone().unwrap_or_default()
-                ));
+                let valor = valor_desde(&r, ret_c);
+                self.guardar_despacho(&mut d, &valor, &ret);
             }
-            self.linea(&format!("br label %{}", fin));
+            self.linea(&format!("br label %{}", d.fin));
         }
-        self.etiqueta(&fin);
-        let resultado = match slot {
-            Some(s) => self.cargar(&s, &ret),
+        Ok(self.cerrar_despacho(
+            d,
+            &ret,
+            &format!("el objeto no implementa el método `{metodo}`"),
+        ))
+    }
+
+    /// Despacho dinámico de un **campo** de un receptor sin tipo estático: cada
+    /// clase ubica sus campos distinto, así que el índice sale del tag.
+    fn despacho_campo_obtener(&mut self, receptor: &V, campo: &str) -> Result<V, String> {
+        let mut candidatas = self.campos_candidatos(campo);
+        candidatas.sort_by_key(|(t, ..)| *t);
+        let Some(_) = candidatas.first() else {
+            return Err(format!(
+                "`{campo}` no es campo de ninguna clase y el receptor no tiene tipo estático: anotá el tipo concreto o compilá con la VM"
+            ));
+        };
+        let tipos: Vec<T> = candidatas.iter().map(|(_, _, _, t)| t.clone()).collect();
+        let Some(ret) = unificar_retorno(&tipos) else {
+            return Err(format!(
+                "acceso dinámico a `{campo}`: las clases le dan tipos que no comparten representación ({}); anotá el tipo o compilá con la VM",
+                candidatas
+                    .iter()
+                    .map(|(_, c, _, t)| format!("{c} → {}", t.nombre()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        };
+        let tags: Vec<u64> = candidatas.iter().map(|(t, ..)| *t).collect();
+        let mut d = self.abrir_despacho(
+            receptor,
+            &tags,
+            &ret,
+            &format!("acceso a `{campo}` sobre un objeto nulo"),
+        );
+        let casos = d.casos.clone();
+        for ((_, clase, idx, t), caso) in candidatas.iter().zip(&casos) {
+            self.etiqueta(caso);
+            let p = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
+                p, clase, d.obj, idx
+            ));
+            let v = self.cargar(&p, t);
+            self.guardar_despacho(&mut d, &v, &ret);
+            self.linea(&format!("br label %{}", d.fin));
+        }
+        Ok(self.cerrar_despacho(d, &ret, &format!("el objeto no tiene el campo `{campo}`")))
+    }
+
+    /// Escritura de un campo sobre un receptor sin tipo estático.
+    fn despacho_campo_fijar(&mut self, receptor: &V, campo: &str, valor: &V) -> Result<(), String> {
+        let mut candidatas = self.campos_candidatos(campo);
+        candidatas.sort_by_key(|(t, ..)| *t);
+        if candidatas.is_empty() {
+            return Err(format!(
+                "`{campo}` no es campo de ninguna clase y el receptor no tiene tipo estático: anotá el tipo concreto o compilá con la VM"
+            ));
+        }
+        let tags: Vec<u64> = candidatas.iter().map(|(t, ..)| *t).collect();
+        let d = self.abrir_despacho(
+            receptor,
+            &tags,
+            &T::Nulo,
+            &format!("escritura de `{campo}` sobre un objeto nulo"),
+        );
+        for ((_, clase, idx, t), caso) in candidatas.iter().zip(&d.casos) {
+            self.etiqueta(caso);
+            let x = self.como(valor, t.clone());
+            let p = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
+                p, clase, d.obj, idx
+            ));
+            self.linea(&format!("store {} {}, ptr {}", t.llvm().to_llvm_ir(), x, p));
+            self.linea(&format!("br label %{}", d.fin));
+        }
+        self.cerrar_despacho(
+            d,
+            &T::Nulo,
+            &format!("el objeto no tiene el campo `{campo}`"),
+        );
+        Ok(())
+    }
+
+    /// (tag, clase, índice en el layout, tipo) de cada clase que declara `campo`.
+    fn campos_candidatos(&self, campo: &str) -> Vec<(u64, String, usize, T)> {
+        self.clases
+            .iter()
+            .filter_map(|(n, c)| {
+                c.campos
+                    .iter()
+                    .position(|(cn, _)| cn == campo)
+                    // +1: la palabra 0 del objeto es el tag de la clase.
+                    .map(|i| (c.tag, n.clone(), i + 1, c.campos[i].1.clone()))
+            })
+            .collect()
+    }
+
+    /// Prólogo del despacho por tag: nulidad, carga del tag y `switch` a una
+    /// etiqueta por candidata (más un bloque para el tag desconocido).
+    fn abrir_despacho(
+        &mut self,
+        receptor: &V,
+        tags: &[u64],
+        ret: &T,
+        mensaje_nulo: &str,
+    ) -> Despacho {
+        let obj = self.como(receptor, T::Arreglo); // puntero opaco al objeto
+        let nulo = self.r();
+        self.linea(&format!("{} = icmp eq ptr {}, null", nulo, obj));
+        let error = self.bloque("despacho.nulo");
+        let con_tag = self.bloque("despacho.tag");
+        self.linea(&format!(
+            "br i1 {}, label %{}, label %{}",
+            nulo, error, con_tag
+        ));
+        self.etiqueta(&error);
+        let texto = self.texto_constante(mensaje_nulo);
+        self.linea(&format!("call void @forja_imprimir_texto(ptr {})", texto));
+        self.linea("call void @forja_nueva_linea()");
+        self.linea("call void @exit(i32 1)");
+        self.linea("unreachable");
+        self.etiqueta(&con_tag);
+        let tag = self.r();
+        self.linea(&format!("{} = load i64, ptr {}", tag, obj));
+        let fin = self.bloque("despacho.fin");
+        let desconocido = self.bloque("despacho.sin_clase");
+        let slot = if matches!(ret, T::Nulo) {
+            None
+        } else {
+            Some(self.alloca(ret, "despacho.res"))
+        };
+        let casos: Vec<String> = tags.iter().map(|_| self.bloque("despacho.caso")).collect();
+        let ramas: Vec<String> = tags
+            .iter()
+            .zip(&casos)
+            .map(|(t, c)| format!("i64 {}, label %{}", t, c))
+            .collect();
+        self.linea(&format!(
+            "switch i64 {}, label %{} [ {} ]",
+            tag,
+            desconocido,
+            ramas.join(" ")
+        ));
+        Despacho {
+            obj,
+            fin,
+            desconocido,
+            casos,
+            slot,
+        }
+    }
+
+    /// Guarda el valor de una rama en el slot común del despacho.
+    fn guardar_despacho(&mut self, d: &mut Despacho, valor: &V, ret: &T) {
+        if let Some(s) = &d.slot {
+            let x = self.como(valor, ret.clone());
+            self.linea(&format!(
+                "store {} {}, ptr {}",
+                ret.llvm().to_llvm_ir(),
+                x,
+                s
+            ));
+        }
+    }
+
+    /// Cierre del despacho: une las ramas, devuelve el valor guardado y deja el
+    /// bloque del «tag desconocido» (aborta con mensaje).
+    fn cerrar_despacho(&mut self, d: Despacho, ret: &T, mensaje_sin_clase: &str) -> V {
+        self.etiqueta(&d.fin);
+        let resultado = match d.slot {
+            Some(ref s) => self.cargar(s, ret),
             None => V::Nulo,
         };
-        let salida = self.bloque("metodo.salida");
+        let salida = self.bloque("despacho.salida");
         self.linea(&format!("br label %{}", salida));
-        self.etiqueta(&desconocido);
-        let sin_clase =
-            self.texto_constante(&format!("el objeto no implementa el método `{metodo}`"));
-        self.linea(&format!(
-            "call void @forja_imprimir_texto(ptr {})",
-            sin_clase
-        ));
+        self.etiqueta(&d.desconocido);
+        let texto = self.texto_constante(mensaje_sin_clase);
+        self.linea(&format!("call void @forja_imprimir_texto(ptr {})", texto));
         self.linea("call void @forja_nueva_linea()");
         self.linea("call void @exit(i32 1)");
         self.linea("unreachable");
         self.etiqueta(&salida);
-        Ok(resultado)
+        resultado
     }
+}
+
+/// Estado del despacho por tag entre `abrir_despacho` y `cerrar_despacho`.
+struct Despacho {
+    /// Puntero al objeto (ya convertido a `ptr`).
+    obj: String,
+    /// Etiqueta donde se unen las ramas.
+    fin: String,
+    /// Etiqueta del tag desconocido.
+    desconocido: String,
+    /// Una etiqueta por candidata, en el mismo orden que los tags del switch.
+    casos: Vec<String>,
+    /// Alloca del resultado (`None` si el despacho no devuelve valor).
+    slot: Option<String>,
 }
 
 /// Reconstruye un `V` a partir del valor ya convertido a `t`.
