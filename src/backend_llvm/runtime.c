@@ -95,9 +95,14 @@ char *forja_a_texto(int64_t v) {
 }
 
 char *forja_decimal_a_texto(double v) {
-    char *r = (char *)forja_alloc(64);
-    /* %g como la VM: 1.5 -> "1.5", 2.0 -> "2" */
-    snprintf(r, 64, "%g", v);
+    char *r = (char *)forja_alloc(40);
+    /* Como `f64::to_string()` de la VM: la representación más corta que vuelve
+     * al mismo double (1.5 -> "1.5", 2.0 -> "2", 0.8584073465 tal cual). */
+    for (int p = 1; p < 17; p++) {
+        snprintf(r, 40, "%.*g", p, v);
+        if (strtod(r, NULL) == v) return r;
+    }
+    snprintf(r, 40, "%.17g", v);
     return r;
 }
 
