@@ -438,18 +438,21 @@ impl Lowering {
                 for (k, v) in pares {
                     let kv = self.expr(k)?;
                     let vv = self.expr(v)?;
-                    let x = self.como(&vv, T::Int);
+                    // El valor se guarda como i64 con su tag: un Texto viaja como
+                    // puntero (antes se convertía con `a_entero` y daba 0).
+                    let es_texto = if vv.t() == T::Texto { "1" } else { "0" };
+                    let x = self.como_slot(&vv);
                     if kv.t() == T::Texto {
                         let ks = self.como(&kv, T::Texto);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_texto(ptr {}, ptr {}, i64 {})",
-                            m, ks, x
+                            "call void @forja_mapa_fijar_texto(ptr {}, ptr {}, i64 {}, i64 {})",
+                            m, ks, x, es_texto
                         ));
                     } else {
                         let ki = self.como(&kv, T::Int);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {})",
-                            m, ki, x
+                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {}, i64 {})",
+                            m, ki, x, es_texto
                         ));
                     }
                 }
@@ -1890,6 +1893,31 @@ impl Lowering {
     }
 
     pub(super) fn imprimir(&mut self, arg: &Expresion) -> Result<(), String> {
+        // `escribir(m[clave])`: la casilla del mapa puede guardar un Texto o un
+        // número (el i64 no lo dice); el runtime elige con el tag de la entrada.
+        if let Expresion::Index { objeto, indice } = arg {
+            if self.tipo_estatico(objeto) == T::Mapa {
+                let mapa = self.expr(objeto)?;
+                let m = self.como(&mapa, T::Mapa);
+                let iv = self.expr(indice)?;
+                let r = self.r();
+                if iv.t() == T::Texto {
+                    let ks = self.como(&iv, T::Texto);
+                    self.linea(&format!(
+                        "{} = call ptr @forja_mapa_valor_a_texto_texto(ptr {}, ptr {})",
+                        r, m, ks
+                    ));
+                } else {
+                    let ki = self.como(&iv, T::Int);
+                    self.linea(&format!(
+                        "{} = call ptr @forja_mapa_valor_a_texto_i64(ptr {}, i64 {})",
+                        r, m, ki
+                    ));
+                }
+                self.linea(&format!("call void @forja_imprimir_texto(ptr {})", r));
+                return Ok(());
+            }
+        }
         let v = self.expr(arg)?;
         match v.t() {
             T::Bool => {

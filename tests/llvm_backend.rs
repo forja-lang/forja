@@ -257,6 +257,23 @@ escribir(nuevo Persona(nuevo Informal()).hablar())
 }
 
 #[test]
+fn mapas_con_valores_de_texto() {
+    // La casilla del mapa guarda un i64 con su tag: `escribir(m[clave])` usa el
+    // tag y muestra el texto (antes convertía con `a_entero` y daba 0).
+    let fuente = r#"
+variable p = {"nombre": "Ana", "edad": 25}
+escribir(p["nombre"])
+escribir(p["edad"])
+variable m = {}
+m["ciudad"] = "Lima"
+escribir(m["ciudad"])
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "Ana\n25\nLima");
+    }
+}
+
+#[test]
 fn arreglo_que_arranca_vacio_y_se_llena_de_textos() {
     // El literal `[]` no dice el tipo de las casillas: lo marca el `empujar` de
     // un texto (y su `tipo` en el runtime, para imprimirlo).

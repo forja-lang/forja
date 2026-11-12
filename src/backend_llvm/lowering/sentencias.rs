@@ -236,21 +236,21 @@ impl Lowering {
                 let cont = self.identificador(nombre)?;
                 let iv = self.expr(indice)?;
                 let v = self.expr(valor)?;
-                let x = self.como(&v, T::Int);
                 let x_slot = self.como_slot(&v);
+                let es_texto = if v.t() == T::Texto { "1" } else { "0" };
                 if cont.t() == T::Mapa {
                     let m = self.como(&cont, T::Mapa);
                     if iv.t() == T::Texto {
                         let ks = self.como(&iv, T::Texto);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_texto(ptr {}, ptr {}, i64 {})",
-                            m, ks, x
+                            "call void @forja_mapa_fijar_texto(ptr {}, ptr {}, i64 {}, i64 {})",
+                            m, ks, x_slot, es_texto
                         ));
                     } else {
                         let ki = self.como(&iv, T::Int);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {})",
-                            m, ki, x
+                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {}, i64 {})",
+                            m, ki, x_slot, es_texto
                         ));
                     }
                 } else {

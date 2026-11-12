@@ -342,6 +342,8 @@ typedef struct {
     const char *clave_texto;
     int64_t valor;
     int64_t usado;
+    /* 1 si `valor` es un puntero a Texto (la casilla es un i64 sin tipo). */
+    int64_t valor_texto;
 } ForjaPar;
 
 typedef struct {
@@ -405,7 +407,7 @@ static void forja_mapa_crecer(ForjaMapa *m) {
     }
 }
 
-void forja_mapa_fijar_i64(void *pm, int64_t clave, int64_t valor) {
+void forja_mapa_fijar_i64(void *pm, int64_t clave, int64_t valor, int64_t es_texto) {
     ForjaMapa *m = (ForjaMapa *)pm;
     if (!m) return;
     if ((m->len + 1) * 2 > m->cap) forja_mapa_crecer(m);
@@ -417,6 +419,7 @@ void forja_mapa_fijar_i64(void *pm, int64_t clave, int64_t valor) {
         m->len++;
     }
     p->valor = valor;
+    p->valor_texto = es_texto;
 }
 
 int64_t forja_mapa_obtener_i64(void *pm, int64_t clave) {
@@ -426,7 +429,7 @@ int64_t forja_mapa_obtener_i64(void *pm, int64_t clave) {
     return p->usado ? p->valor : 0;
 }
 
-void forja_mapa_fijar_texto(void *pm, const char *clave, int64_t valor) {
+void forja_mapa_fijar_texto(void *pm, const char *clave, int64_t valor, int64_t es_texto) {
     ForjaMapa *m = (ForjaMapa *)pm;
     if (!m) return;
     if ((m->len + 1) * 2 > m->cap) forja_mapa_crecer(m);
@@ -438,6 +441,7 @@ void forja_mapa_fijar_texto(void *pm, const char *clave, int64_t valor) {
         m->len++;
     }
     p->valor = valor;
+    p->valor_texto = es_texto;
 }
 
 int64_t forja_mapa_obtener_texto(void *pm, const char *clave) {
@@ -445,6 +449,24 @@ int64_t forja_mapa_obtener_texto(void *pm, const char *clave) {
     if (!m || m->len == 0) return 0;
     ForjaPar *p = forja_mapa_slot(m, forja_hash_texto(clave), -1, clave);
     return p->usado ? p->valor : 0;
+}
+
+/* `m[clave]` como texto: si la casilla guarda un Texto se devuelve tal cual, si
+ * guarda un número se formatea. Es lo que imprime la VM. */
+char *forja_mapa_valor_a_texto_i64(void *pm, int64_t clave) {
+    ForjaMapa *m = (ForjaMapa *)pm;
+    ForjaPar *p = m && m->len ? forja_mapa_slot(m, forja_hash_i64(clave), clave, NULL) : NULL;
+    if (!p || !p->usado) return forja_dup("nulo");
+    if (p->valor_texto) return forja_dup((const char *)(size_t)p->valor);
+    return forja_a_texto(p->valor);
+}
+
+char *forja_mapa_valor_a_texto_texto(void *pm, const char *clave) {
+    ForjaMapa *m = (ForjaMapa *)pm;
+    ForjaPar *p = m && m->len ? forja_mapa_slot(m, forja_hash_texto(clave), -1, clave) : NULL;
+    if (!p || !p->usado) return forja_dup("nulo");
+    if (p->valor_texto) return forja_dup((const char *)(size_t)p->valor);
+    return forja_a_texto(p->valor);
 }
 
 /* ── canales e hilos ──────────────────────────────────────────────────── */
