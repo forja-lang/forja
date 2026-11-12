@@ -257,6 +257,29 @@ escribir(nuevo Persona(nuevo Informal()).hablar())
 }
 
 #[test]
+fn booleanos_como_la_vm() {
+    // `Booleano` se imprime `verdadero`/`falso` (y al concatenar), no 1/0.
+    let fuente = r#"
+variable activo = verdadero
+variable negativo = 1 > 2
+escribir(activo)
+escribir(negativo)
+escribir("es: " + activo)
+escribir(activo == verdadero)
+funcion es_par(n) -> Booleano {
+    retornar n % 2 == 0
+}
+escribir(es_par(4))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida.trim(),
+            "verdadero\nfalso\nes: verdadero\nverdadero\nverdadero"
+        );
+    }
+}
+
+#[test]
 fn campos_de_receptor_sin_tipo_estatico() {
     // `nodo.siguiente` sobre una variable sin anotar: el offset del campo sale
     // del tag de la clase (cada clase ubica sus campos distinto).

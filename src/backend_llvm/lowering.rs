@@ -25,6 +25,7 @@ use std::fmt::Write as _;
 #[derive(Clone, Debug, PartialEq)]
 enum T {
     Int,
+    Bool,
     Dec,
     Texto,
     Arreglo,
@@ -41,7 +42,7 @@ enum T {
 impl T {
     fn llvm(&self) -> LlvmTipo {
         match self {
-            T::Int | T::Nulo => LlvmTipo::I64,
+            T::Int | T::Bool | T::Nulo => LlvmTipo::I64,
             T::Dec => LlvmTipo::Double,
             T::Texto
             | T::Arreglo
@@ -60,7 +61,7 @@ impl T {
             Tipo::Entero => T::Int,
             Tipo::Decimal => T::Dec,
             Tipo::Texto => T::Texto,
-            Tipo::Booleano => T::Int,
+            Tipo::Booleano => T::Bool,
             Tipo::Nulo => T::Nulo,
             Tipo::Clase(n) => T::Clase(n.clone()),
             Tipo::Arreglo(_) => T::Arreglo,
@@ -76,6 +77,7 @@ impl T {
     fn nombre(&self) -> &str {
         match self {
             T::Int => "Entero",
+            T::Bool => "Booleano",
             T::Dec => "Decimal",
             T::Texto => "Texto",
             T::Arreglo => "Arreglo",
@@ -95,6 +97,7 @@ impl T {
 #[derive(Clone, Debug)]
 enum V {
     Int(String),
+    Bool(String),
     Dec(String),
     Texto(String),
     Arreglo(String),
@@ -112,6 +115,7 @@ impl V {
     fn r(&self) -> &str {
         match self {
             V::Int(r)
+            | V::Bool(r)
             | V::Dec(r)
             | V::Texto(r)
             | V::Arreglo(r)
@@ -128,6 +132,7 @@ impl V {
     fn t(&self) -> T {
         match self {
             V::Int(_) => T::Int,
+            V::Bool(_) => T::Bool,
             V::Dec(_) => T::Dec,
             V::Texto(_) => T::Texto,
             V::Arreglo(_) => T::Arreglo,
@@ -231,6 +236,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_imprimir_entero", "void (i64)"),
     ("forja_imprimir_decimal", "void (double)"),
     ("forja_imprimir_booleano", "void (i64)"),
+    ("forja_booleano_a_texto", "ptr (i64)"),
     ("forja_imprimir_nulo", "void ()"),
     ("forja_nueva_linea", "void ()"),
     ("forja_arreglo_nuevo", "ptr (i64, i64)"),
@@ -393,6 +399,7 @@ impl Lowering {
             T::Closure => V::Closure(r),
             T::Clase(c) => V::Clase(r, c.clone()),
             T::Funcion => V::Funcion(r),
+            T::Bool => V::Bool(r),
             T::Nulo | T::Int => V::Int(r),
         }
     }
@@ -414,6 +421,18 @@ impl Lowering {
         }
         match (v, &destino) {
             (V::Nulo, T::Int) => "0".into(),
+            (V::Nulo, T::Bool) => "0".into(),
+            // `Booleano` y `Entero` son el mismo `i64`.
+            (V::Bool(r), T::Int) => r.clone(),
+            (V::Int(r), T::Bool) => r.clone(),
+            (V::Bool(r), T::Texto) => {
+                let d = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_booleano_a_texto(i64 {})",
+                    d, r
+                ));
+                d
+            }
             (V::Nulo, T::Dec) => "0.0".into(),
             (V::Nulo, T::Texto) => {
                 let r = self.r();
@@ -533,6 +552,11 @@ impl Lowering {
     fn cond(&mut self, v: &V) -> String {
         match v {
             V::Int(r) => {
+                let c = self.r();
+                self.linea(&format!("{} = icmp ne i64 {}, 0", c, r));
+                c
+            }
+            V::Bool(r) => {
                 let c = self.r();
                 self.linea(&format!("{} = icmp ne i64 {}, 0", c, r));
                 c
@@ -1011,6 +1035,28 @@ impl Lowering {
             .collect()
     }
 
+    /// Tipo de retorno de `obj.metodo()`: directo si el receptor tiene tipo
+    /// estático, o unificando las clases que declaran el método (el caso del
+    /// despacho dinámico).
+    fn retorno_metodo_de(&self, objeto: &Expresion, metodo: &str) -> Option<T> {
+        match self.tipo_estatico(objeto) {
+            T::Clase(c) => self
+                .clases
+                .get(&c)
+                .and_then(|cl| cl.metodos.iter().find(|(m, _, _)| m == metodo))
+                .map(|(_, _, r)| r.clone()),
+            _ => {
+                let retornos: Vec<T> = self
+                    .clases
+                    .values()
+                    .filter_map(|cl| cl.metodos.iter().find(|(m, _, _)| m == metodo))
+                    .map(|(_, _, r)| r.clone())
+                    .collect();
+                unificar_retorno(&retornos)
+            }
+        }
+    }
+
     /// Tipo del primer `retornar <expr>` del cuerpo (para funciones sin
     /// anotación). Resuelve también los llamados: `retornar f(x)` usa el tipo de
     /// retorno ya registrado de `f`, y `retornar este.x.m()` unifica las
@@ -1053,22 +1099,7 @@ impl Lowering {
                     .map(|(_, r)| r.clone())
                     .unwrap_or(T::Int),
                 Expresion::LlamadaMetodo { objeto, metodo, .. } => {
-                    let retornos: Vec<T> = match self_.tipo_estatico(objeto) {
-                        T::Clase(c) => self_
-                            .clases
-                            .get(&c)
-                            .and_then(|cl| cl.metodos.iter().find(|(m, _, _)| m == metodo))
-                            .map(|(_, _, r)| r.clone())
-                            .into_iter()
-                            .collect(),
-                        _ => self_
-                            .clases
-                            .values()
-                            .filter_map(|cl| cl.metodos.iter().find(|(m, _, _)| m == metodo))
-                            .map(|(_, _, r)| r.clone())
-                            .collect(),
-                    };
-                    unificar_retorno(&retornos).unwrap_or(T::Int)
+                    self_.retorno_metodo_de(objeto, metodo).unwrap_or(T::Int)
                 }
                 // Concat/aritmética, literales, campos: lo que sabe `tipo_estatico`.
                 _ => self_.tipo_estatico(e),
@@ -1186,7 +1217,7 @@ impl Lowering {
         match e {
             Expresion::LiteralTexto(_) => T::Texto,
             Expresion::LiteralDecimal(_) => T::Dec,
-            Expresion::LiteralBooleano(_) => T::Int,
+            Expresion::LiteralBooleano(_) => T::Bool,
             Expresion::LiteralNulo => T::Nulo,
             Expresion::LiteralNumero(_) => T::Int,
             Expresion::Arreglo(_) => T::Arreglo,
@@ -1213,6 +1244,11 @@ impl Lowering {
             // `-x` conserva el tipo del operando (p. ej. un Exacto negativo).
             Expresion::Unaria { expr, .. } => self.tipo_estatico(expr),
             Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+            // `obj.metodo()`: la firma registrada del método (o la unificación de
+            // las implementaciones si el receptor no tiene tipo estático).
+            Expresion::LlamadaMetodo { objeto, metodo, .. } => {
+                self.retorno_metodo_de(objeto, metodo).unwrap_or(T::Int)
+            }
             Expresion::Binaria {
                 izquierda,
                 operador,
@@ -1231,7 +1267,7 @@ impl Lowering {
                 | Operador::MayorIgual
                 | Operador::MenorIgual
                 | Operador::Y
-                | Operador::O => T::Int,
+                | Operador::O => T::Bool,
                 _ => {
                     let a = self.tipo_estatico(izquierda);
                     let b = self.tipo_estatico(derecha);
@@ -1293,7 +1329,7 @@ fn cero(t: &T) -> &'static str {
         | T::Closure
         | T::Clase(_)
         | T::Funcion => "null",
-        _ => "0",
+        T::Bool | T::Int | T::Nulo => "0",
     }
 }
 
@@ -1510,6 +1546,7 @@ fn tipo_por_forma(e: &Expresion) -> Option<T> {
         Expresion::Arreglo(_) => T::Arreglo,
         Expresion::Mapa(_) => T::Mapa,
         Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+        Expresion::LiteralBooleano(_) => T::Bool,
         _ => return None,
     })
 }
@@ -1671,7 +1708,7 @@ fn unificar_retorno(tipos: &[T]) -> Option<T> {
     let mut puntero: Option<T> = None;
     for t in tipos {
         match t {
-            T::Int => {}
+            T::Int | T::Bool => {}
             // Necesitan anotación: `double`, `i128` y "sin valor" no son un slot.
             T::Dec | T::Exacto | T::Nulo => return None,
             otro => match &puntero {

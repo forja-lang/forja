@@ -183,6 +183,10 @@ void forja_imprimir_texto(const char *s) { fputs(s ? s : "nulo", stdout); }
 void forja_imprimir_entero(int64_t v) { printf("%lld", (long long)v); }
 void forja_imprimir_decimal(double v) { printf("%g", v); }
 void forja_imprimir_booleano(int64_t v) { fputs(v ? "verdadero" : "falso", stdout); }
+
+char *forja_booleano_a_texto(int64_t v) {
+    return forja_dup(v ? "verdadero" : "falso");
+}
 void forja_imprimir_nulo(void) { fputs("nulo", stdout); }
 void forja_nueva_linea(void) { fputc('\n', stdout); }
 

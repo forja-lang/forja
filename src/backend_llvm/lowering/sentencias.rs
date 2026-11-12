@@ -485,6 +485,7 @@ impl Lowering {
 
 fn valor_param(t: &T, i: usize) -> V {
     match t {
+        T::Bool => V::Bool(format!("%p{}", i)),
         T::Dec => V::Dec(format!("%p{}", i)),
         T::Texto => V::Texto(format!("%p{}", i)),
         T::Arreglo => V::Arreglo(format!("%p{}", i)),

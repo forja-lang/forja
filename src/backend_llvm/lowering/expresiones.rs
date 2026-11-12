@@ -46,7 +46,7 @@ impl Lowering {
         match e {
             Expresion::LiteralNumero(n) => Ok(V::Int(n.to_string())),
             Expresion::LiteralDecimal(d) => Ok(V::Dec(lit_double(*d))),
-            Expresion::LiteralBooleano(b) => Ok(V::Int(if *b { "1" } else { "0" }.to_string())),
+            Expresion::LiteralBooleano(b) => Ok(V::Bool(if *b { "1" } else { "0" }.to_string())),
             Expresion::LiteralNulo => Ok(V::Nulo),
             Expresion::LiteralTexto(s) => {
                 let g = self.texto_constante(s);
@@ -138,7 +138,7 @@ impl Lowering {
                     self.linea(&format!("{} = xor i1 {}, true", r, c));
                     let z = self.r();
                     self.linea(&format!("{} = zext i1 {} to i64", z, r));
-                    Ok(V::Int(z))
+                    Ok(V::Bool(z))
                 }
             },
             Expresion::Ternario {
@@ -187,6 +187,7 @@ impl Lowering {
                         r, ty, a_r, vb, b_r, fb
                     ));
                     match a_t {
+                        T::Bool => Ok(V::Bool(r)),
                         T::Dec => Ok(V::Dec(r)),
                         T::Texto => Ok(V::Texto(r)),
                         T::Arreglo => Ok(V::Arreglo(r)),
@@ -606,10 +607,10 @@ impl Lowering {
                     self.linea(&format!("{} = icmp {} i64 {}, 0", cmp, op, o));
                     let z = self.r();
                     self.linea(&format!("{} = zext i1 {} to i64", z, cmp));
-                    return Ok(V::Int(z));
+                    return Ok(V::Bool(z));
                 }
             }
-            return Ok(V::Int(cmp));
+            return Ok(V::Bool(cmp));
         }
 
         // Exacto: si alguno es Exacto, todo se convierte a Exacto (como la VM).
@@ -646,7 +647,7 @@ impl Lowering {
                     self.linea(&format!("{} = icmp {} i64 {}, 0", z, op, c));
                     let zb = self.r();
                     self.linea(&format!("{} = zext i1 {} to i64", zb, z));
-                    return Ok(V::Int(zb));
+                    return Ok(V::Bool(zb));
                 }
                 Modulo | Y | O => {
                     return Err(
@@ -708,7 +709,7 @@ impl Lowering {
                     self.linea(&format!("{} = fcmp {} double {}, {}", c, op, x, y));
                     let z = self.r();
                     self.linea(&format!("{} = zext i1 {} to i64", z, c));
-                    return Ok(V::Int(z));
+                    return Ok(V::Bool(z));
                 }
                 Y | O => {
                     let cx = self.cond(&V::Dec(x));
@@ -718,7 +719,7 @@ impl Lowering {
                     self.linea(&format!("{} = {} i1 {}, {}", c, op, cx, cy));
                     let z = self.r();
                     self.linea(&format!("{} = zext i1 {} to i64", z, c));
-                    return Ok(V::Int(z));
+                    return Ok(V::Bool(z));
                 }
             }
         }
@@ -734,7 +735,7 @@ impl Lowering {
                 self.linea(&format!("{} = {} i1 {}, {}", c, op, cx, cy));
                 let z = self.r();
                 self.linea(&format!("{} = zext i1 {} to i64", z, c));
-                Ok(V::Int(z))
+                Ok(V::Bool(z))
             }
             Suma | Resta | Multiplicacion => {
                 let op = match operador {
@@ -785,7 +786,7 @@ impl Lowering {
                 self.linea(&format!("{} = icmp {} i64 {}, {}", c, op, x, y));
                 let z = self.r();
                 self.linea(&format!("{} = zext i1 {} to i64", z, c));
-                Ok(V::Int(z))
+                Ok(V::Bool(z))
             }
         }
     }
@@ -856,6 +857,7 @@ impl Lowering {
                 lista.join(", ")
             ));
             return Ok(match &ret {
+                T::Bool => V::Bool(r),
                 T::Dec => V::Dec(r),
                 T::Texto => V::Texto(r),
                 T::Arreglo => V::Arreglo(r),
@@ -1028,6 +1030,7 @@ impl Lowering {
                 T::Dec => V::Dec(r),
                 T::Texto => V::Texto(r),
                 T::Nulo => V::Nulo,
+                T::Bool => V::Bool(r),
                 _ => V::Int(r),
             });
         }
@@ -1768,6 +1771,7 @@ impl Lowering {
 
     pub(super) fn desde_slot(&mut self, crudo: &str, t: &T) -> V {
         match t {
+            T::Bool => V::Bool(crudo.to_string()),
             T::Texto => {
                 let p = self.r();
                 self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
@@ -1862,6 +1866,10 @@ impl Lowering {
     pub(super) fn imprimir(&mut self, arg: &Expresion) -> Result<(), String> {
         let v = self.expr(arg)?;
         match v.t() {
+            T::Bool => {
+                let r = self.como(&v, T::Bool);
+                self.linea(&format!("call void @forja_imprimir_booleano(i64 {})", r));
+            }
             T::Dec => {
                 let r = self.como(&v, T::Dec);
                 self.linea(&format!("call void @forja_imprimir_decimal(double {})", r));
@@ -2022,9 +2030,19 @@ impl Lowering {
             };
             return self.llamada_metodo(&acceso, resto, argumentos);
         }
+        // Un método declarado por la clase del receptor gana sobre el azúcar de
+        // primitivos: `arbol.contiene(x)` no es `texto.contiene(x)`.
+        let es_metodo_de_clase = match self.tipo_estatico(objeto) {
+            T::Clase(c) => self
+                .clases
+                .get(&c)
+                .map(|cl| cl.metodos.iter().any(|(m, _, _)| m == metodo))
+                .unwrap_or(false),
+            _ => false,
+        };
         // Métodos de primitivos: `arr.empujar(x)`, `s.longitud()`, `n.absoluto()`
         // son `empujar(arr, x)`, `longitud(s)`, `absoluto(n)`.
-        if es_builtin(metodo) || metodo == "absoluto" {
+        if !es_metodo_de_clase && (es_builtin(metodo) || metodo == "absoluto") {
             let mut args = Vec::with_capacity(argumentos.len() + 1);
             args.push(objeto.clone());
             args.extend(argumentos.iter().cloned());
@@ -2152,6 +2170,7 @@ impl Lowering {
             T::Arreglo => V::Arreglo(r),
             T::Clase(c) => V::Clase(r, c.clone()),
             T::Nulo => V::Nulo,
+            T::Bool => V::Bool(r),
             _ => V::Int(r),
         })
     }
@@ -2446,6 +2465,7 @@ struct Despacho {
 /// Reconstruye un `V` a partir del valor ya convertido a `t`.
 fn valor_desde(r: &str, t: &T) -> V {
     match t {
+        T::Bool => V::Bool(r.to_string()),
         T::Dec => V::Dec(r.to_string()),
         T::Texto => V::Texto(r.to_string()),
         T::Arreglo => V::Arreglo(r.to_string()),
