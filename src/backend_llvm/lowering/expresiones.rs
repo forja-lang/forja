@@ -385,6 +385,7 @@ impl Lowering {
                 let iv = self.expr(indice)?;
                 let i = self.como(&iv, T::Int);
                 let v = self.expr(valor)?;
+                self.marcar_arreglo_texto(objeto, &a, valor);
                 let x = self.como_slot(&v);
                 self.linea(&format!(
                     "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
@@ -1298,6 +1299,9 @@ impl Lowering {
             "empujar" => {
                 let v = self.arg(nombre, args, 0)?;
                 let arr = self.como(&v, T::Arreglo);
+                if let (Some(rec), Some(val)) = (args.first(), args.get(1)) {
+                    self.marcar_arreglo_texto(rec, &arr, val);
+                }
                 let arg1 = self.arg(nombre, args, 1)?;
                 let v = self.como_slot(&arg1);
                 // Camino rápido inlineado (len < cap → store) y llamada al
@@ -1856,11 +1860,33 @@ impl Lowering {
             Expresion::LlamadaFuncion { nombre, .. } => nombre == "dividir",
             // `texto.dividir(".")` llega como método.
             Expresion::LlamadaMetodo { metodo, .. } => metodo == "dividir",
-            Expresion::Identificador { nombre, .. } => {
-                self.arreglos_texto.get(nombre).copied().unwrap_or(false)
-            }
-            _ => false,
+            // Variables y campos (`este.elementos`) que se llenaron de textos.
+            otro => clave_arreglo(otro)
+                .and_then(|k| self.arreglos_texto.get(&k).copied())
+                .unwrap_or(false),
         }
+    }
+
+    /// Recuerda que el arreglo guarda textos (para leer sus casillas como
+    /// punteros) y marca su `tipo` en el runtime (para imprimirlo/repr).
+    pub(super) fn marcar_arreglo_texto(
+        &mut self,
+        receptor: &Expresion,
+        arr: &str,
+        valor: &Expresion,
+    ) {
+        if self.tipo_estatico(valor) != T::Texto {
+            return;
+        }
+        if let Some(k) = clave_arreglo(receptor) {
+            self.arreglos_texto.insert(k, true);
+        }
+        let p = self.r();
+        self.linea(&format!(
+            "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 2",
+            p, arr
+        ));
+        self.linea(&format!("store i64 1, ptr {}", p));
     }
 
     pub(super) fn imprimir(&mut self, arg: &Expresion) -> Result<(), String> {
@@ -1879,6 +1905,12 @@ impl Lowering {
                 self.linea(&format!("call void @forja_imprimir_texto(ptr {})", r));
             }
             T::Nulo => self.linea("call void @forja_imprimir_nulo()"),
+            // `Resultado`/`Opcion`: la VM los imprime así, no con el payload.
+            T::Enum(c) if c == "Resultado" || c == "Opcion" => {
+                let texto = format!("<{c}>");
+                let r = self.texto_constante(&texto);
+                self.linea(&format!("call void @forja_imprimir_texto(ptr {})", r));
+            }
             T::Enum(_) => {
                 return Err(
                     "`escribir` de un valor de `tipo` (enum) no está soportado en la ruta LLVM"
@@ -2478,6 +2510,19 @@ fn valor_desde(r: &str, t: &T) -> V {
         T::Funcion => V::Funcion(r.to_string()),
         T::Nulo => V::Nulo,
         T::Int => V::Int(r.to_string()),
+    }
+}
+
+/// Clave con la que se recuerda el tipo de un arreglo: el nombre de la variable
+/// o la ruta del campo (`este.elementos`).
+fn clave_arreglo(e: &Expresion) -> Option<String> {
+    match e {
+        Expresion::Identificador { nombre, .. } => Some(nombre.clone()),
+        Expresion::AccesoMiembro { objeto, miembro } => {
+            Some(format!("{}.{}", clave_arreglo(objeto)?, miembro))
+        }
+        Expresion::Grupo(g) => clave_arreglo(g),
+        _ => None,
     }
 }
 

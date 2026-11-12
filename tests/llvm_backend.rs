@@ -257,6 +257,43 @@ escribir(nuevo Persona(nuevo Informal()).hablar())
 }
 
 #[test]
+fn arreglo_que_arranca_vacio_y_se_llena_de_textos() {
+    // El literal `[]` no dice el tipo de las casillas: lo marca el `empujar` de
+    // un texto (y su `tipo` en el runtime, para imprimirlo).
+    let fuente = r#"
+variable nombres = []
+nombres.empujar("Ana")
+nombres.empujar("Luis")
+escribir(nombres)
+escribir(nombres[1])
+escribir("primero: " + nombres[0])
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "[Ana,Luis]\nLuis\nprimero: Ana");
+    }
+}
+
+#[test]
+fn resultado_y_opcion_se_imprimen_como_la_vm() {
+    let fuente = r#"
+funcion f() {
+    retornar Ok(1)
+}
+funcion g() {
+    retornar Algo("x")
+}
+variable r = f()
+variable o = g()
+escribir(r)
+escribir("r: " + r)
+escribir(o)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "<Resultado>\nr: <Resultado>\n<Opcion>");
+    }
+}
+
+#[test]
 fn booleanos_como_la_vm() {
     // `Booleano` se imprime `verdadero`/`falso` (y al concatenar), no 1/0.
     let fuente = r#"

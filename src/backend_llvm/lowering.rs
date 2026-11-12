@@ -510,6 +510,12 @@ impl Lowering {
                 ));
                 d
             }
+            // `Resultado`/`Opcion` no llevan la repr de sus variantes: la VM
+            // imprime `<Resultado>` y `<Opcion>`.
+            (V::Enum(_, c), T::Texto) if c == "Resultado" || c == "Opcion" => {
+                let texto = format!("<{c}>");
+                self.texto_constante(&texto)
+            }
             // shortcut: mapa/enum/clase/función concatenados con Texto se
             // imprimen como la dirección; `escribir` de esos tipos ya devuelve
             // error explícito. Upgrade: `mostrar` por tipo.
@@ -1737,6 +1743,7 @@ fn inferir_campo(clase: &str, campo: &str, decls: &[Declaracion]) -> Option<T> {
             Expresion::Arreglo(_) => T::Arreglo,
             Expresion::Mapa(_) => T::Mapa,
             Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+            Expresion::LiteralBooleano(_) => T::Bool,
             _ => return None,
         })
     }

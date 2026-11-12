@@ -256,6 +256,12 @@ impl Lowering {
                 } else {
                     let a = self.como(&cont, T::Arreglo);
                     let i = self.como(&iv, T::Int);
+                    let rec = Expresion::Identificador {
+                        nombre: nombre.clone(),
+                        linea: 0,
+                        columna: 0,
+                    };
+                    self.marcar_arreglo_texto(&rec, &a, valor);
                     self.linea(&format!(
                         "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
                         a, i, x_slot
