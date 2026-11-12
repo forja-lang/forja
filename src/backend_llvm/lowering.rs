@@ -954,17 +954,6 @@ impl Lowering {
         cuerpo_inicializar_fn.push_str(&std::mem::take(&mut self.cuerpos));
         self.cuerpos = cuerpo_funciones;
 
-        // Si el nivel superior ya llama a `main()`, no se llama dos veces.
-        let llama_main = decls.iter().any(|d| match d {
-            Declaracion::LlamadaFuncion { nombre, .. } => nombre == "main",
-            Declaracion::Expresion(Expresion::LlamadaFuncion { nombre, .. }) => nombre == "main",
-            _ => false,
-        });
-        let tiene_principal_usuario = !llama_main
-            && decls
-                .iter()
-                .any(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"));
-
         let mut salida = String::new();
         salida.push_str(&self.header);
         // Layout del arreglo del runtime: { len, cap, datos }.
@@ -1000,9 +989,8 @@ impl Lowering {
         let _ = writeln!(salida, "define i32 @main() {{");
         let _ = writeln!(salida, "entry:");
         let _ = writeln!(salida, "  call void @forja_init()");
-        if tiene_principal_usuario {
-            let _ = writeln!(salida, "  call i64 @forja_main_usuario()");
-        }
+        // `main()` sólo corre si el programa lo llama: así se comporta la VM
+        // (antes el nativo lo invocaba solo y un ejemplo imprimía de más).
         let _ = writeln!(salida, "  ret i32 0");
         let _ = writeln!(salida, "}}");
         Ok(salida)
