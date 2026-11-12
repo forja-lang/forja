@@ -201,6 +201,9 @@ impl Lowering {
                     if self.arreglo_de_texto(e) {
                         self.arreglos_texto.insert(nombre.clone(), true);
                     }
+                    if self.arreglo_de_dec(e) {
+                        self.arreglos_dec.insert(nombre.clone(), true);
+                    }
                 }
                 let inicial = v.unwrap_or(V::Nulo);
                 self.guardar(&slot, inicial, &t);
@@ -238,6 +241,7 @@ impl Lowering {
                 let v = self.expr(valor)?;
                 let x_slot = self.como_slot(&v);
                 let es_texto = if v.t() == T::Texto { "1" } else { "0" };
+
                 if cont.t() == T::Mapa {
                     let m = self.como(&cont, T::Mapa);
                     if iv.t() == T::Texto {

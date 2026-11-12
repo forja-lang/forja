@@ -233,6 +233,7 @@ impl Lowering {
                     );
                 }
                 let tag = if con_texto { "1" } else { "0" };
+                let decimales = items.iter().any(|e| self.tipo_estatico(e) == T::Dec);
                 let r = self.r();
                 self.linea(&format!(
                     "{} = call ptr @forja_arreglo_nuevo(i64 {}, i64 {})",
@@ -240,7 +241,7 @@ impl Lowering {
                 ));
                 for (i, item) in items.iter().enumerate() {
                     let v = self.expr(item)?;
-                    let x = self.como_slot(&v);
+                    let x = self.como_casilla(&v, decimales);
                     self.linea(&format!(
                         "  call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
                         r, i, x
@@ -304,7 +305,7 @@ impl Lowering {
                     ));
                     let v = self.r();
                     self.linea(&format!("{} = load i64, ptr {}", v, p));
-                    return Ok(V::Int(v));
+                    return Ok(self.casilla_a_valor(&v, objeto));
                 }
                 // Acceso directo (sin llamada al runtime): GEP + load con
                 // chequeo de rango, para que clang pueda optimizarlo.
@@ -343,14 +344,7 @@ impl Lowering {
                 ));
                 let v = self.r();
                 self.linea(&format!("{} = load i64, ptr {}", v, p));
-                // Las casillas son i64; si el arreglo sabemos que guarda textos
-                // (literal de textos, `dividir`) el valor es un puntero.
-                if self.arreglo_de_texto(objeto) {
-                    let ptr = self.r();
-                    self.linea(&format!("{} = inttoptr i64 {} to ptr", ptr, v));
-                    return Ok(V::Texto(ptr));
-                }
-                Ok(V::Int(v))
+                Ok(self.casilla_a_valor(&v, objeto))
             }
             Expresion::Asignacion { variable, valor } => {
                 let v = self.expr(valor)?;
@@ -386,7 +380,7 @@ impl Lowering {
                 let i = self.como(&iv, T::Int);
                 let v = self.expr(valor)?;
                 self.marcar_arreglo_texto(objeto, &a, valor);
-                let x = self.como_slot(&v);
+                let x = self.como_casilla(&v, self.arreglo_de_dec(objeto));
                 self.linea(&format!(
                     "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
                     a, i, x
@@ -571,6 +565,27 @@ impl Lowering {
                 r, x, y
             ));
             return Ok(V::Texto(r));
+        }
+        // Mezclar Texto con un número en una comparación o en una resta no tiene
+        // sentido: la VM devuelve `falso` (`!=`: `verdadero`) y `nulo`. Antes se
+        // convertía el texto a número (`"abc" == 5` daba igualdad de 0).
+        if texto
+            && !matches!(
+                operador,
+                IgualIgual | Diferente | Mayor | Menor | MayorIgual | MenorIgual
+            )
+        {
+            return Ok(V::Nulo);
+        }
+        if texto
+            && matches!(
+                operador,
+                IgualIgual | Diferente | Mayor | Menor | MayorIgual | MenorIgual
+            )
+            && !(a.t() == T::Texto && b.t() == T::Texto)
+        {
+            let r = matches!(operador, Diferente);
+            return Ok(V::Bool(if r { "1" } else { "0" }.to_string()));
         }
         if texto
             && matches!(
@@ -1306,7 +1321,11 @@ impl Lowering {
                     self.marcar_arreglo_texto(rec, &arr, val);
                 }
                 let arg1 = self.arg(nombre, args, 1)?;
-                let v = self.como_slot(&arg1);
+                let dec = args
+                    .first()
+                    .map(|r| self.arreglo_de_dec(r))
+                    .unwrap_or(false);
+                let v = self.como_casilla(&arg1, dec);
                 // Camino rápido inlineado (len < cap → store) y llamada al
                 // runtime sólo cuando hay que crecer. Evita una llamada por
                 // elemento en los bucles que llenan arreglos.
@@ -1868,6 +1887,44 @@ impl Lowering {
                 .and_then(|k| self.arreglos_texto.get(&k).copied())
                 .unwrap_or(false),
         }
+    }
+
+    /// Valor de una casilla i64 leída de `arr`: `Decimal` bit-casteado, `Texto`
+    /// como puntero, o entero.
+    fn casilla_a_valor(&mut self, v: &str, arr: &Expresion) -> V {
+        if self.arreglo_de_dec(arr) {
+            let d = self.r();
+            self.linea(&format!("{} = bitcast i64 {} to double", d, v));
+            return V::Dec(d);
+        }
+        if self.arreglo_de_texto(arr) {
+            let p = self.r();
+            self.linea(&format!("{} = inttoptr i64 {} to ptr", p, v));
+            return V::Texto(p);
+        }
+        V::Int(v.to_string())
+    }
+
+    /// ¿El arreglo guarda `Decimal` (double bit-casteado en la casilla i64)?
+    pub(super) fn arreglo_de_dec(&self, e: &Expresion) -> bool {
+        match e {
+            Expresion::Arreglo(items) => items.iter().any(|i| self.tipo_estatico(i) == T::Dec),
+            otro => clave_arreglo(otro)
+                .and_then(|k| self.arreglos_dec.get(&k).copied())
+                .unwrap_or(false),
+        }
+    }
+
+    /// Guarda un valor en la casilla i64 de un arreglo: si el arreglo es de
+    /// `Decimal`, el double viaja bit-casteado (y los enteros, convertidos).
+    pub(super) fn como_casilla(&mut self, v: &V, decimales: bool) -> String {
+        if !decimales {
+            return self.como_slot(v);
+        }
+        let d = self.como(v, T::Dec);
+        let r = self.r();
+        self.linea(&format!("{} = bitcast double {} to i64", r, d));
+        r
     }
 
     /// Recuerda que el arreglo guarda textos (para leer sus casillas como

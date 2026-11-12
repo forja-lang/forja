@@ -257,6 +257,46 @@ escribir(nuevo Persona(nuevo Informal()).hablar())
 }
 
 #[test]
+fn arreglos_de_decimal() {
+    // La casilla de un arreglo es un i64: un `Decimal` viaja bit-casteado y se
+    // lee de vuelta como double (antes se truncaba a entero al guardarlo).
+    let fuente = r#"
+variable medias = [0, 2.5, 7.5]
+escribir(medias[1])
+variable i = 1
+mientras (i < longitud(medias)) {
+    escribir(medias[i])
+    i = i + 1
+}
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "2.5\n2.5\n7.5");
+    }
+}
+
+#[test]
+fn texto_en_aritmetica_da_nulo_como_la_vm() {
+    // Mezclar un Texto con un número no es aritmética ni comparación: la VM
+    // devuelve `nulo` y `falso` (antes se convertía el texto a número).
+    let fuente = r#"
+variable t = "" + 10
+escribir(t - 1)
+escribir(7 == t)
+escribir(7 != t)
+escribir(t == t)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida.trim(),
+            "nulo
+falso
+verdadero
+verdadero"
+        );
+    }
+}
+
+#[test]
 fn mapas_con_valores_de_texto() {
     // La casilla del mapa guarda un i64 con su tag: `escribir(m[clave])` usa el
     // tag y muestra el texto (antes convertía con `a_entero` y daba 0).

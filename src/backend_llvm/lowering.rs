@@ -199,6 +199,9 @@ pub struct Lowering {
     evidencia: HashMap<String, Vec<Option<T>>>,
     /// variables cuyo arreglo guarda textos (punteros) en sus casillas.
     arreglos_texto: HashMap<String, bool>,
+    /// Variables/campos cuyo arreglo guarda `Decimal` (double bit-casteado en la
+    /// casilla i64, como el texto guarda un puntero).
+    arreglos_dec: HashMap<String, bool>,
     etiquetas: Vec<(String, String)>, // (romper, continuar)
     ret_actual: T,
     termina: bool,
@@ -299,6 +302,7 @@ impl Lowering {
             tipos_top: HashMap::new(),
             evidencia: HashMap::new(),
             arreglos_texto: HashMap::new(),
+            arreglos_dec: HashMap::new(),
             etiquetas: Vec::new(),
             ret_actual: T::Int,
             termina: false,
@@ -943,6 +947,9 @@ impl Lowering {
                             if self.arreglo_de_texto(v) {
                                 self.arreglos_texto.insert(nombre.clone(), true);
                             }
+                            if self.arreglo_de_dec(v) {
+                                self.arreglos_dec.insert(nombre.clone(), true);
+                            }
                         }
                     }
                 }
@@ -1555,32 +1562,58 @@ fn tipo_por_forma(e: &Expresion) -> Option<T> {
 /// shortcut: no distingue la clase del método (dos clases con el mismo nombre de
 /// método comparten evidencia) ni mira argumentos que son variables.
 fn evidencia_de_llamadas(decls: &[Declaracion]) -> HashMap<String, Vec<Option<T>>> {
-    fn anotar(mapa: &mut HashMap<String, Vec<Option<T>>>, nombre: &str, args: &[Expresion]) {
+    /// Tipo de un argumento: por su forma o por la variable de la que sale
+    /// (`variable horas = 2.5` … `predecir(horas)`).
+    fn tipo_arg(a: &Expresion, vars: &HashMap<String, T>) -> Option<T> {
+        tipo_por_forma(a).or_else(|| match a {
+            Expresion::Identificador { nombre, .. } => vars.get(nombre).cloned(),
+            _ => None,
+        })
+    }
+    fn anotar(
+        mapa: &mut HashMap<String, Vec<Option<T>>>,
+        en_conflicto: &mut std::collections::HashSet<(String, usize)>,
+        vars: &HashMap<String, T>,
+        nombre: &str,
+        args: &[Expresion],
+    ) {
         // Las llamadas punteadas (`x.metodo`) se registran sin el receptor.
         let clave = nombre.rsplit('.').next().unwrap_or(nombre).to_string();
-        let entrada = mapa.entry(clave).or_default();
+        let entrada = mapa.entry(clave.clone()).or_default();
         if entrada.len() < args.len() {
             entrada.resize(args.len(), None);
         }
         for (i, a) in args.iter().enumerate() {
-            let Some(t) = tipo_por_forma(a) else { continue };
+            let Some(t) = tipo_arg(a, vars) else { continue };
             if t == T::Int {
                 continue;
             }
-            entrada[i] = match &entrada[i] {
-                None => Some(t),
-                Some(previo) if *previo == t => Some(t),
-                // Dos tipos distintos: no hay nada seguro que concluir.
-                Some(_) => None,
-            };
+            // Dos tipos distintos en el mismo argumento: no hay nada seguro que
+            // concluir (y no se puede volver a llenar con un tercero).
+            if en_conflicto.contains(&(clave.clone(), i)) {
+                continue;
+            }
+            match &entrada[i] {
+                None => entrada[i] = Some(t),
+                Some(previo) if *previo == t => {}
+                Some(_) => {
+                    entrada[i] = None;
+                    en_conflicto.insert((clave.clone(), i));
+                }
+            }
         }
     }
-    fn en_expr(e: &Expresion, mapa: &mut HashMap<String, Vec<Option<T>>>) {
+    fn en_expr(
+        e: &Expresion,
+        mapa: &mut HashMap<String, Vec<Option<T>>>,
+        en_conflicto: &mut std::collections::HashSet<(String, usize)>,
+        vars: &mut HashMap<String, T>,
+    ) {
         match e {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                anotar(mapa, nombre, argumentos);
+                anotar(mapa, en_conflicto, vars, nombre, argumentos);
                 for a in argumentos {
-                    en_expr(a, mapa);
+                    en_expr(a, mapa, en_conflicto, vars);
                 }
             }
             Expresion::LlamadaMetodo {
@@ -1588,102 +1621,150 @@ fn evidencia_de_llamadas(decls: &[Declaracion]) -> HashMap<String, Vec<Option<T>
                 metodo,
                 argumentos,
             } => {
-                anotar(mapa, metodo, argumentos);
-                en_expr(objeto, mapa);
+                anotar(mapa, en_conflicto, vars, metodo, argumentos);
+                en_expr(objeto, mapa, en_conflicto, vars);
                 for a in argumentos {
-                    en_expr(a, mapa);
+                    en_expr(a, mapa, en_conflicto, vars);
                 }
             }
-            Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
-                en_sentencias(cuerpo, mapa)
+            Expresion::Closure { parametros, cuerpo } => {
+                let mut propias = vars.clone();
+                for p in parametros {
+                    if let Some(t) = T::de_tipo(&p.tipo) {
+                        propias.insert(p.nombre.clone(), t);
+                    }
+                }
+                en_sentencias(cuerpo, mapa, en_conflicto, &mut propias);
             }
+            Expresion::Hilo { cuerpo } => en_sentencias(cuerpo, mapa, en_conflicto, vars),
             Expresion::Coincidir { brazos, expr: o } => {
-                en_expr(o, mapa);
+                en_expr(o, mapa, en_conflicto, vars);
                 for b in brazos {
-                    en_sentencias(&b.cuerpo, mapa);
+                    en_sentencias(&b.cuerpo, mapa, en_conflicto, vars);
                 }
             }
             Expresion::Binaria {
                 izquierda, derecha, ..
             } => {
-                en_expr(izquierda, mapa);
-                en_expr(derecha, mapa);
+                en_expr(izquierda, mapa, en_conflicto, vars);
+                en_expr(derecha, mapa, en_conflicto, vars);
             }
-            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => en_expr(expr, mapa),
+            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => {
+                en_expr(expr, mapa, en_conflicto, vars)
+            }
             Expresion::Ternario {
                 condicion,
                 si_verdadero,
                 si_falso,
             } => {
-                en_expr(condicion, mapa);
-                en_expr(si_verdadero, mapa);
-                en_expr(si_falso, mapa);
+                en_expr(condicion, mapa, en_conflicto, vars);
+                en_expr(si_verdadero, mapa, en_conflicto, vars);
+                en_expr(si_falso, mapa, en_conflicto, vars);
             }
             Expresion::Index { objeto, indice } => {
-                en_expr(objeto, mapa);
-                en_expr(indice, mapa);
+                en_expr(objeto, mapa, en_conflicto, vars);
+                en_expr(indice, mapa, en_conflicto, vars);
             }
             Expresion::Arreglo(items) => {
                 for i in items {
-                    en_expr(i, mapa);
+                    en_expr(i, mapa, en_conflicto, vars);
                 }
             }
             Expresion::Mapa(pares) => {
                 for (k, v) in pares {
-                    en_expr(k, mapa);
-                    en_expr(v, mapa);
+                    en_expr(k, mapa, en_conflicto, vars);
+                    en_expr(v, mapa, en_conflicto, vars);
                 }
             }
             Expresion::Asignacion { valor, .. }
             | Expresion::AsignacionCampo { valor, .. }
             | Expresion::AsignacionCompuesta { valor, .. }
-            | Expresion::ArregloFijar { valor, .. } => en_expr(valor, mapa),
-            Expresion::AccesoMiembro { objeto, .. } => en_expr(objeto, mapa),
+            | Expresion::ArregloFijar { valor, .. } => en_expr(valor, mapa, en_conflicto, vars),
+            Expresion::AccesoMiembro { objeto, .. } => en_expr(objeto, mapa, en_conflicto, vars),
             Expresion::Try(inner)
             | Expresion::Ok(inner)
             | Expresion::Error(inner)
-            | Expresion::Algo(inner) => en_expr(inner, mapa),
+            | Expresion::Algo(inner) => en_expr(inner, mapa, en_conflicto, vars),
             _ => {}
         }
     }
-    fn en_sentencias(cuerpo: &[Declaracion], mapa: &mut HashMap<String, Vec<Option<T>>>) {
+    fn en_sentencias(
+        cuerpo: &[Declaracion],
+        mapa: &mut HashMap<String, Vec<Option<T>>>,
+        en_conflicto: &mut std::collections::HashSet<(String, usize)>,
+        vars: &mut HashMap<String, T>,
+    ) {
         for d in cuerpo {
             match d {
-                Declaracion::Variable { valor: Some(v), .. } => en_expr(v, mapa),
-                Declaracion::Asignacion { valor, .. }
-                | Declaracion::AsignacionMiembro { valor, .. }
-                | Declaracion::AsignacionIndex { valor, .. } => en_expr(valor, mapa),
+                Declaracion::Variable {
+                    nombre,
+                    valor: Some(v),
+                    ..
+                } => {
+                    if let Some(t) = tipo_arg(v, vars) {
+                        vars.insert(nombre.clone(), t);
+                    }
+                    en_expr(v, mapa, en_conflicto, vars);
+                }
+                Declaracion::Variable { valor: None, .. } => {}
+                Declaracion::Asignacion { nombre, valor, .. } => {
+                    if let Some(t) = tipo_arg(valor, vars) {
+                        vars.insert(nombre.clone(), t);
+                    }
+                    en_expr(valor, mapa, en_conflicto, vars);
+                }
+                Declaracion::AsignacionMiembro { valor, .. }
+                | Declaracion::AsignacionIndex { valor, .. } => {
+                    en_expr(valor, mapa, en_conflicto, vars)
+                }
                 Declaracion::Si {
                     condicion,
                     bloque_verdadero,
                     bloque_falso,
                 } => {
-                    en_expr(condicion, mapa);
-                    en_sentencias(bloque_verdadero, mapa);
+                    en_expr(condicion, mapa, en_conflicto, vars);
+                    en_sentencias(bloque_verdadero, mapa, en_conflicto, vars);
                     if let Some(b) = bloque_falso {
-                        en_sentencias(b, mapa);
+                        en_sentencias(b, mapa, en_conflicto, vars);
                     }
                 }
                 Declaracion::Mientras { condicion, bloque } => {
-                    en_expr(condicion, mapa);
-                    en_sentencias(bloque, mapa);
+                    en_expr(condicion, mapa, en_conflicto, vars);
+                    en_sentencias(bloque, mapa, en_conflicto, vars);
                 }
                 Declaracion::Para { bloque, .. } | Declaracion::Repetir { bloque, .. } => {
-                    en_sentencias(bloque, mapa)
+                    en_sentencias(bloque, mapa, en_conflicto, vars)
                 }
-                Declaracion::Retornar { valor: Some(v) } => en_expr(v, mapa),
-                Declaracion::Expresion(e) => en_expr(e, mapa),
+                Declaracion::Retornar { valor: Some(v) } => en_expr(v, mapa, en_conflicto, vars),
+                Declaracion::Expresion(e) => en_expr(e, mapa, en_conflicto, vars),
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                    anotar(mapa, nombre, argumentos);
+                    anotar(mapa, en_conflicto, vars, nombre, argumentos);
                     for a in argumentos {
-                        en_expr(a, mapa);
+                        en_expr(a, mapa, en_conflicto, vars);
                     }
                 }
-                Declaracion::Funcion { cuerpo, .. } => en_sentencias(cuerpo, mapa),
+                Declaracion::Funcion {
+                    parametros, cuerpo, ..
+                } => {
+                    // Los parámetros anotados del propio cuerpo también son pistas.
+                    let mut propias = vars.clone();
+                    for p in parametros {
+                        if let Some(t) = T::de_tipo(&p.tipo) {
+                            propias.insert(p.nombre.clone(), t);
+                        }
+                    }
+                    en_sentencias(cuerpo, mapa, en_conflicto, &mut propias);
+                }
                 Declaracion::Clase { metodos, .. }
                 | Declaracion::Implementacion { metodos, .. } => {
                     for m in metodos {
-                        en_sentencias(&m.cuerpo, mapa);
+                        let mut propias = vars.clone();
+                        for p in &m.parametros {
+                            if let Some(t) = T::de_tipo(&p.tipo) {
+                                propias.insert(p.nombre.clone(), t);
+                            }
+                        }
+                        en_sentencias(&m.cuerpo, mapa, en_conflicto, &mut propias);
                     }
                 }
                 _ => {}
@@ -1691,7 +1772,9 @@ fn evidencia_de_llamadas(decls: &[Declaracion]) -> HashMap<String, Vec<Option<T>
         }
     }
     let mut mapa: HashMap<String, Vec<Option<T>>> = HashMap::new();
-    en_sentencias(decls, &mut mapa);
+    let mut en_conflicto: std::collections::HashSet<(String, usize)> =
+        std::collections::HashSet::new();
+    en_sentencias(decls, &mut mapa, &mut en_conflicto, &mut HashMap::new());
     mapa
 }
 
@@ -1876,6 +1959,9 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
     struct Uso {
         arreglo: bool,
         texto: bool,
+        /// El parámetro se usa en aritmética: no puede ser `Texto` aunque además
+        /// se concatene (`escribir("x" + n)` y `n * 2` en la misma función).
+        numerico: bool,
     }
     fn es(e: &Expresion, nombre: &str) -> bool {
         matches!(e, Expresion::Identificador { nombre: n, .. } if n == nombre)
@@ -1939,15 +2025,37 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
                     en_expr(a, nombre, uso);
                 }
             }
-            // `"" + parametro` / `parametro + "..."`: el parámetro es Texto.
+            // `"" + parametro` / `parametro + "..."`: el parámetro es Texto; pero
+            // si además se usa en aritmética es numérico (`2 * a` con `a`
+            // concatenado en un `escribir`).
             Expresion::Binaria {
-                izquierda, derecha, ..
+                izquierda,
+                derecha,
+                operador,
             } => {
-                if (es(izquierda, nombre) && matches!(derecha.as_ref(), Expresion::LiteralTexto(_)))
-                    || (es(derecha, nombre)
-                        && matches!(izquierda.as_ref(), Expresion::LiteralTexto(_)))
+                use forja_syntax::ast::Operador;
+                let es_texto = |e: &Expresion| matches!(e, Expresion::LiteralTexto(_));
+                if (es(izquierda, nombre) && es_texto(derecha))
+                    || (es(derecha, nombre) && es_texto(izquierda))
                 {
                     uso.texto = true;
+                }
+                match operador {
+                    Operador::Resta
+                    | Operador::Multiplicacion
+                    | Operador::Division
+                    | Operador::Modulo => {
+                        if es(izquierda, nombre) || es(derecha, nombre) {
+                            uso.numerico = true;
+                        }
+                    }
+                    Operador::Suma
+                        if (es(izquierda, nombre) && !es_texto(derecha))
+                            || (es(derecha, nombre) && !es_texto(izquierda)) =>
+                    {
+                        uso.numerico = true;
+                    }
+                    _ => {}
                 }
                 en_expr(izquierda, nombre, uso);
                 en_expr(derecha, nombre, uso);
@@ -2026,7 +2134,7 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
     en_sentencias(cuerpo, nombre, &mut uso);
     if uso.arreglo {
         Some(T::Arreglo)
-    } else if uso.texto && !escapa(cuerpo, nombre) {
+    } else if uso.texto && !uso.numerico && !escapa(cuerpo, nombre) {
         Some(T::Texto)
     } else {
         None
