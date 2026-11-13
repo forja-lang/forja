@@ -327,6 +327,44 @@ escribir("no se llega")
 }
 
 #[test]
+fn metodo_booleano_por_despacho_dinamico() {
+    // `unificar_retorno` trataba `Booleano` como `Entero`: un método booleano
+    // llamado a través de un campo sin tipo estático se imprimía `1`.
+    let fuente = r#"
+rasgo Chequeo {
+    funcion esta_bien() -> Booleano
+}
+clase Bien {
+    constructor() {}
+}
+implementa Chequeo para Bien {
+    funcion esta_bien() -> Booleano {
+        retornar verdadero
+    }
+}
+clase Mal {
+    constructor() {}
+}
+implementa Chequeo para Mal {
+    funcion esta_bien() -> Booleano {
+        retornar falso
+    }
+}
+clase Caja {
+    chequeo
+    constructor(c) {
+        este.chequeo = c
+    }
+}
+escribir(nuevo Caja(nuevo Bien()).chequeo.esta_bien())
+escribir(nuevo Caja(nuevo Mal()).chequeo.esta_bien())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "verdadero\nfalso");
+    }
+}
+
+#[test]
 fn derive_igual_compara_campos() {
     // `@derive(Igual)`: `==` compara campo por campo (antes comparaba punteros).
     let fuente = r#"
