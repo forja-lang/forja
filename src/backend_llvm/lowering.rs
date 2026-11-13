@@ -1330,6 +1330,7 @@ impl Lowering {
             e: &Expresion,
             params: &[Parametro],
             tipos: &[T],
+            locales: &HashMap<String, T>,
         ) -> Option<T> {
             Some(match e {
                 Expresion::LiteralTexto(_) => T::Texto,
@@ -1350,6 +1351,7 @@ impl Lowering {
                     .iter()
                     .position(|p| &p.nombre == nombre)
                     .and_then(|i| tipos.get(i).cloned())
+                    .or_else(|| locales.get(nombre).cloned())
                     .unwrap_or(T::Int),
                 Expresion::LlamadaFuncion { nombre, .. } => self_
                     .firmas
@@ -1368,12 +1370,13 @@ impl Lowering {
             cuerpo: &[Declaracion],
             params: &[Parametro],
             tipos: &[T],
+            locales: &HashMap<String, T>,
             out: &mut Vec<T>,
         ) {
             for d in cuerpo {
                 match d {
                     Declaracion::Retornar { valor: Some(e) } => {
-                        if let Some(t) = tipo_valor(self_, e, params, tipos) {
+                        if let Some(t) = tipo_valor(self_, e, params, tipos, locales) {
                             out.push(t);
                         }
                     }
@@ -1382,22 +1385,26 @@ impl Lowering {
                         bloque_falso,
                         ..
                     } => {
-                        recoger(self_, bloque_verdadero, params, tipos, out);
+                        recoger(self_, bloque_verdadero, params, tipos, locales, out);
                         if let Some(b) = bloque_falso {
-                            recoger(self_, b, params, tipos, out);
+                            recoger(self_, b, params, tipos, locales, out);
                         }
                     }
                     Declaracion::Mientras { bloque, .. }
                     | Declaracion::Repetir { bloque, .. }
                     | Declaracion::Para { bloque, .. } => {
-                        recoger(self_, bloque, params, tipos, out)
+                        recoger(self_, bloque, params, tipos, locales, out)
                     }
                     _ => {}
                 }
             }
         }
+        // Los locales del cuerpo también cuentan (`retornar moda` con `moda` un
+        // arreglo local).
+        let mut locales: HashMap<String, T> = HashMap::new();
+        self.preescanear_tipos(cuerpo, &mut locales);
         let mut retornos = Vec::new();
-        recoger(self, cuerpo, params, tipos, &mut retornos);
+        recoger(self, cuerpo, params, tipos, &locales, &mut retornos);
         // Todas las ramas tienen que caber en el tipo: una que devuelve el
         // arreglo manda sobre otra que devuelve un entero.
         unificar_retorno(&retornos).or_else(|| retornos.first().cloned())
