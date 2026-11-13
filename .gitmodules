@@ -45,3 +45,6 @@
 [submodule "compiler/forja-types"]
 	path = compiler/forja-types
 	url = https://github.com/forja-lang/forja-types.git
+[submodule "library/gui-dom"]
+	path = library/gui-dom
+	url = https://github.com/forja-lang/forja-gui-dom.git

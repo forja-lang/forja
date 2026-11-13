@@ -375,6 +375,27 @@ escribir("p = " + p)
 }
 
 #[test]
+fn indexar_un_texto() {
+    // `s[i]` da un texto de un carácter (nulo si se pasa), como la VM.
+    let fuente = r#"
+variable s = "hola"
+escribir(s[0])
+escribir(s[3])
+escribir(s[9])
+escribir(s[0] == "h")
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida.trim(),
+            "h
+a
+nulo
+verdadero"
+        );
+    }
+}
+
+#[test]
 fn mapas_con_valores_de_texto() {
     // La casilla del mapa guarda un i64 con su tag: `escribir(m[clave])` usa el
     // tag y muestra el texto (antes convertía con `a_entero` y daba 0).
@@ -555,13 +576,6 @@ variable c = Rojo
 escribir(c)
 ",
             "no está soportado",
-        ),
-        // La indexación es la de arreglos: sobre un Texto leería basura.
-        (
-            "variable s = \"hola\"
-escribir(s[0])
-",
-            "indexar un Texto",
         ),
     ] {
         let err = forja::compilar_a_llvm(fuente).expect_err("debía fallar");

@@ -1740,7 +1740,13 @@ fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
             externa: false,
             ..
         } => fns.contains(nombre) || nombre == "main",
-        Declaracion::Clase { nombre, .. } => clases.contains(nombre),
+        // Una clase genérica es una plantilla: se queda aunque nadie la
+        // instancie con ese nombre (las especializadas se agregan aparte).
+        Declaracion::Clase {
+            nombre,
+            parametros_tipo,
+            ..
+        } => clases.contains(nombre) || !parametros_tipo.is_empty(),
         Declaracion::Implementacion { clase_nombre, .. } => clases.contains(clase_nombre),
         _ => true,
     });

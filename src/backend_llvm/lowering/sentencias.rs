@@ -48,6 +48,7 @@ impl Lowering {
             self.vars.insert(p.nombre.clone(), Var { slot, t });
         }
 
+        self.marcar_params_texto(nombre, parametros);
         self.verificar_contratos(precondiciones, "precondición")?;
         for s in cuerpo {
             self.sentencia(s)?;
@@ -144,6 +145,7 @@ impl Lowering {
             self.vars.insert(p.nombre.clone(), Var { slot, t });
         }
 
+        self.marcar_params_texto(&m.nombre, &m.parametros);
         self.verificar_contratos(&m.precondiciones, "precondición")?;
         for s in &m.cuerpo {
             self.sentencia(s)?;
@@ -200,8 +202,29 @@ impl Lowering {
                 // que `partes[0]` de un arreglo de textos es Texto.
                 let t = self
                     .tipo_declarado(tipo)
-                    .or_else(|| v.as_ref().map(|v| v.t()).filter(|t| *t != T::Nulo))
-                    .or_else(|| self.tipos_pre.get(nombre).cloned())
+                    .or_else(|| {
+                        let del_valor = v.as_ref().map(|v| v.t()).filter(|t| *t != T::Nulo);
+                        let del_pre = self.tipos_pre.get(nombre).cloned();
+                        // Si arranca en un literal entero (`variable suma = 0`) y
+                        // después recibe un tipo más específico, gana ese tipo. Si
+                        // el inicial es una variable/llamada, su tipo manda (la VM
+                        // no cambia el tipo de la casilla a mitad de camino).
+                        let inicial_literal = valor
+                            .as_ref()
+                            .map(|e| {
+                                matches!(
+                                    e,
+                                    Expresion::LiteralNumero(_) | Expresion::LiteralBooleano(_)
+                                )
+                            })
+                            .unwrap_or(false);
+                        match (del_valor, del_pre) {
+                            (Some(a), Some(b)) if a == T::Int && b != T::Int && inicial_literal => {
+                                Some(b)
+                            }
+                            (a, b) => a.or(b),
+                        }
+                    })
                     .unwrap_or(T::Int);
                 let slot = self.alloca(&t, nombre);
                 // recordar si el arreglo guarda textos (para leer sus casillas)
@@ -499,6 +522,16 @@ impl Lowering {
         }
         Ok(())
     }
+    /// Si una llamada pasa un arreglo de textos a este parámetro, sus casillas se
+    /// leen como punteros dentro del cuerpo (`campos[i]` de `["nombre", …]`).
+    fn marcar_params_texto(&mut self, nombre: &str, parametros: &[Parametro]) {
+        for (i, p) in parametros.iter().enumerate() {
+            if self.evidencia_texto.contains(&(nombre.to_string(), i)) {
+                self.arreglos_texto.insert(p.nombre.clone(), true);
+            }
+        }
+    }
+
     /// Verifica las precondiciones (`requiere`) al entrar: si alguna no se
     /// cumple, imprime el mensaje que da la VM y aborta.
     ///

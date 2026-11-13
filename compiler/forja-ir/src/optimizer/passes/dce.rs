@@ -363,7 +363,14 @@ impl DeadCodeEliminator {
                 // main siempre se conserva, funciones externas (FFI) tambien
                 nombre != "main" && !self.funciones_llamadas.contains(nombre)
             }
-            Declaracion::Clase { nombre, .. } => !self.clases_usadas.contains(nombre),
+            // Una clase genérica es una plantilla: se queda aunque el nombre no
+            // aparezca (sus instanciaciones se renombran a `Clase_Tipo` y la
+            // anotación `variable p: Clase` la necesita).
+            Declaracion::Clase {
+                nombre,
+                parametros_tipo,
+                ..
+            } => parametros_tipo.is_empty() && !self.clases_usadas.contains(nombre),
             Declaracion::Rasgo { nombre, .. } => !self.rasgos_usados.contains(nombre),
             Declaracion::Enum {
                 nombre, variantes, ..

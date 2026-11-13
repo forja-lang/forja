@@ -251,12 +251,17 @@ impl Lowering {
             }
             Expresion::Index { objeto, indice } => {
                 if self.tipo_estatico(objeto) == T::Texto {
-                    // La indexación nativa es la de arreglos (GEP + load): sobre
-                    // el texto leería basura. La VM sí la soporta.
-                    return Err(
-                        "indexar un Texto (`s[i]`) no está soportado en la ruta nativa: usá `subcadena`/`dividir`, o compilá con la VM"
-                            .to_string(),
-                    );
+                    // `s[i]`: un texto de un carácter (nulo si se pasa).
+                    let txt = self.expr(objeto)?;
+                    let s = self.como(&txt, T::Texto);
+                    let iv = self.expr(indice)?;
+                    let i = self.como(&iv, T::Int);
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call ptr @forja_texto_indice(ptr {}, i64 {})",
+                        r, s, i
+                    ));
+                    return Ok(V::Texto(r));
                 }
                 let arr = self.expr(objeto)?;
                 if arr.t() == T::Mapa {

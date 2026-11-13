@@ -496,7 +496,34 @@ impl Monomorphizer {
             nombre: inst.specialized_name.clone(),
             parametros_tipo: Vec::new(),
             campos: nuevo_campos,
-            metodos: generic.metodos.clone(),
+            // Los métodos también pierden el parámetro de tipo: si no, `valor: T`
+            // queda sin resolver y `este.campo = valor` se guarda como entero.
+            metodos: generic
+                .metodos
+                .iter()
+                .map(|m| Metodo {
+                    nombre: m.nombre.clone(),
+                    parametros: m
+                        .parametros
+                        .iter()
+                        .map(|p| Parametro {
+                            nombre: p.nombre.clone(),
+                            prestado: p.prestado,
+                            mutable: p.mutable,
+                            tipo: p.tipo.as_ref().and_then(|t| {
+                                self.reemplazar_tipo_params(t, &inst.argumentos_tipo)
+                            }),
+                        })
+                        .collect(),
+                    tipo_retorno: m
+                        .tipo_retorno
+                        .as_ref()
+                        .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo)),
+                    cuerpo: m.cuerpo.clone(),
+                    precondiciones: m.precondiciones.clone(),
+                    postcondiciones: m.postcondiciones.clone(),
+                })
+                .collect(),
             atributos: Vec::new(),
             invariantes: Vec::new(),
         }
@@ -669,6 +696,27 @@ impl Monomorphizer {
         }
     }
 
+    fn nombre_especializado_clase(&self, nombre: &str, argumentos: &[Expresion]) -> Option<String> {
+        let generic = self.generic_classes.get(nombre)?;
+        let argumentos_tipo = self.infer_tipo_args_for_clase(generic, argumentos);
+        if argumentos_tipo.is_empty() {
+            return None;
+        }
+        let candidato = format!(
+            "{}_{}",
+            nombre,
+            argumentos_tipo
+                .iter()
+                .map(|(_, ct)| ct.name())
+                .collect::<Vec<_>>()
+                .join("_")
+        );
+        self.instantiations
+            .iter()
+            .find(|i| i.specialized_name == candidato)
+            .map(|i| i.specialized_name.clone())
+    }
+
     fn renombrar_expr(&self, e: &mut Expresion) {
         match e {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -687,11 +735,12 @@ impl Monomorphizer {
                     self.renombrar_expr(a);
                 }
             }
-            Expresion::Instanciacion { argumentos, .. } => {
-                // Las clases genéricas todavía no se renombran: la sustitución de
-                // tipos de sus campos no cubre todos los casos.
+            Expresion::Instanciacion { clase, argumentos } => {
                 for a in argumentos.iter_mut() {
                     self.renombrar_expr(a);
+                }
+                if let Some(nuevo) = self.nombre_especializado_clase(clase, argumentos) {
+                    *clase = nuevo;
                 }
             }
             Expresion::Binaria {
