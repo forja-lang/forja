@@ -236,6 +236,13 @@ impl Lowering {
                         self.arreglos_dec.insert(nombre.clone(), true);
                     }
                 }
+                // `variable r = f()` con `f() -> Resultado<Texto, Texto>`: se
+                // recuerdan los tipos del payload para el `coincidir`.
+                if let Some(Expresion::LlamadaFuncion { nombre: f, .. }) = valor {
+                    if let Some(tipos) = self.resultado_fn.get(f).cloned() {
+                        self.resultado_var.insert(nombre.clone(), tipos);
+                    }
+                }
                 let inicial = v.unwrap_or(V::Nulo);
                 self.guardar(&slot, inicial, &t);
                 self.vars.insert(nombre.clone(), Var { slot, t });

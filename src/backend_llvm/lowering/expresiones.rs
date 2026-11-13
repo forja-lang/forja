@@ -1732,6 +1732,12 @@ impl Lowering {
         scrutinee: &Expresion,
         brazos: &[crate::ast::BrazoMatch],
     ) -> Result<V, String> {
+        // `coincidir (r)` con `r` producido por una función `-> Resultado<T, E>`:
+        // el payload se enlaza con esos tipos, no con el `Entero` del preludio.
+        let payload_anotado = match scrutinee {
+            Expresion::Identificador { nombre, .. } => self.resultado_var.get(nombre).cloned(),
+            _ => None,
+        };
         let v = self.expr(scrutinee)?;
         let (obj, en) = match v {
             V::Enum(r, e) => (r, e),
@@ -1791,11 +1797,27 @@ impl Lowering {
             self.linea(&format!("{} = icmp eq i64 {}, {}", c, tag, idx));
             self.linea(&format!("br i1 {}, label %{}, label %{}", c, cuerpo, sig));
             self.etiqueta(&cuerpo);
-            let tipos_campo = self
+            let mut tipos_campo = self
                 .variantes
                 .get(&variante)
                 .map(|(_, _, t)| t.clone())
                 .unwrap_or_default();
+            // El preludio asume `Ok`/`Algo` = Entero y `Error` = Texto; si la
+            // firma del productor dice otra cosa, manda la firma.
+            if let Some((t_ok, t_err)) = &payload_anotado {
+                let t = match variante.as_str() {
+                    "Ok" | "Algo" => Some(t_ok.clone()),
+                    "Error" => Some(t_err.clone()),
+                    _ => None,
+                };
+                if let Some(t) = t {
+                    if let Some(slot) = tipos_campo.first_mut() {
+                        *slot = t;
+                    } else {
+                        tipos_campo.push(t);
+                    }
+                }
+            }
             for (k, sub) in subs.iter().enumerate() {
                 if let crate::ast::Patron::Variable(nombre) = sub {
                     let t_campo = tipos_campo.get(k).cloned().unwrap_or(T::Int);

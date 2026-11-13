@@ -327,6 +327,40 @@ escribir("no se llega")
 }
 
 #[test]
+fn payload_de_resultado_anotado() {
+    // `funcion f() -> Resultado<Texto, Texto>`: el payload de `Ok`/`Error` se
+    // enlaza con esos tipos (el preludio asume Entero/Texto).
+    let fuente = r#"
+funcion buscar(n) -> Resultado<Texto, Texto> {
+    si (n > 0) {
+        retornar Ok("encontrado")
+    }
+    retornar Error("no está")
+}
+variable r = buscar(1)
+coincidir (r) {
+    caso Ok(v) -> {
+        escribir("ok: " + v)
+    }
+    caso Error(m) -> {
+        escribir("error: " + m)
+    }
+}
+coincidir (buscar(0)) {
+    caso Ok(v) -> {
+        escribir("ok: " + v)
+    }
+    caso Error(m) -> {
+        escribir("error: " + m)
+    }
+}
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "ok: encontrado\nerror: no está");
+    }
+}
+
+#[test]
 fn metodo_booleano_por_despacho_dinamico() {
     // `unificar_retorno` trataba `Booleano` como `Entero`: un método booleano
     // llamado a través de un campo sin tipo estático se imprimía `1`.

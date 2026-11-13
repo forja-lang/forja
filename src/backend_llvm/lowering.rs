@@ -204,6 +204,11 @@ pub struct Lowering {
     /// Tipos que llegan a cada parámetro en las llamadas del programa
     /// (nombre → por posición → tipo), para los parámetros sin anotar.
     evidencia: HashMap<String, Vec<Option<T>>>,
+    /// Función → tipos del payload de su `Resultado<Ok, Error>` anotado.
+    resultado_fn: HashMap<String, (T, T)>,
+    /// Variable → tipos del payload del `Resultado` que guarda
+    /// (`variable r = f()` con `f() -> Resultado<Texto, Texto>`).
+    resultado_var: HashMap<String, (T, T)>,
     /// `(función, índice)` → el argumento es un arreglo de textos (literal con
     /// textos), para poder leer las casillas del parámetro como punteros.
     evidencia_texto: std::collections::HashSet<(String, usize)>,
@@ -316,6 +321,8 @@ impl Lowering {
             tipos_pre: HashMap::new(),
             tipos_top: HashMap::new(),
             evidencia: HashMap::new(),
+            resultado_fn: HashMap::new(),
+            resultado_var: HashMap::new(),
             evidencia_texto: std::collections::HashSet::new(),
             arreglos_texto: HashMap::new(),
             arreglos_dec: HashMap::new(),
@@ -666,6 +673,13 @@ impl Lowering {
                             .or_else(|| self.inferir_retorno(cuerpo, parametros, &params))
                             .unwrap_or(T::Int)
                     };
+                    if let Some(Tipo::Resultado(ok, err)) = tipo_retorno {
+                        let t_ok = self.tipo_declarado(&Some(ok.as_ref().clone()));
+                        let t_err = self.tipo_declarado(&Some(err.as_ref().clone()));
+                        if let (Some(a), Some(b)) = (t_ok, t_err) {
+                            self.resultado_fn.insert(nombre.clone(), (a, b));
+                        }
+                    }
                     if *externa {
                         let real = enlace_nombre.clone().unwrap_or_else(|| nombre.clone());
                         self.nombres_externos.insert(nombre.clone(), real.clone());
@@ -1001,6 +1015,13 @@ impl Lowering {
                             slot
                         };
                         if let Some(v) = valor {
+                            // `variable r = f()` con `f() -> Resultado<Texto, …>`:
+                            // se recuerdan los tipos del payload para el `coincidir`.
+                            if let Expresion::LlamadaFuncion { nombre: f, .. } = v {
+                                if let Some(tipos) = self.resultado_fn.get(f).cloned() {
+                                    self.resultado_var.insert(nombre.clone(), tipos);
+                                }
+                            }
                             let val = self.expr(v)?;
                             self.guardar(&slot, val, t);
                             // recordar arreglos de textos también a nivel superior
