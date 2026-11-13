@@ -61,7 +61,14 @@ funcion main() {
         ),
         fila(
             etiqueta("Pendientes:"),
-            etiqueta_dinamica("tareas")
+            etiqueta_dinamica("tareas"),
+            etiqueta("· ruta:"),
+            etiqueta_dinamica("ruta")
+        ),
+        fila(
+            boton("Ir a lista", "ir:#/lista"),
+            boton("Ir a detalle", "ir:#/detalle"),
+            boton("Ir a opciones", "ir:#/opciones")
         ),
         pestanas("pestana",
             pestana("lista", "Lista",
@@ -212,6 +219,8 @@ funcion recargar() {
           }, 200);
           // Enter en el formulario: el submit dispara la acción del botón.
           app.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+          // Navegación por URL: el botón cambia el hash y la variable `ruta`.
+          app.querySelector('[data-fg-accion="ir:#/detalle"]').click();
           // Tabla ordenable: un clic en la cabecera "Tarea" ordena las filas.
           app.querySelector('[data-fg-accion="orden:Tarea"]').click();
           // El diálogo se abre al final: cualquier repintado lo vuelve a crear cerrado.

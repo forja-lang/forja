@@ -78,6 +78,9 @@ echo "$DOM_AUTO" | grep -q 'data-auto="listo"' || fallo "la simulación no termi
 # 2 clics + 1 envío del formulario (Enter) = 3
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="tareas">3<'     || fallo "los clics y el submit no ejecutaron el callback Forja (se esperaba tareas = 3)"
 echo "$DOM_AUTO" | grep -q '<form class="fg-formulario"'     || fallo "no hay formulario real en la página"
+
+# Navegación por URL (hash): la variable `ruta` sigue al historial.
+echo "$DOM_AUTO" | grep -q 'data-fg-variable="ruta">/detalle<'     || fallo "la navegación por hash no actualizó la variable ruta"
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="titulo">pan integral<'     || fallo "el cambio del campo no llegó a la variable del programa"
 
 echo "$DOM_AUTO" | grep -q 'aria-selected="true" data-fg-accion="tab:pestana:detalle"'     || fallo "la pestaña no cambió al hacer clic"
@@ -101,4 +104,5 @@ echo "   lista con selección (sel:) actualiza la variable"
 echo "   tabla ordenable: filas reordenadas y aria-sort"
 echo "   clics ejecutan callbacks Forja (0 → 2) · el campo escribe la variable"
 echo "   formulario: el submit dispara la acción (tareas = 3)"
+echo "   navegación por hash: ruta = /detalle"
 echo "✅ demo de GUI DOM funciona en navegador"
