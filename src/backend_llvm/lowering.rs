@@ -424,7 +424,9 @@ impl Lowering {
             T::Clase(c) => V::Clase(r, c.clone()),
             T::Funcion => V::Funcion(r),
             T::Bool => V::Bool(r),
-            T::Nulo | T::Int => V::Int(r),
+            // Un slot declarado `nulo` sigue siendo nulo (la VM imprime "nulo").
+            T::Nulo => V::Nulo,
+            T::Int => V::Int(r),
         }
     }
 
