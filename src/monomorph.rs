@@ -546,6 +546,211 @@ impl Monomorphizer {
     }
 
     /// Retorna las especializaciones generadas como declaraciones
+    /// Renombra los usos a las versiones especializadas (`identidad` →
+    /// `identidad_Texto`). Sin esto las especializaciones quedaban sin usar y la
+    /// llamada iba a la función genérica (todo `i64`).
+    pub fn aplicar_instantiations(&self, programa: &mut Programa) {
+        for d in &mut programa.declaraciones {
+            self.renombrar_decl(d);
+        }
+    }
+
+    fn nombre_especializado_fn(&self, nombre: &str, argumentos: &[Expresion]) -> Option<String> {
+        let generic = self.generic_functions.get(nombre)?;
+        let argumentos_tipo = self.infer_tipo_args_for_fn(generic, argumentos);
+        let candidato = format!(
+            "{}_{}",
+            nombre,
+            argumentos_tipo
+                .iter()
+                .map(|(_, ct)| ct.name())
+                .collect::<Vec<_>>()
+                .join("_")
+        );
+        if argumentos_tipo.is_empty() {
+            return None;
+        }
+        self.instantiations
+            .iter()
+            .find(|i| i.specialized_name == candidato)
+            .map(|i| i.specialized_name.clone())
+    }
+
+    fn renombrar_decl(&self, d: &mut Declaracion) {
+        match d {
+            Declaracion::Funcion { cuerpo, .. } => {
+                for s in cuerpo {
+                    self.renombrar_decl(s);
+                }
+            }
+            Declaracion::Clase { metodos, .. } => {
+                for m in metodos {
+                    for s in &mut m.cuerpo {
+                        self.renombrar_decl(s);
+                    }
+                }
+            }
+            Declaracion::Implementacion { metodos, .. } => {
+                for m in metodos {
+                    for s in &mut m.cuerpo {
+                        self.renombrar_decl(s);
+                    }
+                }
+            }
+            Declaracion::Variable { valor: Some(v), .. } => self.renombrar_expr(v),
+            Declaracion::Expresion(valor) => self.renombrar_expr(valor),
+            Declaracion::Asignacion { valor, .. }
+            | Declaracion::AsignacionMiembro { valor, .. }
+            | Declaracion::AsignacionIndex { valor, .. } => self.renombrar_expr(valor),
+            Declaracion::Retornar { valor: Some(v) } => self.renombrar_expr(v),
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                for a in argumentos.iter_mut() {
+                    self.renombrar_expr(a);
+                }
+                if let Some(nuevo) = self.nombre_especializado_fn(nombre, argumentos) {
+                    *nombre = nuevo;
+                }
+            }
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                self.renombrar_expr(condicion);
+                for s in bloque_verdadero {
+                    self.renombrar_decl(s);
+                }
+                if let Some(b) = bloque_falso {
+                    for s in b {
+                        self.renombrar_decl(s);
+                    }
+                }
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                self.renombrar_expr(condicion);
+                for s in bloque {
+                    self.renombrar_decl(s);
+                }
+            }
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
+                if let Some(i) = inicializacion {
+                    self.renombrar_decl(i);
+                }
+                if let Some(c) = condicion {
+                    self.renombrar_expr(c);
+                }
+                if let Some(i) = incremento {
+                    self.renombrar_decl(i);
+                }
+                for s in bloque {
+                    self.renombrar_decl(s);
+                }
+            }
+            Declaracion::Repetir { cantidad, bloque } => {
+                self.renombrar_expr(cantidad);
+                for s in bloque {
+                    self.renombrar_decl(s);
+                }
+            }
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
+                self.renombrar_expr(condicion);
+                for s in cuerpo {
+                    self.renombrar_decl(s);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn renombrar_expr(&self, e: &mut Expresion) {
+        match e {
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                for a in argumentos.iter_mut() {
+                    self.renombrar_expr(a);
+                }
+                if let Some(nuevo) = self.nombre_especializado_fn(nombre, argumentos) {
+                    *nombre = nuevo;
+                }
+            }
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
+                self.renombrar_expr(objeto);
+                for a in argumentos.iter_mut() {
+                    self.renombrar_expr(a);
+                }
+            }
+            Expresion::Instanciacion { argumentos, .. } => {
+                // Las clases genéricas todavía no se renombran: la sustitución de
+                // tipos de sus campos no cubre todos los casos.
+                for a in argumentos.iter_mut() {
+                    self.renombrar_expr(a);
+                }
+            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                self.renombrar_expr(izquierda);
+                self.renombrar_expr(derecha);
+            }
+            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => self.renombrar_expr(expr),
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.renombrar_expr(condicion);
+                self.renombrar_expr(si_verdadero);
+                self.renombrar_expr(si_falso);
+            }
+            Expresion::Index { objeto, indice } => {
+                self.renombrar_expr(objeto);
+                self.renombrar_expr(indice);
+            }
+            Expresion::Arreglo(items) => {
+                for i in items.iter_mut() {
+                    self.renombrar_expr(i);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares.iter_mut() {
+                    self.renombrar_expr(k);
+                    self.renombrar_expr(v);
+                }
+            }
+            Expresion::Asignacion { valor, .. }
+            | Expresion::AsignacionCampo { valor, .. }
+            | Expresion::AsignacionCompuesta { valor, .. }
+            | Expresion::ArregloFijar { valor, .. }
+            | Expresion::Ok(valor)
+            | Expresion::Error(valor)
+            | Expresion::Algo(valor)
+            | Expresion::Try(valor) => self.renombrar_expr(valor),
+            Expresion::AccesoMiembro { objeto, .. } => self.renombrar_expr(objeto),
+            Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
+                for s in cuerpo {
+                    self.renombrar_decl(s);
+                }
+            }
+            Expresion::Coincidir { expr, brazos } => {
+                self.renombrar_expr(expr);
+                for b in brazos.iter_mut() {
+                    for s in &mut b.cuerpo {
+                        self.renombrar_decl(s);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn obtener_specializations(&self) -> Vec<Declaracion> {
         let mut resultado = Vec::new();
         resultado.extend(self.specialized_classes.clone());

@@ -373,6 +373,9 @@ fn monomorphize_programa(programa: &mut ast::Programa) {
     mono.recolectar_instantiations(programa);
     mono.specialize();
 
+    // Los usos pasan a la versión especializada (`identidad` → `identidad_Texto`);
+    // si no, la especialización queda sin usar y la llamada va a la genérica.
+    mono.aplicar_instantiations(programa);
     let specializations = mono.obtener_specializations();
     if !specializations.is_empty() {
         programa.declaraciones.extend(specializations);
@@ -567,6 +570,17 @@ pub fn resolver_imports(
     let mut alias_modulos: HashMap<String, HashSet<String>> = HashMap::new();
     let mut hir = forja_hir::Hir::nuevo();
 
+    // Nombres de funciones del programa principal: se recolectan antes de
+    // mover las declaraciones (se usan para avisar de colisiones con imports).
+    let funciones_propias: Vec<String> = programa
+        .declaraciones
+        .iter()
+        .filter_map(|decl| match decl {
+            ast::Declaracion::Funcion { nombre, .. } => Some(nombre.clone()),
+            _ => None,
+        })
+        .collect();
+
     let mut final_decls = Vec::new();
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ref ruta) = decl {
@@ -635,6 +649,18 @@ pub fn resolver_imports(
             ));
         }
     }
+    // Aviso (no error): una función propia con el mismo nombre que una del
+    // módulo importado se confunde al inlinear los imports (N4/N28).
+    for (nombre, modulos) in
+        forja_hir::imports::funciones_que_pisan_imports(&funciones_propias, &alias_modulos)
+    {
+        eprintln!(
+            "aviso: la función '{}' tiene el mismo nombre que {}.{}; renombrala (las dos quedan en el mismo espacio de nombres)",
+            nombre,
+            modulos.first().map(|m| m.as_str()).unwrap_or("un módulo"),
+            nombre
+        );
+    }
     for decl in &mut final_decls {
         reescribir_llamadas_de_modulo(decl, &alias_modulos);
     }
@@ -650,6 +676,7 @@ pub fn resolver_imports(
 #[cfg(target_arch = "wasm32")]
 pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
+    use forja_hir::imports::reescribir_llamadas_de_modulo;
     use std::collections::{HashMap, HashSet};
 
     fn parsear(codigo_fuente: &str) -> Result<ast::Programa, String> {
@@ -708,6 +735,14 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
     }
 
     let mut programa = parsear(codigo_fuente)?;
+    let funciones_propias: Vec<String> = programa
+        .declaraciones
+        .iter()
+        .filter_map(|decl| match decl {
+            ast::Declaracion::Funcion { nombre, .. } => Some(nombre.clone()),
+            _ => None,
+        })
+        .collect();
     let mut alias: HashMap<String, HashSet<String>> = HashMap::new();
     let mut visitados: HashSet<String> = HashSet::new();
     let mut final_decls = Vec::new();
@@ -732,6 +767,17 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
                 nombre
             ));
         }
+    }
+    // Mismo aviso que en la ruta de disco: función propia que pisa a una del módulo.
+    for (nombre, modulos) in
+        forja_hir::imports::funciones_que_pisan_imports(&funciones_propias, &alias)
+    {
+        eprintln!(
+            "aviso: la función '{}' tiene el mismo nombre que {}.{}; renombrala (las dos quedan en el mismo espacio de nombres)",
+            nombre,
+            modulos.first().map(|m| m.as_str()).unwrap_or("un módulo"),
+            nombre
+        );
     }
     for decl in &mut final_decls {
         reescribir_llamadas_de_modulo(decl, &alias);
