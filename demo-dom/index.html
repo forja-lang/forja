@@ -65,9 +65,19 @@ funcion main() {
         ),
         pestanas("pestana",
             pestana("lista", "Lista",
-                fila(
-                    entrada_texto("titulo", "comprar pan"),
-                    boton("Agregar", crear_tarea)
+                columna(
+                    aviso("Todo lo que ves lo armó Forja en wasm.", "informacion"),
+                    formulario("", "post",
+                        fila(
+                            entrada_texto("titulo", "comprar pan"),
+                            boton("Agregar", crear_tarea)
+                        )
+                    ),
+                    tabla_ordenable("Tarea", "Estado",
+                        renglon("comprar pan", insignia("pendiente", "neutro")),
+                        renglon("lavar ropa", insignia("pendiente", "neutro")),
+                        renglon("llamar al gasista", insignia("hecha", "exito"))
+                    )
                 )
             ),
             pestana("detalle", "Detalle",
@@ -188,6 +198,10 @@ funcion reiniciar() {
             // Selección en lista: convención sel:<var>:<valor> (repinta).
             app.querySelector('[data-fg-accion="sel:vista:semana"]').click();
           }, 200);
+          // Enter en el formulario: el submit dispara la acción del botón.
+          app.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+          // Tabla ordenable: un clic en la cabecera "Tarea" ordena las filas.
+          app.querySelector('[data-fg-accion="orden:Tarea"]').click();
           // El diálogo se abre al final: cualquier repintado lo vuelve a crear cerrado.
           setTimeout(() => {
             app.querySelector('[data-fg-accion="abrir:confirmar"]').click();

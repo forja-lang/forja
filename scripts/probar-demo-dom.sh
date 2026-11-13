@@ -72,7 +72,9 @@ echo "▶ probando interacción (callbacks + binding de ida)"
 DOM_AUTO="$("$NAVEGADOR" --headless=new --disable-gpu --no-sandbox --virtual-time-budget=30000     --dump-dom "http://127.0.0.1:$PUERTO/?auto=1" 2>/dev/null)"
 
 echo "$DOM_AUTO" | grep -q 'data-auto="listo"' || fallo "la simulación no terminó"
-echo "$DOM_AUTO" | grep -q 'data-fg-variable="tareas">2<'     || fallo "los clics no ejecutaron el callback Forja (se esperaba tareas = 2)"
+# 2 clics + 1 envío del formulario (Enter) = 3
+echo "$DOM_AUTO" | grep -q 'data-fg-variable="tareas">3<'     || fallo "los clics y el submit no ejecutaron el callback Forja (se esperaba tareas = 3)"
+echo "$DOM_AUTO" | grep -q '<form class="fg-formulario"'     || fallo "no hay formulario real en la página"
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="titulo">pan integral<'     || fallo "el cambio del campo no llegó a la variable del programa"
 
 echo "$DOM_AUTO" | grep -q 'aria-selected="true" data-fg-accion="tab:pestana:detalle"'     || fallo "la pestaña no cambió al hacer clic"
@@ -80,6 +82,10 @@ echo "$DOM_AUTO" | grep -q '<dialog id="fg-dialogo-confirmar"[^>]*open'     || f
 echo "$DOM_AUTO" | grep -q '<details class="fg-plegable" open'     || fallo "el bloque plegable no se renderizó abierto"
 echo "$DOM_AUTO" | grep -q 'aria-selected="true" data-fg-accion="sel:vista:semana"'     || fallo "la selección de la lista no cambió (convención sel:)"
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="vista">semana<'     || fallo "la variable de la lista no tomó el valor elegido"
+
+# Tabla ordenable: el clic en la cabecera ordena las filas y marca aria-sort.
+echo "$DOM_AUTO" | grep -q 'aria-sort="descending"'     || fallo "la cabecera no quedó marcada como ordenada"
+echo "$DOM_AUTO" | grep -q '<tbody><tr><td>llamar al gasista'     || fallo "las filas no se ordenaron por la columna Tarea"
 
 # Navegación por teclado de pestañas (flecha derecha). El patrón ARIA la exige.
 echo "▶ probando teclado en pestañas"
@@ -89,5 +95,7 @@ echo "$DOM_KBD" | grep -q 'activa:tab:pestana:detalle'     || fallo "la flecha d
 echo "   wasm cargado · DOM real · label/binding/acción presentes"
 echo "   pestañas cambian (ARIA) · diálogo nativo se abre · plegable abierto"
 echo "   lista con selección (sel:) actualiza la variable"
+echo "   tabla ordenable: filas reordenadas y aria-sort"
 echo "   clics ejecutan callbacks Forja (0 → 2) · el campo escribe la variable"
+echo "   formulario: el submit dispara la acción (tareas = 3)"
 echo "✅ demo de GUI DOM funciona en navegador"
