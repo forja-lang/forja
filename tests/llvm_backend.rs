@@ -297,6 +297,32 @@ verdadero"
 }
 
 #[test]
+fn derive_mostrar_formatea_la_clase() {
+    // `@derive(Mostrar)`: `escribir(obj)` y la concatenación dan
+    // `Clase { campo: valor, … }`, como la VM (antes salía la dirección).
+    let fuente = r#"
+@derive(Mostrar)
+clase Punto {
+    x
+    y: Decimal
+    constructor(a, b) {
+        este.x = a
+        este.y = b
+    }
+}
+variable p = nuevo Punto(1, 2.5)
+escribir(p)
+escribir("p = " + p)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida.trim(),
+            "Punto { x: 1, y: 2.5 }\np = Punto { x: 1, y: 2.5 }"
+        );
+    }
+}
+
+#[test]
 fn mapas_con_valores_de_texto() {
     // La casilla del mapa guarda un i64 con su tag: `escribir(m[clave])` usa el
     // tag y muestra el texto (antes convertía con `a_entero` y daba 0).

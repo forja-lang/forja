@@ -1889,6 +1889,60 @@ impl Lowering {
         }
     }
 
+    /// Texto `Clase { campo: valor, … }` de un objeto con `@derive(Mostrar)`.
+    /// Los campos se formatean según su tipo; un campo que es a su vez una clase
+    /// derivada se formatea recursivamente (hasta 4 niveles).
+    pub(super) fn clase_a_texto(&mut self, obj: &str, clase: &str, nivel: u32) -> String {
+        let campos = self
+            .clases
+            .get(clase)
+            .map(|c| c.campos.clone())
+            .unwrap_or_default();
+        let mut texto = self.texto_constante(&format!("{clase} {{ "));
+        for (i, (nombre, t)) in campos.iter().enumerate() {
+            let etiqueta = if i == 0 {
+                format!("{nombre}: ")
+            } else {
+                format!(", {nombre}: ")
+            };
+            let etiqueta = self.texto_constante(&etiqueta);
+            let p = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
+                p,
+                clase,
+                obj,
+                i + 1
+            ));
+            let v = self.cargar(&p, t);
+            let valor = match t {
+                T::Clase(otra) if nivel < 4 && self.derive_mostrar.contains(otra) => {
+                    let r = self.como(&v, T::Clase(otra.clone()));
+                    self.clase_a_texto(&r, otra, nivel + 1)
+                }
+                T::Clase(otra) => self.texto_constante(&format!("<{otra}>")),
+                T::Enum(nombre_enum) => self.texto_constante(&format!("<{nombre_enum}>")),
+                T::Canal | T::Closure | T::Funcion => self.texto_constante("<objeto>"),
+                _ => self.como(&v, T::Texto),
+            };
+            for trozo in [etiqueta, valor] {
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_concat(ptr {}, ptr {})",
+                    r, texto, trozo
+                ));
+                texto = r;
+            }
+        }
+        let cierre = self.texto_constante(" }");
+        let r = self.r();
+        self.linea(&format!(
+            "{} = call ptr @forja_concat(ptr {}, ptr {})",
+            r, texto, cierre
+        ));
+        r
+    }
+
     /// Valor de una casilla i64 leída de `arr`: `Decimal` bit-casteado, `Texto`
     /// como puntero, o entero.
     fn casilla_a_valor(&mut self, v: &str, arr: &Expresion) -> V {
@@ -2015,6 +2069,12 @@ impl Lowering {
                 let r = self.r();
                 self.linea(&format!("{} = call ptr @forja_exacto_a_texto(ptr {})", r, e));
                 self.linea(&format!("call void @forja_imprimir_texto(ptr {})", r));
+            }
+            // `@derive(Mostrar)`: `Clase { campo: valor, … }` como la VM.
+            T::Clase(c) if self.derive_mostrar.contains(&c) => {
+                let obj = self.como(&v, T::Clase(c.clone()));
+                let texto = self.clase_a_texto(&obj, &c, 0);
+                self.linea(&format!("call void @forja_imprimir_texto(ptr {})", texto));
             }
             T::Canal | T::Closure | T::Clase(_) | T::Funcion => {
                 return Err(

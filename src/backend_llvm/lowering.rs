@@ -57,7 +57,8 @@ impl T {
     }
 
     fn de_tipo(t: &Option<Tipo>) -> Option<T> {
-        t.as_ref().map(|t| match t {
+        let t = t.as_ref()?;
+        Some(match t {
             Tipo::Entero => T::Int,
             Tipo::Decimal => T::Dec,
             Tipo::Texto => T::Texto,
@@ -70,6 +71,9 @@ impl T {
             // como los enums homónimos (tag + un payload i64).
             Tipo::Resultado(..) => T::Enum("Resultado".to_string()),
             Tipo::Opcion(..) => T::Enum("Opcion".to_string()),
+            // Un genérico sin resolver (`funcion f(x: T)`) no dice nada: mejor
+            // sin anotación que forzarlo a `Entero`, así manda la evidencia.
+            Tipo::Parametro(_) => return None,
             _ => T::Int,
         })
     }
@@ -202,6 +206,8 @@ pub struct Lowering {
     /// Variables/campos cuyo arreglo guarda `Decimal` (double bit-casteado en la
     /// casilla i64, como el texto guarda un puntero).
     arreglos_dec: HashMap<String, bool>,
+    /// Clases con `@derive(Mostrar)`: `escribir(obj)` las formatea.
+    derive_mostrar: std::collections::HashSet<String>,
     etiquetas: Vec<(String, String)>, // (romper, continuar)
     ret_actual: T,
     termina: bool,
@@ -303,6 +309,7 @@ impl Lowering {
             evidencia: HashMap::new(),
             arreglos_texto: HashMap::new(),
             arreglos_dec: HashMap::new(),
+            derive_mostrar: std::collections::HashSet::new(),
             etiquetas: Vec::new(),
             ret_actual: T::Int,
             termina: false,
@@ -516,16 +523,19 @@ impl Lowering {
                 ));
                 d
             }
-            // `Resultado`/`Opcion` no llevan la repr de sus variantes: la VM
-            // imprime `<Resultado>` y `<Opcion>`.
-            (V::Enum(_, c), T::Texto) if c == "Resultado" || c == "Opcion" => {
+            // Un valor de `tipo` (enum) concatenado va como `<Nombre>`: la VM no
+            // expone la variante ni el payload.
+            (V::Enum(_, c), T::Texto) => {
                 let texto = format!("<{c}>");
                 self.texto_constante(&texto)
             }
             // shortcut: mapa/enum/clase/función concatenados con Texto se
             // imprimen como la dirección; `escribir` de esos tipos ya devuelve
             // error explícito. Upgrade: `mostrar` por tipo.
-            (V::Mapa(r) | V::Enum(r, _) | V::Clase(r, _) | V::Funcion(r), T::Texto) => {
+            (V::Clase(r, c), T::Texto) if self.derive_mostrar.contains(c) => {
+                self.clase_a_texto(r, c, 0)
+            }
+            (V::Mapa(r) | V::Clase(r, _) | V::Funcion(r), T::Texto) => {
                 let i = self.r();
                 self.linea(&format!("{} = ptrtoint ptr {} to i64", i, r));
                 let d = self.r();
@@ -633,6 +643,8 @@ impl Lowering {
                     let params = self.tipos_params(nombre, parametros, cuerpo);
                     let ret = if *externa && tipo_retorno.is_none() {
                         T::Nulo
+                    } else if matches!(tipo_retorno, Some(Tipo::Parametro(_))) {
+                        T::Int
                     } else {
                         self.tipo_declarado(tipo_retorno)
                             // sin anotación: se infiere del primer `retornar expr`
@@ -660,8 +672,15 @@ impl Lowering {
                     nombre,
                     campos,
                     metodos,
+                    atributos,
                     ..
                 } => {
+                    // `@derive(Mostrar)` → `escribir(obj)` da `Clase { campo: valor }`.
+                    if atributos.iter().any(|a| {
+                        a.nombre == "derive" && a.argumentos.iter().any(|x| x == "Mostrar")
+                    }) {
+                        self.derive_mostrar.insert(nombre.clone());
+                    }
                     let campos: Vec<(String, T)> = campos
                         .iter()
                         .map(|c| {
@@ -676,7 +695,12 @@ impl Lowering {
                     let ms: Vec<(String, Vec<T>, T)> = metodos
                         .iter()
                         .map(|m| {
-                            let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
+                            let clave = if m.nombre == "constructor" || m.nombre == "nuevo" {
+                                format!("constructor@{nombre}")
+                            } else {
+                                m.nombre.clone()
+                            };
+                            let params = self.tipos_params(&clave, &m.parametros, &m.cuerpo);
                             (m.nombre.clone(), params, self.retorno_metodo(m))
                         })
                         .collect();
@@ -1008,6 +1032,11 @@ impl Lowering {
     fn retorno_metodo(&self, m: &Metodo) -> T {
         if m.nombre == "constructor" || m.nombre == "nuevo" {
             return T::Nulo;
+        }
+        // `-> T` sin resolver: se queda como `Entero` (inferirlo de un
+        // `retornar nulo` lo dejaba como `void` y el cuerpo devolvía un valor).
+        if matches!(m.tipo_retorno, Some(Tipo::Parametro(_))) {
+            return T::Int;
         }
         let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
         self.tipo_declarado(&m.tipo_retorno)
@@ -1623,6 +1652,20 @@ fn evidencia_de_llamadas(decls: &[Declaracion]) -> HashMap<String, Vec<Option<T>
             } => {
                 anotar(mapa, en_conflicto, vars, metodo, argumentos);
                 en_expr(objeto, mapa, en_conflicto, vars);
+                for a in argumentos {
+                    en_expr(a, mapa, en_conflicto, vars);
+                }
+            }
+            // `nuevo Clase(args)`: la evidencia de un constructor es por clase
+            // (todos los constructores se llaman "constructor").
+            Expresion::Instanciacion { clase, argumentos } => {
+                anotar(
+                    mapa,
+                    en_conflicto,
+                    vars,
+                    &format!("constructor@{clase}"),
+                    argumentos,
+                );
                 for a in argumentos {
                     en_expr(a, mapa, en_conflicto, vars);
                 }
