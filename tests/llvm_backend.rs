@@ -421,6 +421,35 @@ escribir(nuevo Punto(1, 2) != nuevo Punto(1, 3))
 }
 
 #[test]
+fn clase_generica_que_crea_otra_instanciacion() {
+    // El cuerpo de un método especializado puede instanciar el genérico con
+    // otros tipos (`intercambiar` devuelve `Par<Texto, Entero>`): la
+    // monomorfización recorre esos cuerpos hasta el punto fijo.
+    let fuente = r#"
+clase Par<A, B> {
+    primero
+    segundo
+    constructor(a: A, b: B) {
+        este.primero = a
+        este.segundo = b
+    }
+    funcion obtener_primero() -> A {
+        retornar este.primero
+    }
+    funcion intercambiar() -> Par {
+        retornar nuevo Par(este.segundo, este.primero)
+    }
+}
+variable par = nuevo Par(1, "uno")
+variable cambiado = par.intercambiar()
+escribir(cambiado.obtener_primero())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "uno");
+    }
+}
+
+#[test]
 fn derive_mostrar_formatea_la_clase() {
     // `@derive(Mostrar)`: `escribir(obj)` y la concatenación dan
     // `Clase { campo: valor, … }`, como la VM (antes salía la dirección).

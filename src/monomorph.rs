@@ -416,22 +416,333 @@ impl Monomorphizer {
 
     /// Fase 3: Generar versiones especializadas
     pub fn specialize(&mut self) {
-        // Por cada instanciación detectada, generar la versión especializada
-        let instantiations = self.instantiations.clone();
-        for inst in &instantiations {
-            if let Some(generic_fn) = self.generic_functions.get(&inst.original_name) {
-                let specialized = self.specialize_funcion(generic_fn, inst);
-                self.specialized_functions.push(specialized);
+        // Punto fijo: el cuerpo de una especialización puede instanciar otro
+        // genérico con tipos concretos (`intercambiar` crea `Par<Texto, Entero>`),
+        // así que se repite hasta que no aparezcan instanciaciones nuevas.
+        let mut hechas: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for _ in 0..24 {
+            let pendientes: Vec<GenericInstantiation> = self
+                .instantiations
+                .iter()
+                .filter(|i| !hechas.contains(&i.specialized_name))
+                .cloned()
+                .collect();
+            if pendientes.is_empty() {
+                break;
             }
-            if let Some(generic_cls) = self.generic_classes.get(&inst.original_name) {
-                let specialized = self.specialize_clase(generic_cls, inst);
-                self.specialized_classes.push(specialized);
+            for inst in &pendientes {
+                hechas.insert(inst.specialized_name.clone());
+                if let Some(generic_fn) = self.generic_functions.get(&inst.original_name).cloned() {
+                    let specialized = self.specialize_funcion(&generic_fn, inst);
+                    self.specialized_functions.push(specialized);
+                }
+                if let Some(generic_cls) = self.generic_classes.get(&inst.original_name).cloned() {
+                    let specialized = self.specialize_clase(&generic_cls, inst);
+                    self.specialized_classes.push(specialized);
+                }
             }
         }
     }
 
-    fn specialize_funcion(
+    /// Tipos concretos de los **campos** de una clase genérica: por anotación
+    /// (`campo: T`) o porque el constructor les asigna un parámetro de tipo `T`
+    /// (`este.primero = primero` con `constructor(primero: A)`).
+    fn campos_concretos(
+        generic: &ClaseGenerica,
+        inst: &GenericInstantiation,
+    ) -> HashMap<String, ConcreteTipo> {
+        let de_param = |tipo: &Tipo| -> Option<ConcreteTipo> {
+            if let Tipo::Parametro(nombre) = tipo {
+                inst.argumentos_tipo
+                    .iter()
+                    .find(|(n, _)| n == nombre)
+                    .map(|(_, ct)| ct.clone())
+            } else {
+                None
+            }
+        };
+        let mut mapa = HashMap::new();
+        for c in &generic.campos {
+            if let Some(ct) = c.tipo.as_ref().and_then(&de_param) {
+                mapa.insert(c.nombre.clone(), ct);
+            }
+        }
+        // Lo que el constructor asigna desde un parámetro de tipo.
+        if let Some(ctor) = generic
+            .metodos
+            .iter()
+            .find(|m| m.nombre == "constructor" || m.nombre == "nuevo")
+        {
+            for d in &ctor.cuerpo {
+                // `este.campo = param` llega como `AsignacionMiembro` o como
+                // `Expresion(AsignacionCampo)` según el parser.
+                let asignacion = match d {
+                    Declaracion::AsignacionMiembro {
+                        objeto,
+                        miembro,
+                        valor,
+                        ..
+                    }
+                    | Declaracion::Expresion(Expresion::AsignacionCampo {
+                        objeto,
+                        campo: miembro,
+                        valor,
+                    }) => Some((objeto, miembro, valor)),
+                    _ => None,
+                };
+                if let Some((objeto, miembro, valor)) = asignacion {
+                    let _ = d;
+                    if !matches!(objeto.as_ref(), Expresion::Identificador { nombre, .. } if nombre == "este" || nombre == "self")
+                    {
+                        continue;
+                    }
+                    if let Expresion::Identificador { nombre: param, .. } = valor.as_ref() {
+                        if let Some(ct) = ctor
+                            .parametros
+                            .iter()
+                            .find(|p| &p.nombre == param)
+                            .and_then(|p| p.tipo.as_ref())
+                            .and_then(&de_param)
+                        {
+                            mapa.entry(miembro.clone()).or_insert(ct);
+                        }
+                    }
+                }
+            }
+        }
+        mapa
+    }
+
+    /// Tipo concreto de una expresión dentro de un cuerpo especializado.
+    fn tipo_concreto(
         &self,
+        e: &Expresion,
+        vars: &HashMap<String, ConcreteTipo>,
+    ) -> Option<ConcreteTipo> {
+        match e {
+            Expresion::Identificador { nombre, .. } => vars.get(nombre).cloned(),
+            Expresion::AccesoMiembro { objeto, miembro } => {
+                matches!(objeto.as_ref(), Expresion::Identificador { nombre, .. } if nombre == "este" || nombre == "self")
+                    .then(|| vars.get(&format!("este.{miembro}")).cloned())
+                    .flatten()
+            }
+            Expresion::Grupo(g) => self.tipo_concreto(g, vars),
+            _ => self.infer_concrete_from_expr(e),
+        }
+    }
+
+    /// Reescribe los `nuevo Generico(args)` del cuerpo con su especialización,
+    /// registrando las instanciaciones nuevas.
+    fn especializar_cuerpo(
+        &mut self,
+        cuerpo: &mut [Declaracion],
+        vars: &HashMap<String, ConcreteTipo>,
+    ) {
+        for d in cuerpo {
+            self.especializar_decl(d, vars);
+        }
+    }
+
+    fn especializar_decl(&mut self, d: &mut Declaracion, vars: &HashMap<String, ConcreteTipo>) {
+        match d {
+            Declaracion::Variable { valor: Some(v), .. } => self.especializar_expr(v, vars),
+            Declaracion::Variable { valor: None, .. } => {}
+            Declaracion::Expresion(valor) => self.especializar_expr(valor, vars),
+            Declaracion::Asignacion { valor, .. }
+            | Declaracion::AsignacionMiembro { valor, .. }
+            | Declaracion::AsignacionIndex { valor, .. } => self.especializar_expr(valor, vars),
+            Declaracion::Retornar { valor: Some(v) } => self.especializar_expr(v, vars),
+            Declaracion::LlamadaFuncion { argumentos, .. } => {
+                for a in argumentos.iter_mut() {
+                    self.especializar_expr(a, vars);
+                }
+            }
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                self.especializar_expr(condicion, vars);
+                self.especializar_cuerpo(bloque_verdadero, vars);
+                if let Some(b) = bloque_falso {
+                    self.especializar_cuerpo(b, vars);
+                }
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                self.especializar_expr(condicion, vars);
+                self.especializar_cuerpo(bloque, vars);
+            }
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
+                if let Some(i) = inicializacion {
+                    self.especializar_decl(i, vars);
+                }
+                if let Some(c) = condicion {
+                    self.especializar_expr(c, vars);
+                }
+                if let Some(i) = incremento {
+                    self.especializar_decl(i, vars);
+                }
+                self.especializar_cuerpo(bloque, vars);
+            }
+            Declaracion::Repetir { cantidad, bloque } => {
+                self.especializar_expr(cantidad, vars);
+                self.especializar_cuerpo(bloque, vars);
+            }
+            _ => {}
+        }
+    }
+
+    fn especializar_expr(&mut self, e: &mut Expresion, vars: &HashMap<String, ConcreteTipo>) {
+        match e {
+            Expresion::Instanciacion { clase, argumentos } => {
+                for a in argumentos.iter_mut() {
+                    self.especializar_expr(a, vars);
+                }
+                if let Some(generic) = self.generic_classes.get(clase.as_str()) {
+                    if generic.parametros_tipo.is_empty() {
+                        return;
+                    }
+                    let mut argumentos_tipo = Vec::new();
+                    for (i, pt) in generic.parametros_tipo.iter().enumerate() {
+                        let ct =
+                            argumentos
+                                .get(i)
+                                .and_then(|a| self.tipo_concreto(a, vars))
+                                .or_else(|| {
+                                    // El parámetro de tipo puede venir de un campo.
+                                    generic.campos.iter().zip(argumentos.iter()).find_map(
+                                        |(c, _)| {
+                                            if c.tipo.as_ref()
+                                                == Some(&Tipo::Parametro(pt.nombre.clone()))
+                                            {
+                                                vars.get(&format!("este.{}", c.nombre)).cloned()
+                                            } else {
+                                                None
+                                            }
+                                        },
+                                    )
+                                });
+                        match ct {
+                            Some(ct) => argumentos_tipo.push((pt.nombre.clone(), ct)),
+                            None => return,
+                        }
+                    }
+                    let nombre = format!(
+                        "{}_{}",
+                        clase,
+                        argumentos_tipo
+                            .iter()
+                            .map(|(_, ct)| ct.name())
+                            .collect::<Vec<_>>()
+                            .join("_")
+                    );
+                    if !self
+                        .instantiations
+                        .iter()
+                        .any(|i| i.specialized_name == nombre)
+                    {
+                        self.instantiations.push(GenericInstantiation {
+                            original_name: clase.clone(),
+                            argumentos_tipo,
+                            specialized_name: nombre.clone(),
+                        });
+                    }
+                    *clase = nombre;
+                }
+            }
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for a in argumentos.iter_mut() {
+                    self.especializar_expr(a, vars);
+                }
+            }
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
+                self.especializar_expr(objeto, vars);
+                for a in argumentos.iter_mut() {
+                    self.especializar_expr(a, vars);
+                }
+            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                self.especializar_expr(izquierda, vars);
+                self.especializar_expr(derecha, vars);
+            }
+            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => {
+                self.especializar_expr(expr, vars)
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.especializar_expr(condicion, vars);
+                self.especializar_expr(si_verdadero, vars);
+                self.especializar_expr(si_falso, vars);
+            }
+            Expresion::Index { objeto, indice } => {
+                self.especializar_expr(objeto, vars);
+                self.especializar_expr(indice, vars);
+            }
+            Expresion::Arreglo(items) => {
+                for i in items.iter_mut() {
+                    self.especializar_expr(i, vars);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares.iter_mut() {
+                    self.especializar_expr(k, vars);
+                    self.especializar_expr(v, vars);
+                }
+            }
+            Expresion::Asignacion { valor, .. }
+            | Expresion::AsignacionCampo { valor, .. }
+            | Expresion::AsignacionCompuesta { valor, .. }
+            | Expresion::ArregloFijar { valor, .. }
+            | Expresion::Ok(valor)
+            | Expresion::Error(valor)
+            | Expresion::Algo(valor)
+            | Expresion::Try(valor) => self.especializar_expr(valor, vars),
+            Expresion::AccesoMiembro { objeto, .. } => self.especializar_expr(objeto, vars),
+            _ => {}
+        }
+    }
+
+    /// Nombre de la primera `Instanciacion` devuelta por el cuerpo.
+    fn clase_devuelta(cuerpo: &[Declaracion]) -> Option<String> {
+        for d in cuerpo {
+            match d {
+                Declaracion::Retornar {
+                    valor: Some(Expresion::Instanciacion { clase, .. }),
+                } => return Some(clase.clone()),
+                Declaracion::Si {
+                    bloque_verdadero,
+                    bloque_falso,
+                    ..
+                } => {
+                    if let Some(c) = Self::clase_devuelta(bloque_verdadero) {
+                        return Some(c);
+                    }
+                    if let Some(b) = bloque_falso {
+                        if let Some(c) = Self::clase_devuelta(b) {
+                            return Some(c);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn specialize_funcion(
+        &mut self,
         generic: &FuncionGenerica,
         inst: &GenericInstantiation,
     ) -> Declaracion {
@@ -453,15 +764,35 @@ impl Monomorphizer {
             })
             .collect();
 
+        // El cuerpo también se especializa: sus `nuevo Generico(args)` pasan a la
+        // versión concreta (y registran las instanciaciones que falten).
+        let mut vars: HashMap<String, ConcreteTipo> = HashMap::new();
+        for p in &generic.parametros {
+            if let Some(Tipo::Parametro(n)) = &p.tipo {
+                if let Some((_, ct)) = inst.argumentos_tipo.iter().find(|(x, _)| x == n) {
+                    vars.insert(p.nombre.clone(), ct.clone());
+                }
+            }
+        }
+        let mut cuerpo = generic.cuerpo.clone();
+        self.especializar_cuerpo(&mut cuerpo, &vars);
+        let retorno = generic
+            .tipo_retorno
+            .as_ref()
+            .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo));
+        // `-> Par` devolviendo `nuevo Par(...)`: el retorno es la especialización.
+        let retorno = match &retorno {
+            Some(Tipo::Clase(n)) if self.generic_classes.contains_key(n) => {
+                Self::clase_devuelta(&cuerpo).map(Tipo::Clase).or(retorno)
+            }
+            _ => retorno,
+        };
         Declaracion::Funcion {
             nombre: inst.specialized_name.clone(),
             parametros_tipo: Vec::new(), // Sin parámetros de tipo
             parametros: nuevo_params,
-            tipo_retorno: generic
-                .tipo_retorno
-                .as_ref()
-                .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo)),
-            cuerpo: generic.cuerpo.clone(), // Simplificación: cuerpo sin reemplazo de tipos
+            tipo_retorno: retorno,
+            cuerpo,
             externa: false,
             asincrona: false,
             enlace_nombre: None,
@@ -473,7 +804,7 @@ impl Monomorphizer {
     }
 
     fn specialize_clase(
-        &self,
+        &mut self,
         generic: &ClaseGenerica,
         inst: &GenericInstantiation,
     ) -> Declaracion {
@@ -501,27 +832,51 @@ impl Monomorphizer {
             metodos: generic
                 .metodos
                 .iter()
-                .map(|m| Metodo {
-                    nombre: m.nombre.clone(),
-                    parametros: m
-                        .parametros
-                        .iter()
-                        .map(|p| Parametro {
-                            nombre: p.nombre.clone(),
-                            prestado: p.prestado,
-                            mutable: p.mutable,
-                            tipo: p.tipo.as_ref().and_then(|t| {
-                                self.reemplazar_tipo_params(t, &inst.argumentos_tipo)
-                            }),
-                        })
-                        .collect(),
-                    tipo_retorno: m
+                .map(|m| {
+                    // Entorno del cuerpo: campos y parámetros con su tipo concreto.
+                    let mut vars = Self::campos_concretos(generic, inst);
+                    for p in &m.parametros {
+                        if let Some(Tipo::Parametro(n)) = &p.tipo {
+                            if let Some((_, ct)) = inst.argumentos_tipo.iter().find(|(x, _)| x == n)
+                            {
+                                vars.insert(p.nombre.clone(), ct.clone());
+                            }
+                        }
+                    }
+                    for (campo, ct) in Self::campos_concretos(generic, inst) {
+                        vars.insert(format!("este.{campo}"), ct);
+                    }
+                    let mut cuerpo = m.cuerpo.clone();
+                    self.especializar_cuerpo(&mut cuerpo, &vars);
+                    let retorno = m
                         .tipo_retorno
                         .as_ref()
-                        .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo)),
-                    cuerpo: m.cuerpo.clone(),
-                    precondiciones: m.precondiciones.clone(),
-                    postcondiciones: m.postcondiciones.clone(),
+                        .and_then(|t| self.reemplazar_tipo_params(t, &inst.argumentos_tipo));
+                    let retorno = match &retorno {
+                        Some(Tipo::Clase(n)) if self.generic_classes.contains_key(n) => {
+                            Self::clase_devuelta(&cuerpo).map(Tipo::Clase).or(retorno)
+                        }
+                        _ => retorno,
+                    };
+                    Metodo {
+                        nombre: m.nombre.clone(),
+                        parametros: m
+                            .parametros
+                            .iter()
+                            .map(|p| Parametro {
+                                nombre: p.nombre.clone(),
+                                prestado: p.prestado,
+                                mutable: p.mutable,
+                                tipo: p.tipo.as_ref().and_then(|t| {
+                                    self.reemplazar_tipo_params(t, &inst.argumentos_tipo)
+                                }),
+                            })
+                            .collect(),
+                        tipo_retorno: retorno,
+                        cuerpo,
+                        precondiciones: m.precondiciones.clone(),
+                        postcondiciones: m.postcondiciones.clone(),
+                    }
                 })
                 .collect(),
             atributos: Vec::new(),
