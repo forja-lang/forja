@@ -900,7 +900,18 @@ impl Lowering {
                     .cloned()
                     .unwrap_or((Vec::new(), T::Int));
                 let _ = tipo_retorno;
-                self.funcion(nombre, parametros, &params, ret.clone(), cuerpo)?;
+                let precondiciones = match d {
+                    Declaracion::Funcion { precondiciones, .. } => precondiciones.as_slice(),
+                    _ => &[],
+                };
+                self.funcion(
+                    nombre,
+                    parametros,
+                    &params,
+                    ret.clone(),
+                    precondiciones,
+                    cuerpo,
+                )?;
             }
         }
 

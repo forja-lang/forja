@@ -877,7 +877,10 @@ impl Lowering {
     // ── llamadas ─────────────────────────────────────────────────────────
 
     pub(super) fn llamada(&mut self, nombre: &str, argumentos: &[Expresion]) -> Result<V, String> {
-        if nombre == "escribir" {
+        // `imprimir` es un builtin de la VM (imprime el valor y un salto, como
+        // `escribir`); la función de `std/io` le agrega su propio salto de línea
+        // y no es lo que corre la VM.
+        if nombre == "escribir" || nombre == "imprimir" {
             for a in argumentos {
                 self.imprimir(a)?;
             }

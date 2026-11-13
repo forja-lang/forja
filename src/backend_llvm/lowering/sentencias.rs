@@ -10,6 +10,7 @@ impl Lowering {
         parametros: &[Parametro],
         tipos: &[T],
         ret: T,
+        precondiciones: &[crate::ast::Contrato],
         cuerpo: &[Declaracion],
     ) -> Result<(), String> {
         let nombre_ir = if nombre == "main" {
@@ -47,6 +48,7 @@ impl Lowering {
             self.vars.insert(p.nombre.clone(), Var { slot, t });
         }
 
+        self.verificar_contratos(precondiciones, "precondición")?;
         for s in cuerpo {
             self.sentencia(s)?;
         }
@@ -142,6 +144,7 @@ impl Lowering {
             self.vars.insert(p.nombre.clone(), Var { slot, t });
         }
 
+        self.verificar_contratos(&m.precondiciones, "precondición")?;
         for s in &m.cuerpo {
             self.sentencia(s)?;
         }
@@ -493,6 +496,35 @@ impl Lowering {
                     self.vars.insert(nombre.clone(), Var { slot, t: T::Canal });
                 }
             }
+        }
+        Ok(())
+    }
+    /// Verifica las precondiciones (`requiere`) al entrar: si alguna no se
+    /// cumple, imprime el mensaje que da la VM y aborta.
+    ///
+    /// shortcut: sólo precondiciones; las `asegura` habría que inyectarlas antes
+    /// de cada `retornar`. Upgrade: cuando algún ejemplo lo necesite.
+    fn verificar_contratos(
+        &mut self,
+        contratos: &[crate::ast::Contrato],
+        clase: &str,
+    ) -> Result<(), String> {
+        for contrato in contratos {
+            let valor = self.expr(&contrato.condicion)?;
+            let ok = self.cond(&valor);
+            let falla = self.bloque("contrato.falla");
+            let sigue = self.bloque("contrato.ok");
+            self.linea(&format!("br i1 {}, label %{}, label %{}", ok, sigue, falla));
+            self.etiqueta(&falla);
+            let mensaje = contrato.mensaje.clone().unwrap_or_default();
+            let texto =
+                format!("Error en ejecución: contrato violado: {clase} no se cumple: {mensaje}");
+            let texto = self.texto_constante(&texto);
+            self.linea(&format!("call void @forja_imprimir_texto(ptr {})", texto));
+            self.linea("call void @forja_nueva_linea()");
+            self.linea("call void @exit(i32 1)");
+            self.linea("unreachable");
+            self.etiqueta(&sigue);
         }
         Ok(())
     }

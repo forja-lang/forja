@@ -20,6 +20,14 @@ fn hay_clang() -> bool {
 /// Compila el fuente a nativo con clang + el runtime de soporte y devuelve la
 /// salida estándar. `None` si no hay clang.
 fn ejecutar_nativo(fuente: &str) -> Option<String> {
+    let (codigo, salida) = ejecutar_nativo_con_codigo(fuente)?;
+    assert!(codigo == 0, "el binario salió con {codigo}: {salida}");
+    Some(salida)
+}
+
+/// Igual que [`ejecutar_nativo`] pero devuelve el código de salida y no falla si
+/// el programa aborta (contratos, errores de runtime).
+fn ejecutar_nativo_con_codigo(fuente: &str) -> Option<(i32, String)> {
     if !hay_clang() {
         return None;
     }
@@ -52,12 +60,9 @@ fn ejecutar_nativo(fuente: &str) -> Option<String> {
     );
     let corrida = Command::new(&exe).output().expect("ejecutar");
     let _ = std::fs::remove_dir_all(&directorio);
-    assert!(
-        corrida.status.success(),
-        "el binario abortó: {}",
-        String::from_utf8_lossy(&corrida.stderr)
-    );
-    Some(String::from_utf8_lossy(&corrida.stdout).replace("\r\n", "\n"))
+    let mut salida = String::from_utf8_lossy(&corrida.stdout).replace("\r\n", "\n");
+    salida.push_str(&String::from_utf8_lossy(&corrida.stderr));
+    Some((corrida.status.code().unwrap_or(-1), salida))
 }
 
 #[test]
@@ -293,6 +298,31 @@ falso
 verdadero
 verdadero"
         );
+    }
+}
+
+#[test]
+fn precondiciones_abortan_con_el_mensaje_de_la_vm() {
+    let fuente = r#"
+funcion dividir(a: Entero, b: Entero) -> Entero
+    requiere b != 0, "No dividir por cero"
+{
+    retornar a / b
+}
+escribir(dividir(10, 2))
+escribir(dividir(10, 0))
+escribir("no se llega")
+"#;
+    if let Some((codigo, salida)) = ejecutar_nativo_con_codigo(fuente) {
+        assert!(
+            salida.contains("Error en ejecución: contrato violado: precondición no se cumple: No dividir por cero"),
+            "salida inesperada: {salida}"
+        );
+        assert!(
+            !salida.contains("no se llega"),
+            "siguió después del contrato"
+        );
+        assert_ne!(codigo, 0, "debería abortar");
     }
 }
 
