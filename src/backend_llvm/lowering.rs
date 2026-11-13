@@ -698,7 +698,7 @@ impl Lowering {
                             (
                                 c.nombre.clone(),
                                 self.tipo_declarado(&c.tipo)
-                                    .or_else(|| inferir_campo(nombre, &c.nombre, decls))
+                                    .or_else(|| self.inferir_campo(nombre, &c.nombre, decls))
                                     .unwrap_or(T::Int),
                             )
                         })
@@ -1064,6 +1064,184 @@ impl Lowering {
         self.tipo_declarado(&m.tipo_retorno)
             .or_else(|| self.inferir_retorno(&m.cuerpo, &m.parametros, &params))
             .unwrap_or(T::Nulo)
+    }
+
+    /// Tipos de los parámetros de un método más los locales del cuerpo (lo que
+    /// hace falta para saber de qué tipo es lo que se le asigna a un campo).
+    fn pistas_de(
+        &self,
+        nombre: &str,
+        parametros: &[Parametro],
+        cuerpo: &[Declaracion],
+    ) -> HashMap<String, T> {
+        let mut pistas: HashMap<String, T> = HashMap::new();
+        self.preescanear_tipos(cuerpo, &mut pistas);
+        let tipos = self.tipos_params(nombre, parametros, cuerpo);
+        for (i, p) in parametros.iter().enumerate() {
+            if let Some(t) = tipos.get(i) {
+                pistas.insert(p.nombre.clone(), t.clone());
+            }
+        }
+        pistas
+    }
+
+    fn inferir_campo(&self, clase: &str, campo: &str, decls: &[Declaracion]) -> Option<T> {
+        fn tipo_valor(e: &Expresion, pistas: &HashMap<String, T>) -> Option<T> {
+            Some(match e {
+                Expresion::LiteralTexto(_) => T::Texto,
+                Expresion::LiteralDecimal(_) => T::Dec,
+                Expresion::LiteralExacto(..) => T::Exacto,
+                Expresion::Arreglo(_) => T::Arreglo,
+                Expresion::Mapa(_) => T::Mapa,
+                Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+                Expresion::LiteralBooleano(_) => T::Bool,
+                // `este.campo = valor` con `valor` un parámetro o local con tipo.
+                Expresion::Identificador { nombre, .. } => pistas.get(nombre).cloned()?,
+                _ => return None,
+            })
+        }
+        fn en_expr(e: &Expresion, campo: &str, pistas: &HashMap<String, T>, out: &mut Vec<T>) {
+            match e {
+                Expresion::AsignacionCampo {
+                    campo: c, valor, ..
+                } => {
+                    if c == campo {
+                        if let Some(t) = tipo_valor(valor, pistas) {
+                            out.push(t);
+                        }
+                    }
+                    en_expr(valor, campo, pistas, out);
+                }
+                Expresion::Binaria {
+                    izquierda, derecha, ..
+                } => {
+                    en_expr(izquierda, campo, pistas, out);
+                    en_expr(derecha, campo, pistas, out);
+                }
+                Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => {
+                    en_expr(expr, campo, pistas, out)
+                }
+                Expresion::Ternario {
+                    condicion,
+                    si_verdadero,
+                    si_falso,
+                } => {
+                    en_expr(condicion, campo, pistas, out);
+                    en_expr(si_verdadero, campo, pistas, out);
+                    en_expr(si_falso, campo, pistas, out);
+                }
+                Expresion::Index { objeto, indice } => {
+                    en_expr(objeto, campo, pistas, out);
+                    en_expr(indice, campo, pistas, out);
+                }
+                Expresion::LlamadaFuncion { argumentos, .. } => {
+                    for a in argumentos {
+                        en_expr(a, campo, pistas, out);
+                    }
+                }
+                Expresion::LlamadaMetodo {
+                    objeto, argumentos, ..
+                } => {
+                    en_expr(objeto, campo, pistas, out);
+                    for a in argumentos {
+                        en_expr(a, campo, pistas, out);
+                    }
+                }
+                Expresion::AccesoMiembro { objeto, .. } => en_expr(objeto, campo, pistas, out),
+                _ => {}
+            }
+        }
+        fn en_sentencias(
+            cuerpo: &[Declaracion],
+            campo: &str,
+            pistas: &HashMap<String, T>,
+            out: &mut Vec<T>,
+        ) {
+            for d in cuerpo {
+                match d {
+                    Declaracion::AsignacionMiembro { miembro, valor, .. } => {
+                        if miembro == campo {
+                            if let Some(t) = tipo_valor(valor, pistas) {
+                                out.push(t);
+                            }
+                        }
+                        en_expr(valor, campo, pistas, out);
+                    }
+                    Declaracion::Variable { valor: Some(v), .. } => en_expr(v, campo, pistas, out),
+                    Declaracion::Asignacion { valor, .. }
+                    | Declaracion::AsignacionIndex { valor, .. } => {
+                        en_expr(valor, campo, pistas, out)
+                    }
+                    Declaracion::Si {
+                        condicion,
+                        bloque_verdadero,
+                        bloque_falso,
+                    } => {
+                        en_expr(condicion, campo, pistas, out);
+                        en_sentencias(bloque_verdadero, campo, pistas, out);
+                        if let Some(b) = bloque_falso {
+                            en_sentencias(b, campo, pistas, out);
+                        }
+                    }
+                    Declaracion::Mientras { condicion, bloque } => {
+                        en_expr(condicion, campo, pistas, out);
+                        en_sentencias(bloque, campo, pistas, out);
+                    }
+                    Declaracion::Para { bloque, .. } | Declaracion::Repetir { bloque, .. } => {
+                        en_sentencias(bloque, campo, pistas, out)
+                    }
+                    Declaracion::Retornar { valor: Some(v) } => en_expr(v, campo, pistas, out),
+                    Declaracion::Expresion(e) => en_expr(e, campo, pistas, out),
+                    Declaracion::LlamadaFuncion { argumentos, .. } => {
+                        for a in argumentos {
+                            en_expr(a, campo, pistas, out)
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut tipos: Vec<T> = Vec::new();
+        for d in decls {
+            match d {
+                Declaracion::Clase {
+                    nombre, metodos, ..
+                } if nombre == clase => {
+                    for m in metodos {
+                        let pistas = self.pistas_de(&m.nombre, &m.parametros, &m.cuerpo);
+                        en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
+                    }
+                }
+                Declaracion::Implementacion {
+                    clase_nombre,
+                    metodos,
+                    ..
+                } if clase_nombre == clase => {
+                    for m in metodos {
+                        let pistas = self.pistas_de(&m.nombre, &m.parametros, &m.cuerpo);
+                        en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
+                    }
+                }
+                // El campo también se llena desde fuera (`p.nombre = "Rex"`).
+                Declaracion::Funcion { cuerpo, .. } => {
+                    en_sentencias(cuerpo, campo, &HashMap::new(), &mut tipos)
+                }
+                _ => {}
+            }
+        }
+        // Sólo interesa un tipo distinto de Entero, y que todas las asignaciones
+        // coincidan: con dos candidatos distintos no hay nada seguro que elegir.
+        let mut distintos: Vec<T> = Vec::new();
+        for t in tipos {
+            if t != T::Int && !distintos.contains(&t) {
+                distintos.push(t);
+            }
+        }
+        if distintos.len() == 1 {
+            distintos.pop()
+        } else {
+            None
+        }
     }
 
     /// Tipos de los parámetros: el anotado o, si no tiene, el que se deduce del
@@ -1872,150 +2050,6 @@ fn unificar_retorno(tipos: &[T]) -> Option<T> {
 /// shortcut: mira todas las asignaciones al campo en el programa (dentro y
 /// fuera de la clase); si dos clases homónimas lo llenan con tipos distintos,
 /// queda como Entero. Upgrade: inferencia por receptor.
-fn inferir_campo(clase: &str, campo: &str, decls: &[Declaracion]) -> Option<T> {
-    fn tipo_valor(e: &Expresion) -> Option<T> {
-        Some(match e {
-            Expresion::LiteralTexto(_) => T::Texto,
-            Expresion::LiteralDecimal(_) => T::Dec,
-            Expresion::LiteralExacto(..) => T::Exacto,
-            Expresion::Arreglo(_) => T::Arreglo,
-            Expresion::Mapa(_) => T::Mapa,
-            Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
-            Expresion::LiteralBooleano(_) => T::Bool,
-            _ => return None,
-        })
-    }
-    fn en_expr(e: &Expresion, campo: &str, out: &mut Vec<T>) {
-        match e {
-            Expresion::AsignacionCampo {
-                campo: c, valor, ..
-            } => {
-                if c == campo {
-                    if let Some(t) = tipo_valor(valor) {
-                        out.push(t);
-                    }
-                }
-                en_expr(valor, campo, out);
-            }
-            Expresion::Binaria {
-                izquierda, derecha, ..
-            } => {
-                en_expr(izquierda, campo, out);
-                en_expr(derecha, campo, out);
-            }
-            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => en_expr(expr, campo, out),
-            Expresion::Ternario {
-                condicion,
-                si_verdadero,
-                si_falso,
-            } => {
-                en_expr(condicion, campo, out);
-                en_expr(si_verdadero, campo, out);
-                en_expr(si_falso, campo, out);
-            }
-            Expresion::Index { objeto, indice } => {
-                en_expr(objeto, campo, out);
-                en_expr(indice, campo, out);
-            }
-            Expresion::LlamadaFuncion { argumentos, .. } => {
-                for a in argumentos {
-                    en_expr(a, campo, out);
-                }
-            }
-            Expresion::LlamadaMetodo {
-                objeto, argumentos, ..
-            } => {
-                en_expr(objeto, campo, out);
-                for a in argumentos {
-                    en_expr(a, campo, out);
-                }
-            }
-            Expresion::AccesoMiembro { objeto, .. } => en_expr(objeto, campo, out),
-            _ => {}
-        }
-    }
-    fn en_sentencias(cuerpo: &[Declaracion], campo: &str, out: &mut Vec<T>) {
-        for d in cuerpo {
-            match d {
-                Declaracion::AsignacionMiembro { miembro, valor, .. } => {
-                    if miembro == campo {
-                        if let Some(t) = tipo_valor(valor) {
-                            out.push(t);
-                        }
-                    }
-                    en_expr(valor, campo, out);
-                }
-                Declaracion::Variable { valor: Some(v), .. } => en_expr(v, campo, out),
-                Declaracion::Asignacion { valor, .. }
-                | Declaracion::AsignacionIndex { valor, .. } => en_expr(valor, campo, out),
-                Declaracion::Si {
-                    condicion,
-                    bloque_verdadero,
-                    bloque_falso,
-                } => {
-                    en_expr(condicion, campo, out);
-                    en_sentencias(bloque_verdadero, campo, out);
-                    if let Some(b) = bloque_falso {
-                        en_sentencias(b, campo, out);
-                    }
-                }
-                Declaracion::Mientras { condicion, bloque } => {
-                    en_expr(condicion, campo, out);
-                    en_sentencias(bloque, campo, out);
-                }
-                Declaracion::Para { bloque, .. } | Declaracion::Repetir { bloque, .. } => {
-                    en_sentencias(bloque, campo, out)
-                }
-                Declaracion::Retornar { valor: Some(v) } => en_expr(v, campo, out),
-                Declaracion::Expresion(e) => en_expr(e, campo, out),
-                Declaracion::LlamadaFuncion { argumentos, .. } => {
-                    for a in argumentos {
-                        en_expr(a, campo, out)
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    let mut tipos: Vec<T> = Vec::new();
-    for d in decls {
-        match d {
-            Declaracion::Clase {
-                nombre, metodos, ..
-            } if nombre == clase => {
-                for m in metodos {
-                    en_sentencias(&m.cuerpo, campo, &mut tipos);
-                }
-            }
-            Declaracion::Implementacion {
-                clase_nombre,
-                metodos,
-                ..
-            } if clase_nombre == clase => {
-                for m in metodos {
-                    en_sentencias(&m.cuerpo, campo, &mut tipos);
-                }
-            }
-            // El campo también se llena desde fuera (`p.nombre = "Rex"`).
-            Declaracion::Funcion { cuerpo, .. } => en_sentencias(cuerpo, campo, &mut tipos),
-            _ => {}
-        }
-    }
-    // Sólo interesa un tipo distinto de Entero, y que todas las asignaciones
-    // coincidan: con dos candidatos distintos no hay nada seguro que elegir.
-    let mut distintos: Vec<T> = Vec::new();
-    for t in tipos {
-        if t != T::Int && !distintos.contains(&t) {
-            distintos.push(t);
-        }
-    }
-    if distintos.len() == 1 {
-        distintos.pop()
-    } else {
-        None
-    }
-}
-
 /// Tipo de un parámetro sin anotar, deducido de cómo lo usa el cuerpo: si lo
 /// indexa (`p[i]`, `p[i] = v`) o le empuja elementos, es un arreglo., deducido de cómo lo usa el cuerpo: si lo
 /// indexa (`p[i]`, `p[i] = v`) o le empuja elementos, es un arreglo.
