@@ -1285,9 +1285,12 @@ impl Lowering {
                     }
                     _ => declarado,
                 };
+                // La evidencia (qué llegó en las llamadas) es más fiable que la
+                // forma en que el cuerpo usa el parámetro: `validar_email(email)`
+                // se llama con un `Texto` aunque el cuerpo lo indexe.
                 declarado
-                    .or_else(|| inferir_parametro(&p.nombre, cuerpo))
                     .or(evidencia)
+                    .or_else(|| inferir_parametro(&p.nombre, cuerpo))
                     .unwrap_or(T::Int)
             })
             .collect()
@@ -2240,12 +2243,18 @@ fn evidencia_de_llamadas(
                     }
                 }
                 Declaracion::Funcion {
-                    parametros, cuerpo, ..
+                    nombre,
+                    parametros,
+                    cuerpo,
+                    ..
                 } => {
-                    // Los parámetros anotados del propio cuerpo también son pistas.
+                    // Los parámetros anotados del propio cuerpo también son pistas
+                    // (y, en la segunda vuelta, lo que ya se sabe por las llamadas).
                     let mut propias = vars.clone();
-                    for p in parametros {
-                        if let Some(t) = T::de_tipo(&p.tipo) {
+                    let conocidos = mapa.get(nombre).cloned().unwrap_or_default();
+                    for (i, p) in parametros.iter().enumerate() {
+                        let t = T::de_tipo(&p.tipo).or_else(|| conocidos.get(i).cloned().flatten());
+                        if let Some(t) = t {
                             propias.insert(p.nombre.clone(), t);
                         }
                     }
@@ -2288,14 +2297,18 @@ fn evidencia_de_llamadas(
     // para saber qué parámetros reciben un arreglo de textos.
     let mut por_llamada_args: HashMap<String, Vec<Expresion>> = HashMap::new();
     let mut cadenas_texto: std::collections::HashSet<String> = std::collections::HashSet::new();
-    en_sentencias(
-        decls,
-        &mut mapa,
-        &mut en_conflicto,
-        &mut por_llamada_args,
-        &mut cadenas_texto,
-        &mut HashMap::new(),
-    );
+    // Dos vueltas: la segunda ya conoce los tipos de los parámetros que la
+    // primera dedujo de las llamadas (`validar_usuario(email)` → `validar_email`).
+    for _ in 0..2 {
+        en_sentencias(
+            decls,
+            &mut mapa,
+            &mut en_conflicto,
+            &mut por_llamada_args,
+            &mut cadenas_texto,
+            &mut HashMap::new(),
+        );
+    }
     // Argumentos que son un arreglo de textos: en el callee, las casillas de ese
     // parámetro se leen como punteros (`campos[i]` de un `["nombre", …]`).
     let mut texto = std::collections::HashSet::new();
