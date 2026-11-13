@@ -297,6 +297,28 @@ verdadero"
 }
 
 #[test]
+fn derive_igual_compara_campos() {
+    // `@derive(Igual)`: `==` compara campo por campo (antes comparaba punteros).
+    let fuente = r#"
+@derive(Igual)
+clase Punto {
+    x
+    y
+    constructor(a, b) {
+        este.x = a
+        este.y = b
+    }
+}
+escribir(nuevo Punto(1, 2) == nuevo Punto(1, 2))
+escribir(nuevo Punto(1, 2) == nuevo Punto(1, 3))
+escribir(nuevo Punto(1, 2) != nuevo Punto(1, 3))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "verdadero\nfalso\nverdadero");
+    }
+}
+
+#[test]
 fn derive_mostrar_formatea_la_clase() {
     // `@derive(Mostrar)`: `escribir(obj)` y la concatenación dan
     // `Clase { campo: valor, … }`, como la VM (antes salía la dirección).

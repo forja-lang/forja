@@ -208,6 +208,8 @@ pub struct Lowering {
     arreglos_dec: HashMap<String, bool>,
     /// Clases con `@derive(Mostrar)`: `escribir(obj)` las formatea.
     derive_mostrar: std::collections::HashSet<String>,
+    /// Clases con `@derive(Igual)`: `==` compara campo por campo.
+    derive_igual: std::collections::HashSet<String>,
     etiquetas: Vec<(String, String)>, // (romper, continuar)
     ret_actual: T,
     termina: bool,
@@ -310,6 +312,7 @@ impl Lowering {
             arreglos_texto: HashMap::new(),
             arreglos_dec: HashMap::new(),
             derive_mostrar: std::collections::HashSet::new(),
+            derive_igual: std::collections::HashSet::new(),
             etiquetas: Vec::new(),
             ret_actual: T::Int,
             termina: false,
@@ -680,6 +683,14 @@ impl Lowering {
                         a.nombre == "derive" && a.argumentos.iter().any(|x| x == "Mostrar")
                     }) {
                         self.derive_mostrar.insert(nombre.clone());
+                    }
+                    if atributos.iter().any(|a| {
+                        a.nombre == "derive"
+                            && a.argumentos
+                                .iter()
+                                .any(|x| x == "Igual" || x == "Igualdad" || x == "Eq")
+                    }) {
+                        self.derive_igual.insert(nombre.clone());
                     }
                     let campos: Vec<(String, T)> = campos
                         .iter()

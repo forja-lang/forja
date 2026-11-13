@@ -554,6 +554,70 @@ impl Lowering {
 
     fn binaria_valores_con(&mut self, a: V, b: V, operador: &Operador) -> Result<V, String> {
         use Operador::*;
+        // `@derive(Igual)`: dos objetos de la misma clase se comparan campo a
+        // campo (si no, `==` compara punteros, que siempre da `falso`).
+        if matches!(operador, IgualIgual | Diferente) {
+            if let (V::Clase(ra, ca), V::Clase(rb, cb)) = (&a, &b) {
+                if ca == cb && self.derive_igual.contains(ca) {
+                    let iguales = self.clase_igual(ra, rb, ca, 0);
+                    if matches!(operador, Diferente) {
+                        let neg = self.r();
+                        self.linea(&format!("{} = xor i1 {}, true", neg, iguales));
+                        let z = self.r();
+                        self.linea(&format!("{} = zext i1 {} to i64", z, neg));
+                        return Ok(V::Bool(z));
+                    }
+                    let z = self.r();
+                    self.linea(&format!("{} = zext i1 {} to i64", z, iguales));
+                    return Ok(V::Bool(z));
+                }
+            }
+        }
+        // Dos valores de un mismo `tipo` (enum): se compara el tag y el payload
+        // (los punteros de dos variantes iguales son distintos).
+        if matches!(operador, IgualIgual | Diferente) {
+            if let (V::Enum(ra, ea), V::Enum(rb, eb)) = (&a, &b) {
+                if ea == eb {
+                    let max = self.enums.get(ea).map(|e| e.max_campos).unwrap_or(0);
+                    let mut res: Option<String> = None;
+                    for i in 0..=max {
+                        let pa = self.r();
+                        self.linea(&format!(
+                            "{} = getelementptr inbounds %Enum.{}, ptr {}, i32 0, i32 {}",
+                            pa, ea, ra, i
+                        ));
+                        let va = self.r();
+                        self.linea(&format!("{} = load i64, ptr {}", va, pa));
+                        let pb = self.r();
+                        self.linea(&format!(
+                            "{} = getelementptr inbounds %Enum.{}, ptr {}, i32 0, i32 {}",
+                            pb, eb, rb, i
+                        ));
+                        let vb = self.r();
+                        self.linea(&format!("{} = load i64, ptr {}", vb, pb));
+                        let eq = self.r();
+                        self.linea(&format!("{} = icmp eq i64 {}, {}", eq, va, vb));
+                        res = Some(match res {
+                            None => eq,
+                            Some(previo) => {
+                                let r = self.r();
+                                self.linea(&format!("{} = and i1 {}, {}", r, previo, eq));
+                                r
+                            }
+                        });
+                    }
+                    let mut iguales = res.unwrap_or_else(|| "true".to_string());
+                    if matches!(operador, Diferente) {
+                        let neg = self.r();
+                        self.linea(&format!("{} = xor i1 {}, true", neg, iguales));
+                        iguales = neg;
+                    }
+                    let z = self.r();
+                    self.linea(&format!("{} = zext i1 {} to i64", z, iguales));
+                    return Ok(V::Bool(z));
+                }
+            }
+        }
         // Texto: concatenación y comparación con el runtime.
         let texto = a.t() == T::Texto || b.t() == T::Texto;
         if texto && matches!(operador, Suma) {
@@ -1887,6 +1951,86 @@ impl Lowering {
                 .and_then(|k| self.arreglos_texto.get(&k).copied())
                 .unwrap_or(false),
         }
+    }
+
+    /// `i1` que dice si dos objetos de la misma clase tienen los campos iguales
+    /// (`@derive(Igual)`). Un campo que es otra clase derivada se compara igual;
+    /// si no deriva, por puntero.
+    fn clase_igual(&mut self, a: &str, b: &str, clase: &str, nivel: u32) -> String {
+        let campos = self
+            .clases
+            .get(clase)
+            .map(|c| c.campos.clone())
+            .unwrap_or_default();
+        let mut resultado: Option<String> = None;
+        for (i, (_, t)) in campos.iter().enumerate() {
+            let pa = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
+                pa,
+                clase,
+                a,
+                i + 1
+            ));
+            let pb = self.r();
+            self.linea(&format!(
+                "{} = getelementptr inbounds %{}, ptr {}, i32 0, i32 {}",
+                pb,
+                clase,
+                b,
+                i + 1
+            ));
+            let va = self.cargar(&pa, t);
+            let vb = self.cargar(&pb, t);
+            let eq = match t {
+                T::Texto => {
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_texto_igual(ptr {}, ptr {})",
+                        r,
+                        va.r(),
+                        vb.r()
+                    ));
+                    let c = self.r();
+                    self.linea(&format!("{} = icmp ne i64 {}, 0", c, r));
+                    c
+                }
+                T::Dec => {
+                    let r = self.r();
+                    self.linea(&format!("{} = fcmp oeq double {}, {}", r, va.r(), vb.r()));
+                    r
+                }
+                T::Exacto => {
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_exacto_comparar(ptr {}, ptr {})",
+                        r,
+                        va.r(),
+                        vb.r()
+                    ));
+                    let c = self.r();
+                    self.linea(&format!("{} = icmp eq i64 {}, 0", c, r));
+                    c
+                }
+                T::Clase(otra) if nivel < 4 && self.derive_igual.contains(otra) => {
+                    self.clase_igual(va.r(), vb.r(), otra, nivel + 1)
+                }
+                _ => {
+                    let r = self.r();
+                    self.linea(&format!("{} = icmp eq i64 {}, {}", r, va.r(), vb.r()));
+                    r
+                }
+            };
+            resultado = Some(match resultado {
+                None => eq,
+                Some(previo) => {
+                    let r = self.r();
+                    self.linea(&format!("{} = and i1 {}, {}", r, previo, eq));
+                    r
+                }
+            });
+        }
+        resultado.unwrap_or_else(|| "true".to_string())
     }
 
     /// Texto `Clase { campo: valor, … }` de un objeto con `@derive(Mostrar)`.
