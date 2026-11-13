@@ -64,6 +64,9 @@ echo "$DOM" | grep -q 'data-fg-accion="crear_tarea"' || fallo "el botón no trae
 echo "$DOM" | grep -q 'label for="fg-titulo"' || fallo "falta la etiqueta accesible del campo"
 # El diálogo existe pero arranca cerrado (se abre con la acción abrir:<id>).
 echo "$DOM" | grep -q '<dialog id="fg-dialogo-confirmar"' || fallo "falta el diálogo"
+echo "$DOM" | grep -q '<progress value="1" max="3"' || fallo "falta la barra de progreso"
+echo "$DOM" | grep -q 'aria-label="Marcar favorito"' || fallo "falta el botón-icono accesible"
+echo "$DOM" | grep -q 'aria-busy="true"' || fallo "falta el indicador de carga"
 echo "$DOM" | grep -q '<dialog id="fg-dialogo-confirmar"[^>]*open' && fallo "el diálogo arrancó abierto"
 
 # Interacción real: clics que ejecutan el callback Forja (dos sumas) y un
