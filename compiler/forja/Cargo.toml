@@ -1,7 +1,7 @@
 [package]
 build = "../../build.rs"
 name = "forja"
-version = "0.10.2"
+version = "0.11.0"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["forja-lang"]
@@ -257,6 +257,22 @@ path = "../../tests/sesion.rs"
 [[test]]
 name = "stdlib"
 path = "../../tests/stdlib.rs"
+
+[[test]]
+name = "redis_cliente"
+path = "../../tests/redis_cliente.rs"
+
+[[test]]
+name = "trabajos_cola"
+path = "../../tests/trabajos_cola.rs"
+
+[[test]]
+name = "sesion_redis"
+path = "../../tests/sesion_redis.rs"
+
+[[test]]
+name = "bytecode_roundtrip"
+path = "../../tests/bytecode_roundtrip.rs"
 
 [[test]]
 name = "string_interpolation_tests"

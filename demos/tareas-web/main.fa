@@ -1,0 +1,334 @@
+# Demo web "tareas" — página real con Forja
+#
+# Backend HTTP + SQLite + sesiones + login + plantillas SSR. Sin JS: todo el
+# flujo (registro, login, alta de tareas, marcar hecha, logout) funciona con
+# formularios HTML comunes.
+#
+# Uso:
+#   cd demos/tareas-web
+#   forja run main.fa
+#   # abrir http://127.0.0.1:8080/
+#
+# Configuración por entorno (sin recompilar):
+#   FORJA_WEB_PUERTO   puerto (por defecto 8080)
+#   FORJA_WEB_BD       ruta del archivo SQLite (por defecto tareas.db)
+#   FORJA_WEB_SECRETO  clave para firmar la cookie de sesión
+#
+# Lo que esta demo demuestra y no es obvio:
+#   - las migraciones SQL se aplican una sola vez (`std/datos.migrar`)
+#   - los formularios llevan token CSRF y se verifica en cada POST
+#   - la cookie `sid` va firmada con HMAC, HttpOnly y SameSite
+#   - el HTML se arma con `std/plantillas` (escape automático: nada de XSS)
+#   - el rate limit de login es por usuario y por IP
+
+importar "std/servidor_web"
+importar "std/sesion"
+importar "std/auth"
+importar "std/plantillas"
+importar "std/vista"
+importar "std/datos"
+importar "std/resultado"
+importar "std/env"
+
+# ─── Configuración ──────────────────────────────────────────────────
+
+variable puerto = env.obtener_entero("FORJA_WEB_PUERTO", 8080)
+variable archivo_bd = resultado.desenvolver_o(env.obtener_variable("FORJA_WEB_BD"), "tareas.db")
+variable secreto = resultado.desenvolver_o(
+    env.obtener_variable("FORJA_WEB_SECRETO"),
+    "cambiar-esta-clave-en-produccion-0123456789"
+)
+
+variable almacen_sesiones = sesion.almacen(secreto, 3600, falso)
+
+# ─── Base de datos ──────────────────────────────────────────────────
+
+variable bd = resultado.desenvolver(datos.abrir(archivo_bd))
+variable migradas = datos.migrar(bd, "migraciones")
+si (resultado.es_error(migradas)) {
+    imprimir("No se pudieron aplicar las migraciones")
+    _salir(1)
+}
+
+# ─── Usuarios (contratos de std/auth) ───────────────────────────────
+
+funcion buscar_usuario(email) {
+    variable fila = resultado.desenvolver(datos.consultar_una(
+        bd, "SELECT id, hash FROM usuarios WHERE email = ?", [email]
+    ))
+    si (fila == nulo) {
+        retornar nulo
+    }
+    retornar {"id": fila["id"], "hash": fila["hash"]}
+}
+
+funcion crear_usuario(email, hash) {
+    variable insertado = datos.ejecutar_con(
+        bd, "INSERT INTO usuarios (email, hash) VALUES (?, ?)", [email, hash]
+    )
+    si (resultado.es_error(insertado)) {
+        retornar nulo
+    }
+    variable fila = resultado.desenvolver(datos.consultar_una(
+        bd, "SELECT id FROM usuarios WHERE email = ?", [email]
+    ))
+    si (fila == nulo) {
+        retornar nulo
+    }
+    retornar fila["id"]
+}
+
+variable guardia = auth.autenticador(almacen_sesiones, buscar_usuario, 5, 300)
+
+# ─── Vistas (std/vista: HTML escapado y accesible) ──────────────────
+
+variable CSS = "/publico/estilo.css"
+
+funcion pagina_completa(titulo_pagina: Texto, contenido: Texto) -> Texto {
+    retornar vista.pagina(titulo_pagina, contenido + vista.aviso(
+        "Forja · servidor_web + datos + sesion + auth + vista"), CSS)
+}
+
+funcion responder_html(respuesta, titulo_pagina: Texto, contenido: Texto) {
+    retornar servidor_web.html(respuesta, pagina_completa(titulo_pagina, contenido))
+}
+
+# Formulario de login/registro: mismos campos, distinto destino y textos.
+funcion formulario_cuenta(accion: Texto, boton_texto: Texto, error_texto: Texto, email: Texto, ayuda: Texto) -> Texto {
+    variable hijos = []
+    si (error_texto != "") {
+        hijos = hijos + [vista.errores([error_texto])]
+    }
+    hijos = hijos + [
+        vista.campo("email", email, "email", "tu@correo", verdadero),
+        vista.campo("clave", "", "password", "contraseña", verdadero),
+        vista.boton(boton_texto, "submit")
+    ]
+    retornar vista.contenedor([
+        vista.formulario(accion, "post", hijos),
+        ayuda
+    ])
+}
+
+variable AYUDA_ENTRAR = vista.parrafo("¿No tenés cuenta?") + vista.enlace("/registrar", "Crear una")
+variable AYUDA_REGISTRAR = vista.parrafo("¿Ya tenés cuenta?") + vista.enlace("/entrar", "Entrar")
+
+# ─── Utilidades de la app ───────────────────────────────────────────
+
+funcion tareas_de(usuario_id) {
+    variable filas = resultado.desenvolver(datos.consultar_con(
+        bd, "SELECT id, titulo, hecha FROM tareas WHERE usuario_id = ? ORDER BY hecha, id", [usuario_id]
+    ))
+    si (filas == nulo) {
+        retornar []
+    }
+    variable tareas = []
+    variable i = 0
+    mientras (i < longitud(filas)) {
+        variable fila = filas[i]
+        variable hecha = fila["hecha"] == 1
+        tareas = tareas + [{
+            "id": fila["id"],
+            "titulo": fila["titulo"],
+            "hecha": hecha,
+            "clase": "hecha"
+        }]
+        i = i + 1
+    }
+    retornar tareas
+}
+
+# Token CSRF de la sesión actual (o "" si no hay sesión).
+funcion csrf_de(sesion_actual) -> Texto {
+    si (sesion_actual == nulo) {
+        retornar ""
+    }
+    retornar sesion.token_csrf(almacen_sesiones, sesion_actual)
+}
+
+funcion csrf_ok(sesion_actual, peticion) -> Logico {
+    retornar sesion.csrf_valido(almacen_sesiones, sesion_actual, peticion.parametros["csrf"])
+}
+
+# ─── Rutas ──────────────────────────────────────────────────────────
+
+funcion ruta_inicio(peticion, respuesta) {
+    variable actual = auth.sesion_actual(guardia, peticion)
+    si (actual == nulo) {
+        retornar servidor_web.redirigir(respuesta, "/entrar")
+    }
+
+    variable tareas = tareas_de(actual.datos["usuario_id"])
+    variable pendientes = 0
+    variable i = 0
+    mientras (i < longitud(tareas)) {
+        si (!tareas[i]["hecha"]) {
+            pendientes = pendientes + 1
+        }
+        i = i + 1
+    }
+
+    variable csrf_valor = csrf_de(actual)
+
+    # Ítems del listado: título + botón "hecha" (si sigue pendiente).
+    variable items = []
+    variable clases = []
+    variable k = 0
+    mientras (k < longitud(tareas)) {
+        variable tarea = tareas[k]
+        variable item = vista.nodo_texto("span", {}, tarea["titulo"])
+        si (!tarea["hecha"]) {
+            item = item + vista.formulario("/tareas/" + a_texto(tarea["id"]) + "/hecha", "post", [
+                vista.csrf(csrf_valor),
+                vista.boton("hecha", "submit")
+            ])
+        }
+        items = items + [item]
+        si (tarea["hecha"]) {
+            clases = clases + ["hecha"]
+        } sino {
+            clases = clases + [""]
+        }
+        k = k + 1
+    }
+
+    variable cuerpo = [
+        vista.encabezado("Tareas", 1),
+        vista.parrafo(a_texto(pendientes) + " pendientes, " + a_texto(longitud(tareas)) + " en total"),
+        vista.formulario("/tareas", "post", [
+            vista.csrf(csrf_valor),
+            vista.campo("titulo", "", "text", "comprar pan", verdadero),
+            vista.boton("Agregar", "submit")
+        ]),
+        vista.lista_html_con_clases(items, clases)
+    ]
+    si (longitud(tareas) == 0) {
+        cuerpo = cuerpo + [vista.aviso("Todavía no hay tareas. Agregá una abajo.")]
+    }
+    cuerpo = cuerpo + [
+        vista.formulario("/salir", "post", [
+            vista.csrf(csrf_valor),
+            vista.boton("Salir", "submit")
+        ])
+    ]
+
+    variable html_pagina = pagina_completa("Tareas", vista.contenedor(cuerpo))
+    retornar servidor_web.html(respuesta, html_pagina)
+}
+
+funcion ruta_ver_entrar(peticion, respuesta) {
+    variable contenido = vista.encabezado("Entrar", 1) +
+        formulario_cuenta("/entrar", "Entrar", "", "", AYUDA_ENTRAR)
+    retornar responder_html(respuesta, "Entrar", contenido)
+}
+
+funcion ruta_ver_registrar(peticion, respuesta) {
+    variable contenido = vista.encabezado("Crear cuenta", 1) +
+        formulario_cuenta("/registrar", "Crear cuenta", "", "", AYUDA_REGISTRAR)
+    retornar responder_html(respuesta, "Crear cuenta", contenido)
+}
+
+funcion ruta_entrar(peticion, respuesta) {
+    variable email = peticion.parametros["email"]
+    variable clave = peticion.parametros["clave"]
+    variable r = auth.iniciar_sesion(guardia, peticion, respuesta, email, clave)
+    si (auth.es_error(r)) {
+        variable texto_error = auth.error_de(r).mensaje
+        variable cuerpo = vista.encabezado("Entrar", 1) +
+            formulario_cuenta("/entrar", "Entrar", texto_error, email, AYUDA_ENTRAR)
+        variable mala = responder_html(respuesta, "Entrar", cuerpo)
+        mala.codigo = 401
+        retornar mala
+    }
+    retornar servidor_web.redirigir(respuesta, "/")
+}
+
+funcion ruta_registrar(peticion, respuesta) {
+    variable email = peticion.parametros["email"]
+    variable clave = peticion.parametros["clave"]
+    variable r = auth.registrar(guardia, email, clave, crear_usuario)
+    si (auth.es_error(r)) {
+        variable texto_error = auth.error_de(r).mensaje
+        variable cuerpo = vista.encabezado("Crear cuenta", 1) +
+            formulario_cuenta("/registrar", "Crear cuenta", texto_error, email, AYUDA_REGISTRAR)
+        variable mala = responder_html(respuesta, "Crear cuenta", cuerpo)
+        mala.codigo = 400
+        si (auth.error_de(r).codigo == "duplicado") {
+            mala.codigo = 409
+        }
+        retornar mala
+    }
+    variable sesion_nueva = auth.iniciar_sesion(guardia, peticion, respuesta, email, clave)
+    si (auth.es_error(sesion_nueva)) {
+        retornar servidor_web.redirigir(respuesta, "/entrar")
+    }
+    retornar servidor_web.redirigir(respuesta, "/")
+}
+
+funcion ruta_crear_tarea(peticion, respuesta) {
+    variable actual = auth.sesion_actual(guardia, peticion)
+    si (actual == nulo || !csrf_ok(actual, peticion)) {
+        variable negado = servidor_web.texto_plano(respuesta, "sin sesión o token CSRF inválido")
+        negado.codigo = 403
+        retornar negado
+    }
+
+    variable titulo = recortar(peticion.parametros["titulo"])
+    si (titulo != "") {
+        variable insertado = datos.ejecutar_con(
+            bd, "INSERT INTO tareas (usuario_id, titulo) VALUES (?, ?)",
+            [actual.datos["usuario_id"], titulo]
+        )
+        si (resultado.es_error(insertado)) {
+            variable error_bd = servidor_web.texto_plano(respuesta, "no se pudo guardar la tarea")
+            error_bd.codigo = 500
+            retornar error_bd
+        }
+    }
+    retornar servidor_web.redirigir(respuesta, "/")
+}
+
+funcion ruta_marcar_hecha(peticion, respuesta) {
+    variable actual = auth.sesion_actual(guardia, peticion)
+    si (actual == nulo || !csrf_ok(actual, peticion)) {
+        variable negado = servidor_web.texto_plano(respuesta, "sin sesión o token CSRF inválido")
+        negado.codigo = 403
+        retornar negado
+    }
+
+    # El WHERE lleva usuario_id: una tarea ajena no se puede tocar.
+    datos.ejecutar_con(
+        bd, "UPDATE tareas SET hecha = 1 WHERE id = ? AND usuario_id = ?",
+        [peticion.params_ruta["id"], actual.datos["usuario_id"]]
+    )
+    retornar servidor_web.redirigir(respuesta, "/")
+}
+
+funcion ruta_salir(peticion, respuesta) {
+    variable actual = auth.sesion_actual(guardia, peticion)
+    si (actual != nulo && !csrf_ok(actual, peticion)) {
+        variable negado = servidor_web.texto_plano(respuesta, "token CSRF inválido")
+        negado.codigo = 403
+        retornar negado
+    }
+    auth.cerrar_sesion(guardia, peticion, respuesta)
+    retornar servidor_web.redirigir(respuesta, "/entrar")
+}
+
+# ─── Arranque ───────────────────────────────────────────────────────
+
+variable servidor = nuevo ServidorWeb(puerto)
+servidor_web.servir_estaticos(servidor, "/publico", "publico")
+servidor_web.habilitar_seguridad(servidor, falso)
+servidor_web.habilitar_salud(servidor)
+
+servidor_web.registrar_obtener(servidor, "/", ruta_inicio)
+servidor_web.registrar_obtener(servidor, "/entrar", ruta_ver_entrar)
+servidor_web.enviar(servidor, "/entrar", ruta_entrar)
+servidor_web.registrar_obtener(servidor, "/registrar", ruta_ver_registrar)
+servidor_web.enviar(servidor, "/registrar", ruta_registrar)
+servidor_web.enviar(servidor, "/tareas", ruta_crear_tarea)
+servidor_web.enviar(servidor, "/tareas/:id/hecha", ruta_marcar_hecha)
+servidor_web.enviar(servidor, "/salir", ruta_salir)
+
+servidor_web.iniciar(servidor)

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forja GUI DOM — demo</title>
+  <link rel="stylesheet" href="estilos.css">
+  <!-- El wasm arranca a descargarse YA, en paralelo con el glue JS.
+       Sin esto el navegador recién pide el .wasm cuando el JS ya se evaluó:
+       se pagan dos latencias en serie (era ~1,2 s de arranque en Pages). -->
+  <link rel="preload" href="pkg/forja_wasm_gui_bg.wasm" as="fetch" type="application/wasm" crossorigin="anonymous">
+  <link rel="preload" href="pkg/forja_wasm_gui.js" as="script" crossorigin="anonymous">
+  <style>
+    body { max-width: 52rem; }
+    header.demo { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+    .demo-detalle { font-size: .85rem; color: #666; }
+    pre { background: #f4f4f1; padding: .8rem; border-radius: .4rem; overflow: auto; font-size: .8rem; }
+    details { margin-top: 2rem; }
+    #estado { font-size: .85rem; color: #666; }
+  </style>
+</head>
+<body>
+  <header class="demo">
+    <h1>Forja GUI DOM</h1>
+    <span class="demo-detalle" id="version"></span>
+  </header>
+
+  <p class="demo-detalle">
+    Esta interfaz la generó <strong>Forja</strong> compilado a WebAssembly y la pintó
+    como <strong>DOM real</strong> (no canvas): probá el foco con Tab, la selección de
+    texto, el zoom del navegador y un lector de pantalla.
+  </p>
+
+  <p id="estado">Cargando wasm…</p>
+
+  <main id="app"></main>
+
+  <details>
+    <summary>Código Forja de esta pantalla</summary>
+    <pre id="codigo"></pre>
+  </details>
+
+  <script type="module">
+    // El `?v=` evita que quede cacheado un wasm viejo tras publicar.
+    const VERSION_WASM = "20261113a";
+    const { default: init, renderizar_dom, version, diagnostico_dom, repintar_completo } =
+      await import(`./pkg/forja_wasm_gui.js?v=${VERSION_WASM}`);
+
+    const CODIGO = `
+variable tareas = 0
+variable pestana = "lista"
+variable vista = "hoy"
+variable titulo = ""
+
+funcion main() {
+    columna(
+        fila(
+            titulo("Tareas"),
+            boton("Sumar una", crear_tarea),
+            boton("Confirmar reinicio", "abrir:confirmar")
+        ),
+        fila(
+            etiqueta("Pendientes:"),
+            etiqueta_dinamica("tareas")
+        ),
+        pestanas("pestana",
+            pestana("lista", "Lista",
+                fila(
+                    entrada_texto("titulo", "comprar pan"),
+                    boton("Agregar", crear_tarea)
+                )
+            ),
+            pestana("detalle", "Detalle",
+                columna(
+                    etiqueta("Lo que escribas en la otra pestaña aparece acá:"),
+                    etiqueta_dinamica("titulo")
+                )
+            ),
+            pestana("opciones", "Opciones",
+                columna(
+                    etiqueta("Contador y reinicio."),
+                    boton("Reiniciar contador", reiniciar),
+                    seleccion_lista("vista", "Qué ver", "hoy",
+                        opcion("hoy", "Hoy"),
+                        opcion("semana", "Esta semana"),
+                        opcion("todo", "Todo")
+                    ),
+                    fila(etiqueta("Elegiste:"), etiqueta_dinamica("vista"))
+                )
+            )
+        ),
+        plegable("¿Cómo funciona?", verdadero,
+            etiqueta("El árbol lo arma Forja y se pinta como DOM real.")
+        ),
+        dialogo("confirmar", "¿Reiniciar el contador?", falso,
+            fila(
+                boton("Sí, reiniciar", reiniciar),
+                boton("Cancelar", "cerrar:confirmar")
+            )
+        ),
+        espacio(12),
+        etiqueta("Hecho con Forja — sin frameworks de frontend")
+    )
+}
+
+funcion crear_tarea() {
+    tareas = tareas + 1
+}
+
+funcion reiniciar() {
+    tareas = 0
+}
+`;
+
+    const estado = document.getElementById("estado");
+    const app = document.getElementById("app");
+    document.getElementById("codigo").textContent = CODIGO;
+
+    try {
+      await init();
+      document.getElementById("version").textContent = version();
+      const respuesta = renderizar_dom("app", CODIGO);
+      if (respuesta === "ok") {
+        estado.textContent = "Renderizado como DOM real (revisá el árbol en DevTools).";
+        if (new URLSearchParams(location.search).get("debug") === "1") {
+          estado.textContent = diagnostico_dom();
+        }
+      } else {
+        estado.textContent = "El runtime respondió: " + respuesta;
+      }
+    } catch (e) {
+      estado.textContent = "No se pudo cargar el wasm: " + e;
+      console.error(e);
+    }
+
+    // Los botones de Forja emiten su acción a consola hasta que se conecte el
+    // callback del lenguaje (siguiente paso). Se muestra acá para que se vea.
+    // Modo automático (para el test headless): simula dos clics y marca que
+    // terminó, así se puede verificar que el callback del lenguaje corrió.
+    // Benchmark: mide cuánto cuesta una interacción (clics con actualización
+    // dirigida) y cuánto un render completo desde cero.
+    if (new URLSearchParams(location.search).get("bench") === "1") {
+      // Sincrónico a propósito: así el número es tiempo real (con
+      // --virtual-time-budget el reloj se detiene y mediría 0).
+      const N = 200;
+      const modoCompleto = new URLSearchParams(location.search).get("full") === "1";
+      const t0 = performance.now();
+      for (let i = 0; i < N; i++) {
+        if (modoCompleto) {
+          repintar_completo();
+        } else {
+          app.querySelector('[data-fg-accion="crear_tarea"]').click();
+        }
+      }
+      const porClic = (performance.now() - t0) / N;
+
+      const t1 = performance.now();
+      renderizar_dom("app", CODIGO);
+      const renderCompleto = performance.now() - t1;
+
+      const nodos = app.querySelectorAll("*").length;
+      document.getElementById("estado").textContent =
+        `bench: ${porClic.toFixed(2)} ms/actualizacion · render completo ${renderCompleto.toFixed(0)} ms · ${nodos} nodos`;
+    }
+
+    // Diagnóstico aislado de la navegación por teclado en pestañas.
+    if (new URLSearchParams(location.search).get("kbd") === "1") {
+      setTimeout(() => {
+        const activa = app.querySelector('[role="tab"][aria-selected="true"]');
+        activa.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+        setTimeout(() => {
+          const nueva = app.querySelector('[role="tab"][aria-selected="true"]');
+          document.getElementById("estado").textContent = "activa:" + (nueva ? nueva.dataset.fgAccion : "ninguna");
+        }, 250);
+      }, 400);
+    }
+
+    if (new URLSearchParams(location.search).get("auto") === "1") {
+      // Un clic, espera el re-render (el botón se recrea) y otro clic.
+      setTimeout(() => {
+        app.querySelector('[data-fg-accion="crear_tarea"]').click();
+        setTimeout(() => {
+          app.querySelector('[data-fg-accion="crear_tarea"]').click();
+          // Pestañas: cambia la activa (convención tab:<var>:<valor>).
+          app.querySelector('[data-fg-accion="tab:pestana:detalle"]').click();
+          setTimeout(() => {
+            // Diálogo nativo: la acción "abrir:confirmar" lo abre.
+            // Selección en lista: convención sel:<var>:<valor> (repinta).
+            app.querySelector('[data-fg-accion="sel:vista:semana"]').click();
+          }, 200);
+          // El diálogo se abre al final: cualquier repintado lo vuelve a crear cerrado.
+          setTimeout(() => {
+            app.querySelector('[data-fg-accion="abrir:confirmar"]').click();
+          }, 300);
+          // Binding de ida: escribir en el campo actualiza la variable del programa.
+          const entrada = app.querySelector('input[data-fg-variable="titulo"]');
+          entrada.value = "pan integral";
+          entrada.dispatchEvent(new Event("change", { bubbles: true }));
+          setTimeout(() => {
+            document.getElementById("estado").dataset.auto = "listo";
+          }, 150);
+        }, 400);
+      }, 300);
+    }
+
+    app.addEventListener("click", (evento) => {
+      const boton = evento.target.closest("[data-fg-accion]");
+      if (boton) {
+        estado.textContent = "acción declarada: " + boton.dataset.fgAccion;
+      }
+    });
+  </script>
+</body>
+</html>

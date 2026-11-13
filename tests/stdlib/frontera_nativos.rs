@@ -170,3 +170,101 @@ fn modulos_no_exportan_builtins_ni_keywords() {
         colisiones.join("\n")
     );
 }
+
+/// Nombres repetidos entre módulos: línea base de deuda conocida (N28).
+///
+/// Los `importar` se inlinean en un solo programa y las llamadas calificadas
+/// pierden el prefijo del módulo, así que dos módulos con una función del mismo
+/// nombre se confunden (con argumentos de tipo dinámico, el checker despacha al
+/// módulo equivocado). Mientras eso no se arregle en la resolución, la regla es:
+/// **un módulo nuevo no puede repetir un nombre que ya exista en otro**.
+///
+/// Esta lista es el inventario actual; cuando se arregle N28 se vacía.
+const DUPLICADOS_CONOCIDOS: &[&str] = &[
+    "_cabeceras_a_texto",
+    "_realizar_solicitud",
+    "_resolver_url",
+    "_respuesta_error",
+    "_texto_a_mapa",
+    "abrir",
+    "aceptar",
+    "actualizar",
+    "cerrar",
+    "conectar",
+    "consultar",
+    "consultar_una",
+    "detener",
+    "ejecutar",
+    "eliminar",
+    "entero",
+    "enviar",
+    "enviar_con_opciones",
+    "es_error",
+    "fijar",
+    "generar",
+    "iguales",
+    "iniciar",
+    "mcd",
+    "mcm",
+    "medir",
+    "modificar_parcial",
+    "obtener_con_opciones",
+    "obtener_recurso",
+    "parsear",
+    "ping",
+    "potencia",
+    "recibir",
+    "registrar_obtener",
+    "reintentar",
+    "serializar",
+    "sumar",
+    "tamano_archivo",
+    "todos",
+    "usar",
+];
+
+fn nombres_por_modulo() -> Vec<(String, String)> {
+    let mut pares = Vec::new();
+    for (modulo, fuente) in modulos() {
+        for linea in fuente.lines() {
+            let linea = linea.trim_start();
+            if let Some(resto) = linea.strip_prefix("funcion ") {
+                let nombre: String = resto
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                if !nombre.is_empty() {
+                    pares.push((nombre, modulo.clone()));
+                }
+            }
+        }
+    }
+    pares
+}
+
+#[test]
+fn modulos_no_repten_nombres_de_funcion_entre_si() {
+    let pares = nombres_por_modulo();
+    let mut modulos_por_nombre: std::collections::HashMap<&str, Vec<&str>> = Default::default();
+    for (nombre, modulo) in &pares {
+        modulos_por_nombre
+            .entry(nombre.as_str())
+            .or_default()
+            .push(modulo.as_str());
+    }
+
+    let mut nuevos: Vec<String> = modulos_por_nombre
+        .iter()
+        .filter(|(_, mods)| mods.len() > 1)
+        .filter(|(nombre, _)| !DUPLICADOS_CONOCIDOS.contains(nombre))
+        .map(|(nombre, mods)| format!("{nombre}: {}", mods.join(", ")))
+        .collect();
+    nuevos.sort();
+
+    assert!(
+        nuevos.is_empty(),
+        "nombres repetidos entre módulos (N28: el checker despacha por nombre, no por módulo).\n\
+         Renombrá la función nueva con un nombre que no exista en otro módulo:\n{}",
+        nuevos.join("\n")
+    );
+}

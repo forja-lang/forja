@@ -113,10 +113,16 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
 
     // Escribir codigos
     bytes.extend_from_slice(&(codigos.len() as u32).to_le_bytes());
-    for op in codigos {
+    for (indice_op, op) in codigos.iter().enumerate() {
+        let inicio_op = bytes.len();
         bytes.push(opcode_to_byte(op));
         match op {
             Opcode::EmpujarEntero(n) => bytes.extend_from_slice(&n.to_le_bytes()),
+            // El lector espera un u32 de largo: sin esto el stream quedaba
+            // desalineado 4 bytes y el ejecutable autónomo no arrancaba (N29).
+            Opcode::NuevoArreglo(n) | Opcode::NuevoMapa(n) => {
+                bytes.extend_from_slice(&(*n as u32).to_le_bytes())
+            }
             Opcode::EmpujarDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
             Opcode::EmpujarTexto(s) | Opcode::Cargar(s) | Opcode::Guardar(s) => {
                 let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
@@ -308,6 +314,15 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
             }
             _ => {} // Opcodes sin payload
         }
+        if std::env::var("FORJA_DEBUG_SER").is_ok() {
+            eprintln!(
+                "[SER] i={} byte={} len={} op={:?}",
+                indice_op,
+                opcode_to_byte(op),
+                bytes.len() - inicio_op,
+                op
+            );
+        }
     }
 
     // Agregar checksum CRC32 al final (V-07: integridad del bytecode)
@@ -465,7 +480,16 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::ConsultarSocket(_) => 197,
         Opcode::NuevoCanalConCapacidad => 201,
         // Opcodes especializados (runtime-only, no serializables)
-        _ => 255,
+        // Un opcode sin byte asignado es un bug del serializador: con 255 el
+        // deserializador devuelve None y el ejecutable autónomo arranca vacío
+        // (en el REPL). Mejor que falle fuerte y con el nombre del opcode.
+        otro => {
+            eprintln!(
+                "[BC] opcode sin byte asignado en el serializador: {:?}",
+                otro
+            );
+            255
+        }
     }
 }
 
@@ -621,6 +645,11 @@ fn texto_de_reserva(pool: &[String], idx: usize) -> Option<Arc<str>> {
     if idx < pool.len() {
         Some(Arc::from(pool[idx].as_str()))
     } else {
+        eprintln!(
+            "[BC] indice de texto fuera del pool: idx={} pool={}",
+            idx,
+            pool.len()
+        );
         None
     }
 }
@@ -717,7 +746,9 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
         pos += largo_texto;
         reserva_textos.push(s);
     }
-    eprintln!("[BC] string pool OK: {} strings, pos={}", num_strings, pos);
+    if std::env::var("FORJA_DEBUG_BC").is_ok() {
+        eprintln!("[BC] string pool OK: {} strings, pos={}", num_strings, pos);
+    }
 
     // Opcodes - con límite de seguridad
     if pos + 4 > data.len() {
@@ -743,8 +774,12 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             return None;
         }
         let byte = data[pos];
+        if std::env::var("FORJA_DEBUG_DE").is_ok() {
+            eprintln!("[DE] i={} byte={} pos={}", oi, byte, pos);
+        }
         pos += 1;
-        if byte > 200 {
+        // 255 es `LlamadaFinal` (tail call), no un byte inválido.
+        if byte > 200 && byte != 255 && std::env::var("FORJA_DEBUG_BC").is_ok() {
             eprintln!(
                 "[BC] opcode byte alto: {} en i={} pos={}",
                 byte,
@@ -757,6 +792,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             0 => {
                 // PushEntero
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let n = i64::from_le_bytes([
@@ -775,6 +814,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             1 => {
                 // PushDecimal
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let d = f64::from_le_bytes([
@@ -793,6 +836,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             2 | 10 | 11 => {
                 // PushTexto | Load | Store
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -810,6 +857,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             12 => {
                 // Declare
                 if pos + 5 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -825,6 +876,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             13 | 14 | 163 | 164 | 165 | 168 | 169 | 170 | 171 => {
                 // Opcodes con payload de 1x u32 (index)
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -846,6 +901,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             15 => {
                 // DeclareIdx
                 if pos + 5 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -859,6 +918,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             160 => {
                 // LoadAddInt
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -881,6 +944,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             161 | 162 | 166 | 167 => {
                 // Opcodes con payload de 2x u32 (idx/dst, destino/idx)
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let a = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
@@ -899,6 +966,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             3 => {
                 // PushBooleano
                 if pos >= data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let b = data[pos] == 1;
@@ -908,6 +979,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             16 => {
                 // DeclareEnteroOp
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -930,6 +1005,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             17 => {
                 // DeclareBooleanoOp
                 if pos + 5 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -943,6 +1022,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             18 => {
                 // StoreEnteroOp
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -965,6 +1048,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             19 => {
                 // DeclareFloatOp
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -987,6 +1074,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             24 => {
                 // StoreFloatOp
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1009,6 +1100,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             25 => {
                 // LoadAddFloat
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1031,6 +1126,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             26..=28 => {
                 // AddStoreFloat | SubStoreFloat | MulStoreFloat
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1046,6 +1145,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             29 => {
                 // XorSign
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1057,6 +1160,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             93 => {
                 // Modulo2(src)
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let src =
@@ -1068,6 +1175,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             94 => {
                 // ReduceAdd(dst, src)
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let dst =
@@ -1083,6 +1194,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             95 => {
                 // LoadAddPacked(dst, src1, src2)
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let dst =
@@ -1102,6 +1217,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             50..=52 => {
                 // Jump | JumpSiFalso | Label
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let destino =
@@ -1117,6 +1236,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             55 => {
                 // FunctionDef
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1128,12 +1251,20 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                         as usize;
                 pos += 4;
                 if nparams > MAX_PARAMETROS_POR_FUNCION {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let name = texto_de_reserva(&reserva_textos, idx)?;
                 let mut params = Vec::with_capacity(nparams);
                 for _ in 0..nparams {
                     if pos + 4 > data.len() {
+                        eprintln!(
+                            "[BC] deserializacion fallo en byte={} i={} pos={}",
+                            byte, oi, pos
+                        );
                         return None;
                     }
                     let largo_params = u32::from_le_bytes([
@@ -1144,9 +1275,17 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     ]) as usize;
                     pos += 4;
                     if largo_params > MAX_LARGO_TEXTO {
+                        eprintln!(
+                            "[BC] deserializacion fallo en byte={} i={} pos={}",
+                            byte, oi, pos
+                        );
                         return None;
                     }
                     if pos + largo_params > data.len() {
+                        eprintln!(
+                            "[BC] deserializacion fallo en byte={} i={} pos={}",
+                            byte, oi, pos
+                        );
                         return None;
                     }
                     let p = String::from_utf8(data[pos..pos + largo_params].to_vec()).ok()?;
@@ -1158,6 +1297,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             60 => {
                 // Call
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1174,6 +1317,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             65 => {
                 // CallMethod
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1190,6 +1337,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             90 => {
                 // MapNew
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let n = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
@@ -1200,6 +1351,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             80 => {
                 // ArrayNew
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let n = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
@@ -1210,6 +1365,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             62..=64 => {
                 // NewObject | SetField | GetField
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1226,6 +1385,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
             96..=99 => {
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let dst =
@@ -1250,6 +1413,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Fase 3b: Super-fusión FusedDivAdd/FusedDivSub — 3 × u32 (dst, num_src, div_src)
             100 | 101 => {
                 if pos + 12 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let dst =
@@ -1272,6 +1439,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Fase 3b Const: f64 + u32 + u32 = 16 bytes
             102 | 103 => {
                 if pos + 16 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let dst =
@@ -1301,6 +1472,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Opcodes para Exacto: PushExacto(coeff, scale) — 16 + 4 = 20 bytes payload
             110 => {
                 if pos + 20 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let coeff = i128::from_le_bytes([
@@ -1330,6 +1505,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Superinstructions Exacto: DeclareExactOp(idx, coeff, scale) — 4 + 16 + 4 = 24 bytes
             120 => {
                 if pos + 24 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1363,6 +1542,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // AddStoreExact(idx) — 4 bytes payload
             121 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1374,6 +1557,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Pattern matching codigos — 4 bytes payload (usize)
             140 | 141 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1388,6 +1575,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // SetFieldIdx (construcción de variantes de enum) — 4 bytes payload
             66 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1399,6 +1590,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // CallClosure (nargs) — 4 bytes payload (el callee va en la pila)
             67 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let nargs =
@@ -1410,6 +1605,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Design by Contract codigos — 4 bytes payload (usize)
             130..=133 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1426,6 +1625,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Fase 2: DeclareIdxGlobal(usize, bool) — 5 bytes payload (u32 idx + u8 mutable)
             142 => {
                 if pos + 5 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1439,6 +1642,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // LoadIdxGlobal / StoreIdxGlobal — 4 bytes payload (u32 idx)
             143 | 144 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1453,6 +1660,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // Debug: SetLine(linea) — 4 bytes payload (u32 linea)
             150 => {
                 if pos + 4 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let linea =
@@ -1464,6 +1675,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // PushAddInt(i64) — 8 bytes payload
             189 => {
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let n = i64::from_le_bytes([
@@ -1482,6 +1697,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // ThreadSpawn(Arc<str>, usize) — string_idx(4) + nargs(4)
             195 => {
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =
@@ -1498,6 +1717,10 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             // CallNative(Arc<str>, usize) — string_idx(4) + nargs(4)
             196 => {
                 if pos + 8 > data.len() {
+                    eprintln!(
+                        "[BC] deserializacion fallo en byte={} i={} pos={}",
+                        byte, oi, pos
+                    );
                     return None;
                 }
                 let idx =

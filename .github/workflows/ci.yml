@@ -119,6 +119,36 @@ jobs:
       # std/cliente_http (GET, params, 404, POST).
       - name: Stack HTTP de punta a punta
         run: bash scripts/probar-http.sh
+      # Cliente Redis: código RESP siempre; contra un Redis real si hay uno
+      # escuchando (el script se saltea solo cuando no lo hay).
+      - name: Cliente Redis
+        run: bash scripts/probar-redis.sh
+      # Sesiones: login, cookie firmada, cookie manipulada, CSRF y logout contra
+      # el servidor real (curl con cookie jar).
+      - name: Sesiones de punta a punta
+        run: bash scripts/probar-sesion.sh
+      # Registro/login con contraseñas hasheadas, rate limit y logout.
+      - name: Auth de punta a punta
+        run: bash scripts/probar-auth.sh
+      # La demo completa: migraciones + SQLite + sesión + CSRF + plantillas + CSS.
+      - name: Demo web de punta a punta
+        run: bash scripts/probar-demo-web.sh
+      # La plantilla que genera `FORJA_PLANTILLA=web forja nuevo` arranca y sirve.
+      - name: Plantilla web de forja nuevo
+        run: bash scripts/probar-nuevo-web.sh
+      # `forja web dev` reinicia la app al editar un .fa (recarga de desarrollo).
+      - name: forja web dev (recarga)
+        run: bash scripts/probar-web-dev.sh
+      # Paquete de despliegue: se genera y se arranca desde dist/.
+      - name: forja web build (paquete)
+        run: bash scripts/probar-web-build.sh
+      # HTML de la GUI DOM validado con un DOM real (jsdom): labels, roles,
+      # dialog, progress. Se saltea solo si no hay node/npm o red.
+      - name: GUI DOM con DOM real
+        run: bash scripts/probar-dom.sh
+      # La demo wasm en un navegador headless (Chrome/Edge si están).
+      - name: Demo GUI DOM en navegador
+        run: bash scripts/probar-demo-dom.sh
       # Guardas del workflow de entrega: matriz de release, firmas y par WASM
       # del playground. Cuesta milisegundos y evita publicar un release roto.
       - name: cargo xtask tidy

@@ -1,0 +1,276 @@
+/* Estilos base de Forja GUI DOM.
+ *
+ * Todo lo que emite `forja-gui-dom` sale con clases `fg-*`: esta hoja las
+ * define una vez y sirve igual para SSR y para el runtime en el navegador.
+ * Si agregás un nodo nuevo, agregá su clase acá (hay un test que lo verifica). */
+
+:root {
+  --fg-tinta: #1c1c1e;
+  --fg-papel: #fbfbf8;
+  --fg-borde: #d8d8d2;
+  --fg-acento: #2f6f4f;
+  --fg-error: #b3261e;
+  --fg-aviso: #8a6100;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: 46rem;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--fg-papel);
+  color: var(--fg-tinta);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ─── Layout ─────────────────────────────────────────────────────── */
+
+.fg-columna { display: flex; flex-direction: column; gap: .6rem; }
+.fg-fila { display: flex; flex-direction: row; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.fg-pila { display: grid; place-items: center; }
+.fg-pila > * { grid-area: 1 / 1; }
+.fg-espacio { min-height: 1rem; }
+.fg-variable { font-variant-numeric: tabular-nums; }
+.fg-no-implementado { color: var(--fg-error); font-style: italic; }
+
+/* ─── Controles ──────────────────────────────────────────────────── */
+
+label { display: block; font-size: .9rem; color: #555; margin: .4rem 0 .1rem; }
+
+input[type="text"], input[type="email"], input[type="password"],
+input[type="number"], input[type="search"], input[type="date"],
+select, textarea {
+  width: 100%;
+  padding: .55rem .7rem;
+  border: 1px solid var(--fg-borde);
+  border-radius: .4rem;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+textarea { resize: vertical; min-height: 4rem; }
+
+input[type="checkbox"] { margin-right: .4rem; }
+
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--fg-acento);
+  outline-offset: 2px;
+}
+
+.fg-boton {
+  padding: .55rem .9rem;
+  border: 1px solid var(--fg-acento);
+  border-radius: .4rem;
+  background: var(--fg-acento);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.fg-boton-secundario { background: transparent; color: var(--fg-acento); }
+.fg-boton:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Botón sólo icono: cuadrado, con el texto accesible en aria-label. */
+.fg-boton-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* Cabecera de tabla ordenable */
+.fg-ordenar {
+  padding: .2rem .1rem;
+  border: 0;
+  background: none;
+  color: #555;
+  font: inherit;
+  font-size: .85rem;
+  cursor: pointer;
+}
+.fg-ordenar:hover { color: var(--fg-tinta); }
+th[aria-sort="ascending"] .fg-ordenar::after { content: " ▲"; }
+th[aria-sort="descending"] .fg-ordenar::after { content: " ▼"; }
+
+/* Mensaje de validación de un campo */
+.fg-error {
+  margin: .15rem 0 .4rem;
+  font-size: .85rem;
+  color: var(--fg-error);
+}
+input[aria-invalid="true"] { border-color: var(--fg-error); }
+
+/* ─── Bloques ────────────────────────────────────────────────────── */
+
+.fg-tarjeta {
+  border: 1px solid var(--fg-borde);
+  border-radius: .6rem;
+  background: #fff;
+  padding: 1rem 1.1rem;
+}
+.fg-tarjeta h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+
+.fg-insignia {
+  display: inline-block;
+  padding: .1rem .5rem;
+  border-radius: 999px;
+  background: #ececea;
+  font-size: .8rem;
+}
+.fg-insignia-exito { background: #e3f2e9; color: #1d5c3d; }
+.fg-insignia-aviso { background: #fdf3dc; color: var(--fg-aviso); }
+.fg-insignia-error { background: #fdecea; color: var(--fg-error); }
+
+.fg-aviso {
+  padding: .6rem .8rem;
+  border-left: 3px solid var(--fg-borde);
+  border-radius: .25rem;
+  background: #f4f4f1;
+  margin: .6rem 0;
+}
+.fg-aviso-info { border-left-color: var(--fg-acento); }
+.fg-aviso-aviso { border-left-color: var(--fg-aviso); background: #fdf3dc; }
+.fg-aviso-error { border-left-color: var(--fg-error); background: #fdecea; }
+
+.fg-cargando { color: #666; font-style: italic; }
+.fg-cargando::after { content: " …"; }
+
+progress { width: 100%; height: .7rem; }
+
+/* ─── Pestañas (ARIA tablist) ────────────────────────────────────── */
+
+.fg-pestanas {
+  display: flex;
+  gap: .25rem;
+  border-bottom: 1px solid var(--fg-borde);
+  margin: 1rem 0 0;
+}
+.fg-pestana {
+  padding: .5rem .85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #555;
+  font: inherit;
+  cursor: pointer;
+}
+.fg-pestana:hover { color: var(--fg-tinta); }
+.fg-pestana[aria-selected="true"] {
+  color: var(--fg-acento);
+  border-bottom-color: var(--fg-acento);
+  font-weight: 600;
+}
+.fg-panel { padding: .8rem 0; }
+.fg-panel[hidden] { display: none; }
+
+/* ─── Selección en lista (ARIA listbox) ──────────────────────────── */
+
+.fg-etiqueta-grupo { display: block; font-size: .9rem; color: #555; margin: .4rem 0 .1rem; }
+
+.fg-opciones {
+  list-style: none;
+  padding: 0;
+  margin: .4rem 0;
+  border: 1px solid var(--fg-borde);
+  border-radius: .5rem;
+  overflow: hidden;
+  background: #fff;
+}
+.fg-opcion {
+  display: block;
+  width: 100%;
+  padding: .55rem .8rem;
+  border: 0;
+  border-bottom: 1px solid var(--fg-borde);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fg-opcion:last-child { border-bottom: 0; }
+.fg-opcion:hover { background: #f4f4f1; }
+.fg-opcion[aria-selected="true"] {
+  background: #e3f2e9;
+  font-weight: 600;
+}
+
+/* ─── Plegable (<details>) ───────────────────────────────────────── */
+
+.fg-plegable {
+  border: 1px solid var(--fg-borde);
+  border-radius: .5rem;
+  padding: .5rem .8rem;
+  margin: .6rem 0;
+  background: #fff;
+}
+.fg-plegable > summary { cursor: pointer; font-weight: 600; }
+.fg-plegable[open] > summary { margin-bottom: .5rem; }
+
+/* ─── Pestañas (ARIA tablist) ────────────────────────────────────── */
+
+.fg-pestanas {
+  display: flex;
+  gap: .25rem;
+  border-bottom: 1px solid var(--fg-borde);
+  margin: 1rem 0 0;
+}
+.fg-pestana {
+  padding: .5rem .85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #555;
+  font: inherit;
+  cursor: pointer;
+}
+.fg-pestana[aria-selected="true"] {
+  color: var(--fg-acento);
+  border-bottom-color: var(--fg-acento);
+  font-weight: 600;
+}
+.fg-panel { padding: .8rem 0; }
+.fg-panel[hidden] { display: none; }
+
+/* ─── Plegable (<details>) ───────────────────────────────────────── */
+
+.fg-plegable {
+  border: 1px solid var(--fg-borde);
+  border-radius: .5rem;
+  padding: .5rem .8rem;
+  margin: .6rem 0;
+  background: #fff;
+}
+.fg-plegable > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.fg-plegable[open] > summary { margin-bottom: .5rem; }
+
+nav ul { display: flex; gap: 1rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+nav a { color: var(--fg-acento); text-decoration: none; }
+nav a:hover { text-decoration: underline; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .45rem .3rem; border-bottom: 1px solid var(--fg-borde); }
+th { font-size: .85rem; color: #555; }
+
+ul { padding-left: 1.1rem; }
+li { margin: .2rem 0; }
+
+dialog {
+  border: 1px solid var(--fg-borde);
+  border-radius: .6rem;
+  padding: 1.2rem;
+  max-width: 30rem;
+}
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+
+hr { border: 0; border-top: 1px solid var(--fg-borde); margin: 1.2rem 0; }
+
+img { max-width: 100%; height: auto; }

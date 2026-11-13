@@ -2,6 +2,125 @@
 
 use super::*;
 
+/// Plantilla web: app SSR mínima con `servidor_web` + `plantillas`.
+///
+/// Se elige por entorno (`FORJA_PLANTILLA=web`) porque la CLI no usa flags.
+/// La app completa (SQLite + sesión + CSRF + login) está en `demos/tareas-web`.
+fn escribir_plantilla_web(directorio: &std::path::Path, nombre: &str) {
+    let principal = r#"// main.fa — app web SSR mínima
+//
+//   forja run main.fa        (FORJA_WEB_PUERTO=8080 por defecto)
+//
+// Página real, sin JavaScript: el HTML se arma en el servidor con
+// `std/plantillas` (escape automático incluido). Para login, sesiones, CSRF y
+// base de datos, mirá `demos/tareas-web` del repo de Forja.
+
+importar "std/servidor_web"
+importar "std/plantillas"
+importar "std/env"
+
+variable puerto = env.obtener_entero("FORJA_WEB_PUERTO", 8080)
+
+variable LAYOUT = "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">" +
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+    "<title>{{titulo}}</title>" +
+    "<link rel=\"stylesheet\" href=\"/publico/estilo.css\"></head><body>" +
+    "{{{contenido}}}</body></html>"
+
+variable PAGINA = "<h1>Hola desde {{nombre}}!</h1>" +
+    "<p>Esta página la generó Forja en el servidor.</p>" +
+    "<ul>{% para tarea en tareas %}<li>{{tarea}}</li>{% fin %}</ul>"
+
+funcion inicio(peticion, respuesta) {
+    variable contenido = plantillas.interpolar(PAGINA, {
+        "nombre": "NOMBRE_APP",
+        "tareas": ["editar main.fa", "agregar una ruta", "deployar"]
+    })
+    variable html_pagina = plantillas.interpolar(LAYOUT, {
+        "titulo": "NOMBRE_APP",
+        "contenido": contenido
+    })
+    retornar servidor_web.html(respuesta, html_pagina)
+}
+
+variable servidor = nuevo ServidorWeb(puerto)
+servidor_web.servir_estaticos(servidor, "/publico", "publico")
+servidor_web.habilitar_seguridad(servidor, falso)
+servidor_web.habilitar_salud(servidor)
+servidor_web.registrar_obtener(servidor, "/", inicio)
+servidor_web.iniciar(servidor)
+"#
+    .replace("NOMBRE_APP", nombre);
+
+    let css = r#":root { --tinta: #1c1c1e; --papel: #fbfbf8; }
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  max-width: 42rem;
+  padding: 2rem 1.25rem;
+  background: var(--papel);
+  color: var(--tinta);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+h1 { font-size: 1.5rem; }
+ul { padding-left: 1.1rem; }
+li { margin: .2rem 0; }
+"#;
+
+    let readme = r#"# NOMBRE_APP
+
+App web con [Forja](https://github.com/forja-lang/forja): HTML generado en el
+servidor (SSR) con `std/plantillas`, sin JavaScript.
+
+```bash
+forja run main.fa
+# http://127.0.0.1:8080/
+```
+
+## Configuración por entorno
+
+| Variable | Por defecto | Qué hace |
+|---|---|---|
+| `FORJA_WEB_PUERTO` | `8080` | puerto |
+
+## Qué trae
+
+- `GET /` — página SSR con escape de HTML automático
+- `GET /salud` y `GET /metricas` — healthcheck y contadores por código
+- `/publico/*` — estáticos con `ETag` y `304`
+- cabeceras de seguridad (`nosniff`, `X-Frame-Options`, CSP)
+
+## Siguiente paso
+
+- Formularios y sesiones: `importar "std/sesion"` (cookie firmada + CSRF) y
+  `importar "std/auth"` (registro/login con rate limit).
+- Base de datos: `importar "std/datos"` y `datos.migrar(bd, "migraciones")`.
+- App completa de referencia: `demos/tareas-web` en el repo de Forja.
+"#
+    .replace("NOMBRE_APP", nombre);
+
+    std::fs::create_dir_all(directorio.join("publico")).unwrap_or_else(|e| {
+        eprintln!("Error creando publico/: {}", e);
+        process::exit(1);
+    });
+    std::fs::create_dir_all(directorio.join("migraciones")).unwrap_or_else(|e| {
+        eprintln!("Error creando migraciones/: {}", e);
+        process::exit(1);
+    });
+    for (ruta, contenido) in [
+        ("main.fa", principal),
+        ("publico/estilo.css", css.to_string()),
+        ("README.md", readme),
+    ] {
+        std::fs::write(directorio.join(ruta), contenido).unwrap_or_else(|e| {
+            eprintln!("Error escribiendo {}: {}", ruta, e);
+            process::exit(1);
+        });
+    }
+    println!("   plantilla web: main.fa + publico/estilo.css + README.md");
+    println!("   forja run main.fa  →  http://127.0.0.1:8080/");
+}
+
 /// forja new <nombre>
 pub(crate) fn cmd_nuevo(args: &[String]) {
     if args.is_empty() {
@@ -20,14 +139,26 @@ pub(crate) fn cmd_nuevo(args: &[String]) {
         eprintln!("Error creando directorio: {}", e);
         process::exit(1);
     });
-    let principal_fa = format!(
-        "// {} — Programa en Forja (fa)\n// Creado con 'forja new'\n\nescribir(\"Hola desde {}!\")\n",
-        nombre, nombre
-    );
-    std::fs::write(directorio.join("main.fa"), &principal_fa).unwrap_or_else(|e| {
-        eprintln!("Error escribiendo main.fa: {}", e);
-        process::exit(1);
-    });
+    // La CLI no usa flags: la plantilla se elige por entorno.
+    let plantilla_web = std::env::var("FORJA_PLANTILLA")
+        .map(|valor| valor.eq_ignore_ascii_case("web"))
+        .unwrap_or(false);
+    if plantilla_web {
+        escribir_plantilla_web(directorio, nombre);
+    } else {
+        let principal_fa = format!(
+            "// {} — Programa en Forja (fa)
+// Creado con 'forja new'
+
+escribir(\"Hola desde {}!\")
+",
+            nombre, nombre
+        );
+        std::fs::write(directorio.join("main.fa"), &principal_fa).unwrap_or_else(|e| {
+            eprintln!("Error escribiendo main.fa: {}", e);
+            process::exit(1);
+        });
+    }
     // Archivo de configuración completo con ForjaConfig
     let config = ForjaConfig::nuevo(nombre, "0.1.0");
     if let Err(e) = config.guardar(&directorio.join("forja.json")) {

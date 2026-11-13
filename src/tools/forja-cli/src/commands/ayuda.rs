@@ -52,6 +52,8 @@ pub(crate) fn mostrar_ayuda() {
     println!("  publish [ruta]             Publicar el paquete en el registry local");
     println!("  yank <paquete> <version>   Retirar una versión del registry");
     println!("  registry-serve [dir] [puerto]  Servidor HTTP del registry remoto (dev)");
+    println!("  web dev [archivo.fa]        Corre la app web y la reinicia al cambiar archivos");
+    println!("  web build [salida]          Arma el paquete de despliegue (dist/: fuentes, Dockerfile, README)");
     println!("  aprender                   Tutorial interactivo");
     println!("  palabras                   Lista de palabras clave");
     println!("  explicar <palabra>         Explicar un concepto");

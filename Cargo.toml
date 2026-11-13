@@ -21,6 +21,7 @@ members = [
     "library/gui-rt",
     "library/wasm",
     "library/wasm-gui",
+    "library/gui-dom",
     "library/rt",
     "library/android",
     "src/bootstrap",

@@ -15,6 +15,7 @@ pub const ANSI: &str = include_str!("../../../library/std/ansi.fa");
 pub const ARCHIVO: &str = include_str!("../../../library/std/archivo.fa");
 pub const ARG: &str = include_str!("../../../library/std/arg.fa");
 pub const ATOMICOS: &str = include_str!("../../../library/std/atomicos.fa");
+pub const AUTH: &str = include_str!("../../../library/std/auth.fa");
 pub const BINARIO: &str = include_str!("../../../library/std/binario.fa");
 pub const CLIENTE_H2: &str = include_str!("../../../library/std/cliente_h2.fa");
 pub const CLIENTE_H3: &str = include_str!("../../../library/std/cliente_h3.fa");
@@ -33,19 +34,23 @@ pub const HASH: &str = include_str!("../../../library/std/hash.fa");
 pub const HEX: &str = include_str!("../../../library/std/hex.fa");
 pub const IO: &str = include_str!("../../../library/std/io.fa");
 pub const JSON: &str = include_str!("../../../library/std/json.fa");
+pub const LIMITADOR: &str = include_str!("../../../library/std/limitador.fa");
 pub const LOG: &str = include_str!("../../../library/std/log.fa");
 pub const MATEMATICA: &str = include_str!("../../../library/std/matematica.fa");
 pub const MMAP: &str = include_str!("../../../library/std/mmap.fa");
 pub const PERFILADO: &str = include_str!("../../../library/std/perfilado.fa");
+pub const PLANTILLAS: &str = include_str!("../../../library/std/plantillas.fa");
 pub const PROCESO: &str = include_str!("../../../library/std/proceso.fa");
 pub const PRUEBA: &str = include_str!("../../../library/std/prueba.fa");
 pub const QUIC: &str = include_str!("../../../library/std/quic.fa");
 pub const SANDBOX: &str = include_str!("../../../library/std/sandbox.fa");
 pub const RED: &str = include_str!("../../../library/std/red.fa");
+pub const REDIS: &str = include_str!("../../../library/std/redis.fa");
 pub const RESULTADO: &str = include_str!("../../../library/std/resultado.fa");
 pub const RUTA: &str = include_str!("../../../library/std/ruta.fa");
 pub const SENALES: &str = include_str!("../../../library/std/señales.fa");
 pub const SERVIDOR_H2: &str = include_str!("../../../library/std/servidor_h2.fa");
+pub const SESION: &str = include_str!("../../../library/std/sesion.fa");
 pub const SERVIDOR_WEB: &str = include_str!("../../../library/std/servidor_web.fa");
 pub const SISTEMA: &str = include_str!("../../../library/std/sistema.fa");
 pub const SOCKETS: &str = include_str!("../../../library/std/sockets.fa");
@@ -53,9 +58,11 @@ pub const SQLITE: &str = include_str!("../../../library/std/sqlite.fa");
 pub const TEMPORIZADOR: &str = include_str!("../../../library/std/temporizador.fa");
 pub const TEXTO: &str = include_str!("../../../library/std/texto.fa");
 pub const TLS: &str = include_str!("../../../library/std/tls.fa");
+pub const TRABAJOS: &str = include_str!("../../../library/std/trabajos.fa");
 pub const TOML: &str = include_str!("../../../library/std/toml.fa");
 pub const TUI: &str = include_str!("../../../library/std/tui.fa");
 pub const URL: &str = include_str!("../../../library/std/url.fa");
+pub const VISTA: &str = include_str!("../../../library/std/vista.fa");
 pub const WEBSOCKET: &str = include_str!("../../../library/std/websocket.fa");
 pub const XHB: &str = include_str!("../../../library/std/xhb.fa");
 
@@ -103,6 +110,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
     ModuloEmbebido {
         nombre: "std/arg",
         fuente: ARG,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/auth",
+        fuente: AUTH,
         es_gui: false,
     },
     ModuloEmbebido {
@@ -201,6 +213,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
         es_gui: false,
     },
     ModuloEmbebido {
+        nombre: "std/limitador",
+        fuente: LIMITADOR,
+        es_gui: false,
+    },
+    ModuloEmbebido {
         nombre: "std/log",
         fuente: LOG,
         es_gui: false,
@@ -226,6 +243,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
         es_gui: false,
     },
     ModuloEmbebido {
+        nombre: "std/plantillas",
+        fuente: PLANTILLAS,
+        es_gui: false,
+    },
+    ModuloEmbebido {
         nombre: "std/prueba",
         fuente: PRUEBA,
         es_gui: false,
@@ -233,6 +255,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
     ModuloEmbebido {
         nombre: "std/quic",
         fuente: QUIC,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/redis",
+        fuente: REDIS,
         es_gui: false,
     },
     ModuloEmbebido {
@@ -271,6 +298,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
         es_gui: false,
     },
     ModuloEmbebido {
+        nombre: "std/sesion",
+        fuente: SESION,
+        es_gui: false,
+    },
+    ModuloEmbebido {
         nombre: "std/sistema",
         fuente: SISTEMA,
         es_gui: false,
@@ -306,6 +338,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
         es_gui: false,
     },
     ModuloEmbebido {
+        nombre: "std/trabajos",
+        fuente: TRABAJOS,
+        es_gui: false,
+    },
+    ModuloEmbebido {
         nombre: "std/tui",
         fuente: TUI,
         es_gui: false,
@@ -313,6 +350,11 @@ pub const MODULOS: &[ModuloEmbebido] = &[
     ModuloEmbebido {
         nombre: "std/url",
         fuente: URL,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/vista",
+        fuente: VISTA,
         es_gui: false,
     },
     ModuloEmbebido {

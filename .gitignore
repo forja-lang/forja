@@ -112,3 +112,11 @@ installer/bootstrapper/obj/
 *.msi
 forja-setup-x64.exe
 *.wixpdb
+
+# Paquete generado por scripts/servir-demo-dom.sh (no se versiona)
+demo-dom/pkg/
+
+# Artefactos de la demo (base y configuración local)
+demos/tareas-web/tareas.db
+demos/tareas-web/repl_historial.txt
+demos/tareas-web/forja.yaml

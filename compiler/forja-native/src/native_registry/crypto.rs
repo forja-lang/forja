@@ -58,7 +58,10 @@ pub fn nativo_random_bytes(
     };
     match crate::crypto::random_bytes(n) {
         Ok(bytes) => {
-            let s = String::from_utf8_lossy(&bytes).to_string();
+            // Hex, no `from_utf8_lossy`: bytes crudos convertidos a texto se
+            // corrompen (caracteres de reemplazo) y el resultado no sirve como
+            // id de sesión ni como sal. Ver N25 del plan web.
+            let s = crate::hash::hex_codificar(&bytes);
             let indice = vm.reservar_texto(Arc::from(s.as_str()));
             Ok(ValorFast::texto(indice))
         }

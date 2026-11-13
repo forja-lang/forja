@@ -1,5 +1,7 @@
 //! Helpers compartidos por los tests de integración de Forja.
 
+pub mod resp;
+
 use std::path::{Path, PathBuf};
 
 pub use forja::bytecode::Opcode;

@@ -167,6 +167,19 @@ fn main() {
         "publish" | "publicar" => cmd_publish(&args[2..]),
         "yank" | "retirar" => cmd_yank(&args[2..]),
         "registry-serve" | "servidor-registry" => cmd_registro_serve(&args[2..]),
+        // Servidor de desarrollo: reinicia la app web al cambiar archivos
+        "web" => {
+            let resto = &args[2..];
+            let sub = resto.first().map(|a| a.as_str()).unwrap_or("");
+            if sub == "dev" || sub == "desarrollo" {
+                cmd_web_dev(resto);
+            } else if sub == "build" || sub == "construir" {
+                cmd_web_build(resto);
+            } else {
+                eprintln!("Uso: forja web dev [archivo.fa] | forja web build [salida]");
+                process::exit(1);
+            }
+        }
         // Tutorial interactivo
         "learn" | "aprender" => cmd_learn(&args[2..]),
         // Colorear código Forja en la terminal
