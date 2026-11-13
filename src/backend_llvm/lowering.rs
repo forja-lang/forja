@@ -2316,9 +2316,13 @@ fn evidencia_de_llamadas(
 /// implementaciones no-`Entero` coinciden. Upgrade: firmas de rasgo con tipos.
 fn unificar_retorno(tipos: &[T]) -> Option<T> {
     let mut puntero: Option<T> = None;
+    let mut hay_bool = false;
     for t in tipos {
         match t {
-            T::Int | T::Bool => {}
+            T::Int => {}
+            // `Booleano` gana a `Entero`: si alguna implementación devuelve un
+            // booleano, el resultado se imprime como tal (`110`).
+            T::Bool => hay_bool = true,
             // Necesitan anotación: `double`, `i128` y "sin valor" no son un slot.
             T::Dec | T::Exacto | T::Nulo => return None,
             otro => match &puntero {
@@ -2328,7 +2332,7 @@ fn unificar_retorno(tipos: &[T]) -> Option<T> {
             },
         }
     }
-    Some(puntero.unwrap_or(T::Int))
+    Some(puntero.unwrap_or(if hay_bool { T::Bool } else { T::Int }))
 }
 
 /// Tipo de un campo sin anotar, deducido de lo que se le asigna dentro de la
