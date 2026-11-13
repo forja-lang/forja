@@ -79,6 +79,10 @@ echo "$DOM_AUTO" | grep -q 'data-auto="listo"' || fallo "la simulación no termi
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="tareas">3<'     || fallo "los clics y el submit no ejecutaron el callback Forja (se esperaba tareas = 3)"
 echo "$DOM_AUTO" | grep -q '<form class="fg-formulario"'     || fallo "no hay formulario real en la página"
 
+# Lista paginada: en el DOM sólo está la página actual.
+echo "$DOM_AUTO" | grep -q 'data-fg-pagina-actual="2">Página 2 de 3'     || fallo "la lista paginada no avanzó a la página 2"
+echo "$DOM_AUTO" | grep -q '<ul class="fg-paginada"><li><p>llamar al gasista'     || fallo "la página 2 no empieza en el ítem 3 (sólo se generan los de la página)"
+
 # Navegación por URL (hash): la variable `ruta` sigue al historial.
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="ruta">/detalle<'     || fallo "la navegación por hash no actualizó la variable ruta"
 echo "$DOM_AUTO" | grep -q 'data-fg-variable="titulo">pan integral<'     || fallo "el cambio del campo no llegó a la variable del programa"
@@ -105,4 +109,5 @@ echo "   tabla ordenable: filas reordenadas y aria-sort"
 echo "   clics ejecutan callbacks Forja (0 → 2) · el campo escribe la variable"
 echo "   formulario: el submit dispara la acción (tareas = 3)"
 echo "   navegación por hash: ruta = /detalle"
+echo "   lista paginada: sólo la página actual existe en el DOM"
 echo "✅ demo de GUI DOM funciona en navegador"

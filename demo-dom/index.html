@@ -49,6 +49,7 @@
     const CODIGO = `
 variable tareas = 0
 variable pestana = "lista"
+variable pagina = 1
 variable vista = "hoy"
 variable titulo = ""
 
@@ -79,6 +80,13 @@ funcion main() {
                             entrada_texto("titulo", "comprar pan"),
                             boton("Agregar", crear_tarea)
                         )
+                    ),
+                    lista_paginada("pagina", 2,
+                        etiqueta("comprar pan"),
+                        etiqueta("lavar ropa"),
+                        etiqueta("llamar al gasista"),
+                        etiqueta("pagar la luz"),
+                        etiqueta("regar las plantas")
                     ),
                     tabla_ordenable("Tarea", "Estado",
                         renglon("comprar pan", insignia("pendiente", "neutro")),
@@ -219,6 +227,8 @@ funcion recargar() {
           }, 200);
           // Enter en el formulario: el submit dispara la acción del botón.
           app.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+          // Paginación: sólo existe la página actual en el DOM.
+          app.querySelector('[data-fg-accion="pag:pagina:1"]').click();
           // Navegación por URL: el botón cambia el hash y la variable `ruta`.
           app.querySelector('[data-fg-accion="ir:#/detalle"]').click();
           // Tabla ordenable: un clic en la cabecera "Tarea" ordena las filas.
