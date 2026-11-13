@@ -1271,9 +1271,21 @@ impl Lowering {
             .iter()
             .enumerate()
             .map(|(i, p)| {
-                self.tipo_declarado(&p.tipo)
+                let evidencia = por_llamada.get(i).cloned().flatten();
+                let declarado = self.tipo_declarado(&p.tipo);
+                // `p: Par` con `Par<A, B>` (plantilla) y la evidencia diciendo
+                // `Par_Texto_Decimal`: gana la especialización concreta.
+                let declarado = match (&declarado, &evidencia) {
+                    (Some(T::Clase(n)), Some(T::Clase(m)))
+                        if n != m && self.clases.get(n).map(|c| c.generica).unwrap_or(false) =>
+                    {
+                        evidencia.clone()
+                    }
+                    _ => declarado,
+                };
+                declarado
                     .or_else(|| inferir_parametro(&p.nombre, cuerpo))
-                    .or_else(|| por_llamada.get(i).cloned().flatten())
+                    .or(evidencia)
                     .unwrap_or(T::Int)
             })
             .collect()
@@ -1807,8 +1819,15 @@ fn tipo_por_forma(e: &Expresion) -> Option<T> {
 }
 
 /// ¿La expresión es un arreglo (literal) cuyos elementos son textos?
-fn es_arreglo_de_textos(e: &Expresion) -> bool {
-    matches!(e, Expresion::Arreglo(items) if items.first().map(|i| matches!(i, Expresion::LiteralTexto(_))).unwrap_or(false))
+fn es_arreglo_de_textos(e: &Expresion, vars_texto: &std::collections::HashSet<String>) -> bool {
+    match e {
+        Expresion::Arreglo(items) => items
+            .first()
+            .map(|i| matches!(i, Expresion::LiteralTexto(_)))
+            .unwrap_or(false),
+        Expresion::Identificador { nombre, .. } => vars_texto.contains(nombre),
+        _ => false,
+    }
 }
 
 /// Tipos **no-Entero** que llegan a cada parámetro en las llamadas del programa,
@@ -1838,12 +1857,14 @@ fn evidencia_de_llamadas(
         en_conflicto: &mut std::collections::HashSet<(String, usize)>,
         vars: &HashMap<String, T>,
         args_por_llamada: &mut HashMap<String, Vec<Expresion>>,
+        vars_texto: &std::collections::HashSet<String>,
         nombre: &str,
         args: &[Expresion],
     ) {
         // Las llamadas punteadas (`x.metodo`) se registran sin el receptor.
         let clave = nombre.rsplit('.').next().unwrap_or(nombre).to_string();
         args_por_llamada.insert(clave.clone(), args.to_vec());
+        let _ = &vars_texto;
         let entrada = mapa.entry(clave.clone()).or_default();
         if entrada.len() < args.len() {
             entrada.resize(args.len(), None);
@@ -1873,6 +1894,7 @@ fn evidencia_de_llamadas(
         mapa: &mut HashMap<String, Vec<Option<T>>>,
         en_conflicto: &mut std::collections::HashSet<(String, usize)>,
         args_por_llamada: &mut HashMap<String, Vec<Expresion>>,
+        cadenas_texto: &mut std::collections::HashSet<String>,
         vars: &mut HashMap<String, T>,
     ) {
         match e {
@@ -1882,11 +1904,12 @@ fn evidencia_de_llamadas(
                     en_conflicto,
                     vars,
                     args_por_llamada,
+                    cadenas_texto,
                     nombre,
                     argumentos,
                 );
                 for a in argumentos {
-                    en_expr(a, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 }
             }
             Expresion::LlamadaMetodo {
@@ -1899,12 +1922,20 @@ fn evidencia_de_llamadas(
                     en_conflicto,
                     vars,
                     args_por_llamada,
+                    cadenas_texto,
                     metodo,
                     argumentos,
                 );
-                en_expr(objeto, mapa, en_conflicto, args_por_llamada, vars);
+                en_expr(
+                    objeto,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
                 for a in argumentos {
-                    en_expr(a, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 }
             }
             // `nuevo Clase(args)`: la evidencia de un constructor es por clase
@@ -1915,11 +1946,12 @@ fn evidencia_de_llamadas(
                     en_conflicto,
                     vars,
                     args_por_llamada,
+                    cadenas_texto,
                     &format!("constructor@{clase}"),
                     argumentos,
                 );
                 for a in argumentos {
-                    en_expr(a, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 }
             }
             Expresion::Closure { parametros, cuerpo } => {
@@ -1929,63 +1961,153 @@ fn evidencia_de_llamadas(
                         propias.insert(p.nombre.clone(), t);
                     }
                 }
-                en_sentencias(cuerpo, mapa, en_conflicto, args_por_llamada, &mut propias);
+                en_sentencias(
+                    cuerpo,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    &mut propias,
+                );
             }
-            Expresion::Hilo { cuerpo } => {
-                en_sentencias(cuerpo, mapa, en_conflicto, args_por_llamada, vars)
-            }
+            Expresion::Hilo { cuerpo } => en_sentencias(
+                cuerpo,
+                mapa,
+                en_conflicto,
+                args_por_llamada,
+                cadenas_texto,
+                vars,
+            ),
             Expresion::Coincidir { brazos, expr: o } => {
-                en_expr(o, mapa, en_conflicto, args_por_llamada, vars);
+                en_expr(o, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 for b in brazos {
-                    en_sentencias(&b.cuerpo, mapa, en_conflicto, args_por_llamada, vars);
+                    en_sentencias(
+                        &b.cuerpo,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    );
                 }
             }
             Expresion::Binaria {
                 izquierda, derecha, ..
             } => {
-                en_expr(izquierda, mapa, en_conflicto, args_por_llamada, vars);
-                en_expr(derecha, mapa, en_conflicto, args_por_llamada, vars);
+                en_expr(
+                    izquierda,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
+                en_expr(
+                    derecha,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
             }
-            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => {
-                en_expr(expr, mapa, en_conflicto, args_por_llamada, vars)
-            }
+            Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => en_expr(
+                expr,
+                mapa,
+                en_conflicto,
+                args_por_llamada,
+                cadenas_texto,
+                vars,
+            ),
             Expresion::Ternario {
                 condicion,
                 si_verdadero,
                 si_falso,
             } => {
-                en_expr(condicion, mapa, en_conflicto, args_por_llamada, vars);
-                en_expr(si_verdadero, mapa, en_conflicto, args_por_llamada, vars);
-                en_expr(si_falso, mapa, en_conflicto, args_por_llamada, vars);
+                en_expr(
+                    condicion,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
+                en_expr(
+                    si_verdadero,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
+                en_expr(
+                    si_falso,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
             }
             Expresion::Index { objeto, indice } => {
-                en_expr(objeto, mapa, en_conflicto, args_por_llamada, vars);
-                en_expr(indice, mapa, en_conflicto, args_por_llamada, vars);
+                en_expr(
+                    objeto,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
+                en_expr(
+                    indice,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                );
             }
             Expresion::Arreglo(items) => {
                 for i in items {
-                    en_expr(i, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(i, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 }
             }
             Expresion::Mapa(pares) => {
                 for (k, v) in pares {
-                    en_expr(k, mapa, en_conflicto, args_por_llamada, vars);
-                    en_expr(v, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(k, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(v, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 }
             }
             Expresion::Asignacion { valor, .. }
             | Expresion::AsignacionCampo { valor, .. }
             | Expresion::AsignacionCompuesta { valor, .. }
-            | Expresion::ArregloFijar { valor, .. } => {
-                en_expr(valor, mapa, en_conflicto, args_por_llamada, vars)
-            }
-            Expresion::AccesoMiembro { objeto, .. } => {
-                en_expr(objeto, mapa, en_conflicto, args_por_llamada, vars)
-            }
+            | Expresion::ArregloFijar { valor, .. } => en_expr(
+                valor,
+                mapa,
+                en_conflicto,
+                args_por_llamada,
+                cadenas_texto,
+                vars,
+            ),
+            Expresion::AccesoMiembro { objeto, .. } => en_expr(
+                objeto,
+                mapa,
+                en_conflicto,
+                args_por_llamada,
+                cadenas_texto,
+                vars,
+            ),
             Expresion::Try(inner)
             | Expresion::Ok(inner)
             | Expresion::Error(inner)
-            | Expresion::Algo(inner) => en_expr(inner, mapa, en_conflicto, args_por_llamada, vars),
+            | Expresion::Algo(inner) => en_expr(
+                inner,
+                mapa,
+                en_conflicto,
+                args_por_llamada,
+                cadenas_texto,
+                vars,
+            ),
             _ => {}
         }
     }
@@ -1994,6 +2116,7 @@ fn evidencia_de_llamadas(
         mapa: &mut HashMap<String, Vec<Option<T>>>,
         en_conflicto: &mut std::collections::HashSet<(String, usize)>,
         args_por_llamada: &mut HashMap<String, Vec<Expresion>>,
+        cadenas_texto: &mut std::collections::HashSet<String>,
         vars: &mut HashMap<String, T>,
     ) {
         for d in cuerpo {
@@ -2003,55 +2126,108 @@ fn evidencia_de_llamadas(
                     valor: Some(v),
                     ..
                 } => {
+                    if es_arreglo_de_textos(v, cadenas_texto) {
+                        cadenas_texto.insert(nombre.clone());
+                    }
                     if let Some(t) = tipo_arg(v, vars) {
                         vars.insert(nombre.clone(), t);
                     }
-                    en_expr(v, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(v, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                 }
                 Declaracion::Variable { valor: None, .. } => {}
                 Declaracion::Asignacion { nombre, valor, .. } => {
                     if let Some(t) = tipo_arg(valor, vars) {
                         vars.insert(nombre.clone(), t);
                     }
-                    en_expr(valor, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(
+                        valor,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    );
                 }
                 Declaracion::AsignacionMiembro { valor, .. }
-                | Declaracion::AsignacionIndex { valor, .. } => {
-                    en_expr(valor, mapa, en_conflicto, args_por_llamada, vars)
-                }
+                | Declaracion::AsignacionIndex { valor, .. } => en_expr(
+                    valor,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                ),
                 Declaracion::Si {
                     condicion,
                     bloque_verdadero,
                     bloque_falso,
                 } => {
-                    en_expr(condicion, mapa, en_conflicto, args_por_llamada, vars);
-                    en_sentencias(bloque_verdadero, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(
+                        condicion,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    );
+                    en_sentencias(
+                        bloque_verdadero,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    );
                     if let Some(b) = bloque_falso {
-                        en_sentencias(b, mapa, en_conflicto, args_por_llamada, vars);
+                        en_sentencias(b, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                     }
                 }
                 Declaracion::Mientras { condicion, bloque } => {
-                    en_expr(condicion, mapa, en_conflicto, args_por_llamada, vars);
-                    en_sentencias(bloque, mapa, en_conflicto, args_por_llamada, vars);
+                    en_expr(
+                        condicion,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    );
+                    en_sentencias(
+                        bloque,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    );
                 }
                 Declaracion::Para { bloque, .. } | Declaracion::Repetir { bloque, .. } => {
-                    en_sentencias(bloque, mapa, en_conflicto, args_por_llamada, vars)
+                    en_sentencias(
+                        bloque,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                    )
                 }
                 Declaracion::Retornar { valor: Some(v) } => {
-                    en_expr(v, mapa, en_conflicto, args_por_llamada, vars)
+                    en_expr(v, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars)
                 }
-                Declaracion::Expresion(e) => en_expr(e, mapa, en_conflicto, args_por_llamada, vars),
+                Declaracion::Expresion(e) => {
+                    en_expr(e, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars)
+                }
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
                     anotar(
                         mapa,
                         en_conflicto,
                         vars,
                         args_por_llamada,
+                        cadenas_texto,
                         nombre,
                         argumentos,
                     );
                     for a in argumentos {
-                        en_expr(a, mapa, en_conflicto, args_por_llamada, vars);
+                        en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
                     }
                 }
                 Declaracion::Funcion {
@@ -2064,7 +2240,14 @@ fn evidencia_de_llamadas(
                             propias.insert(p.nombre.clone(), t);
                         }
                     }
-                    en_sentencias(cuerpo, mapa, en_conflicto, args_por_llamada, &mut propias);
+                    en_sentencias(
+                        cuerpo,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        &mut propias,
+                    );
                 }
                 Declaracion::Clase { metodos, .. }
                 | Declaracion::Implementacion { metodos, .. } => {
@@ -2080,6 +2263,7 @@ fn evidencia_de_llamadas(
                             mapa,
                             en_conflicto,
                             args_por_llamada,
+                            cadenas_texto,
                             &mut propias,
                         );
                     }
@@ -2094,11 +2278,13 @@ fn evidencia_de_llamadas(
     // Además de los tipos, se guardan los argumentos de cada llamada: sirven
     // para saber qué parámetros reciben un arreglo de textos.
     let mut por_llamada_args: HashMap<String, Vec<Expresion>> = HashMap::new();
+    let mut cadenas_texto: std::collections::HashSet<String> = std::collections::HashSet::new();
     en_sentencias(
         decls,
         &mut mapa,
         &mut en_conflicto,
         &mut por_llamada_args,
+        &mut cadenas_texto,
         &mut HashMap::new(),
     );
     // Argumentos que son un arreglo de textos: en el callee, las casillas de ese
@@ -2106,7 +2292,7 @@ fn evidencia_de_llamadas(
     let mut texto = std::collections::HashSet::new();
     for (clave, args) in &por_llamada_args {
         for (i, a) in args.iter().enumerate() {
-            if es_arreglo_de_textos(a) {
+            if es_arreglo_de_textos(a, &cadenas_texto) {
                 texto.insert((clave.clone(), i));
             }
         }
