@@ -61,6 +61,36 @@ pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<
     Ok(())
 }
 
+/// Directorio de caché de ejecutables nativos (`target/forja-cache`).
+fn cache_nativa() -> std::path::PathBuf {
+    std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("target"))
+        .join("forja-cache")
+}
+
+/// Compila con **caché**: mismo fuente + mismo runtime + mismas banderas →
+/// mismo ejecutable. Sin esto, `destino: auto` paga el `clang -O3 -flto` de
+/// ~200 ms en cada corrida.
+pub(crate) fn compilar_llvm_nativo_cache(
+    fuente: &str,
+    variante: &str,
+) -> Result<std::path::PathBuf, String> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    fuente.hash(&mut h);
+    forja::backend_llvm::RUNTIME_C.hash(&mut h);
+    variante.hash(&mut h);
+    let dir = cache_nativa().join(format!("{:016x}", h.finish()));
+    let exe = dir.join(if cfg!(windows) { "main.exe" } else { "main" });
+    if exe.exists() {
+        return Ok(exe);
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    compilar_llvm_a(fuente, &exe)?;
+    Ok(exe)
+}
+
 pub(crate) fn compilar_llvm_nativo(fuente: &str) -> Result<std::path::PathBuf, String> {
     let directorio = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
     std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
@@ -70,7 +100,7 @@ pub(crate) fn compilar_llvm_nativo(fuente: &str) -> Result<std::path::PathBuf, S
 }
 
 fn ejecutar_llvm_nativo(fuente: &str, path: &str) -> Result<Vec<String>, String> {
-    let exe = compilar_llvm_nativo(fuente)?;
+    let exe = compilar_llvm_nativo_cache(fuente, "auto")?;
     let padre = std::path::Path::new(path)
         .parent()
         .unwrap_or(std::path::Path::new("."));

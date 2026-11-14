@@ -1,0 +1,15 @@
+# Diferencias ACEPTADAS entre la ruta nativa y la VM (una por línea: ruta + motivo).
+# Cualquier otra diferencia hace fallar a scripts/paridad-native-vm.sh.
+#
+# Causa común de las de aritmética: la VM decide Entero/Decimal por el VALOR del
+# momento; la ruta nativa fija el tipo del slot (ver plans/TRASPASO-BACKEND-NATIVO.md §6.2.1).
+
+ejemplos/algoritmos/144_cola.fa                 aritmética dinámica (división/cola genérica)
+ejemplos/patrones/164_ecuacion_segundo_grado.fa aritmética dinámica (división entera vs decimal)
+ejemplos/patrones/167_estadistica.fa            aritmética dinámica (varianza/desvío)
+ejemplos/patrones/168_regresion_lineal.fa       aritmética dinámica (pendiente/intercepto)
+ejemplos/patrones/169_simulacion_montecarlo.fa  aritmética dinámica (proporción)
+ejemplos/avanzado/107_generico_multiple.fa      genérico con parámetros de tipo sin usar en la firma
+ejemplos/rasgos_genericos/72_genericos.fa       retorno de `este.campo` sin anotación
+ejemplos/ffi/184_ffi_simple.fa                  FFI rand/reloj: valores distintos y la VM termina con error
+ejemplos/async_await/canales.fa                 la VM no termina (cuelga); la ruta nativa sí
