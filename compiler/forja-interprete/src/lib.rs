@@ -36,6 +36,7 @@ pub trait AlmacenValores {
 //   - Soporta llamadas a funciones definidas en el AST y funciones nativas
 
 use forja_syntax::ast::*;
+#[cfg(feature = "sqlite")]
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Sub};
@@ -347,14 +348,23 @@ fn obtener_nativas() -> HashMap<&'static str, FuncionNativa> {
     m.insert("escribir", nativa_escribir);
     m.insert("empujar", nativa_empujar);
     // SQLite
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_abrir", sqlite_abrir);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_cerrar", sqlite_cerrar);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_ejecutar", sqlite_ejecutar);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_consultar", sqlite_consultar);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_ejecutar_params", sqlite_ejecutar_params);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_consultar_params", sqlite_consultar_params);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_ultimo_id", sqlite_ultimo_id);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_tablas", sqlite_tablas);
+#[cfg(feature = "sqlite")]
     m.insert("_sqlite_columnas", sqlite_columnas);
     // Archivo
     m.insert("_archivo_leer", nativa_archivo_leer);
@@ -633,6 +643,7 @@ fn nativa_empujar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor
 
 /// Heap global de conexiones SQLite (envueltas en Arc<Mutex<>>).
 /// Cada conexión se almacena como `Option` para permitir cerrado lógico.
+#[cfg(feature = "sqlite")]
 static MONTICULO_SQLITE: Mutex<Vec<Option<Arc<Mutex<Connection>>>>> = Mutex::new(Vec::new());
 
 /// Extrae un índice entero de un Valor, aceptando Entero y Decimal.
@@ -649,6 +660,7 @@ fn extraer_indice(valor: &Valor, nombre_fn: &str) -> Result<usize, String> {
 }
 
 /// Obtiene una conexión del heap por índice (retorna Arc clonado).
+#[cfg(feature = "sqlite")]
 fn sqlite_obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, String> {
     let monticulo = MONTICULO_SQLITE
         .lock()
@@ -663,6 +675,7 @@ fn sqlite_obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, String> {
 }
 
 /// Convierte un Value de SQLite a serde_json::Value para serialización.
+#[cfg(feature = "sqlite")]
 fn sqlite_valor_a_json(val: rusqlite::types::Value) -> serde_json::Value {
     match val {
         rusqlite::types::Value::Null => serde_json::Value::Null,
@@ -678,6 +691,7 @@ fn sqlite_valor_a_json(val: rusqlite::types::Value) -> serde_json::Value {
 }
 
 /// Parsea un Valor::Texto como JSON array para extraer parámetros SQL.
+#[cfg(feature = "sqlite")]
 fn args_a_params(val: &Valor) -> Result<Vec<Box<dyn rusqlite::types::ToSql>>, String> {
     let json_str = match val {
         Valor::Texto(s) => s.clone(),
@@ -750,6 +764,7 @@ fn args_a_params(val: &Valor) -> Result<Vec<Box<dyn rusqlite::types::ToSql>>, St
 // ═════════════════════════════════════════════════════════════════════════
 
 /// `_sqlite_abrir(ruta)` → índice de conexión (entero)
+#[cfg(feature = "sqlite")]
 fn sqlite_abrir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let ruta = match args.first() {
         Some(Valor::Texto(s)) => s.clone(),
@@ -765,6 +780,7 @@ fn sqlite_abrir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, 
 }
 
 /// `_sqlite_cerrar(indice_conexion)` → 0 éxito, -1 error
+#[cfg(feature = "sqlite")]
 fn sqlite_cerrar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let idx = match args.first() {
         Some(v) => extraer_indice(v, "_sqlite_cerrar")?,
@@ -782,6 +798,7 @@ fn sqlite_cerrar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor,
 }
 
 /// `_sqlite_ejecutar(indice_conexion, sql)` → filas_afectadas
+#[cfg(feature = "sqlite")]
 fn sqlite_ejecutar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     if args.len() < 2 {
         return Err("_sqlite_ejecutar(indice, sql) requiere 2 argumentos".to_string());
@@ -802,6 +819,7 @@ fn sqlite_ejecutar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valo
 }
 
 /// `_sqlite_consultar(indice_conexion, sql)` → JSON array de mapas (como texto)
+#[cfg(feature = "sqlite")]
 fn sqlite_consultar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     if args.len() < 2 {
         return Err("_sqlite_consultar(indice, sql) requiere 2 argumentos".to_string());
@@ -859,6 +877,7 @@ fn sqlite_consultar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Val
 }
 
 /// `_sqlite_ultimo_id(indice_conexion)` → último rowid insertado
+#[cfg(feature = "sqlite")]
 fn sqlite_ultimo_id(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let idx = match args.first() {
         Some(v) => extraer_indice(v, "_sqlite_ultimo_id")?,
@@ -872,6 +891,7 @@ fn sqlite_ultimo_id(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Val
 }
 
 /// `_sqlite_ejecutar_params(indice, sql, arreglo_valores)` → filas_afectadas
+#[cfg(feature = "sqlite")]
 fn sqlite_ejecutar_params(
     args: &[Valor],
     _almacen: &dyn AlmacenValores,
@@ -904,6 +924,7 @@ fn sqlite_ejecutar_params(
 }
 
 /// `_sqlite_consultar_params(indice, sql, arreglo_valores)` → JSON array de mapas
+#[cfg(feature = "sqlite")]
 fn sqlite_consultar_params(
     args: &[Valor],
     _almacen: &dyn AlmacenValores,
@@ -971,6 +992,7 @@ fn sqlite_consultar_params(
 }
 
 /// `_sqlite_tablas(indice_conexion)` → JSON array de nombres de tablas (como texto)
+#[cfg(feature = "sqlite")]
 fn sqlite_tablas(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let idx = match args.first() {
         Some(v) => extraer_indice(v, "_sqlite_tablas")?,
@@ -999,6 +1021,7 @@ fn sqlite_tablas(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor,
 }
 
 /// `_sqlite_columnas(indice_conexion, tabla)` → JSON array de mapas con info de columnas
+#[cfg(feature = "sqlite")]
 fn sqlite_columnas(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     if args.len() < 2 {
         return Err("_sqlite_columnas(indice, tabla) requiere 2 argumentos".to_string());

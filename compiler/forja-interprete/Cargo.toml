@@ -8,7 +8,12 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/forja-lang/forja"
 publish = false
 
+[features]
+# SQLite no compila en wasm32: la GUI web lo desactiva.
+default = ["sqlite"]
+sqlite = ["dep:rusqlite"]
+
 [dependencies]
 forja-syntax = { path = "../forja-syntax" }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
