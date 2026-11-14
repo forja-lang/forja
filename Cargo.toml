@@ -6,6 +6,7 @@ members = [
     "compiler/forja-session",
     "compiler/forja-hir",
     "compiler/forja-ir",
+    "compiler/forja-interprete",
     "compiler/forja-bytecode",
     "compiler/forja-driver",
     "compiler/forja-runtime",
