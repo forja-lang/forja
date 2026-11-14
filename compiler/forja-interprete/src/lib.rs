@@ -172,9 +172,9 @@ impl Valor {
                 }
                 serde_json::Value::Object(mapa)
             }
-            Valor::Arreglo(items) => serde_json::Value::Array(
-                items.iter().map(|v| v.to_json_valor()).collect(),
-            ),
+            Valor::Arreglo(items) => {
+                serde_json::Value::Array(items.iter().map(|v| v.to_json_valor()).collect())
+            }
             Valor::Nulo => serde_json::Value::Null,
         }
     }
@@ -356,23 +356,23 @@ fn obtener_nativas() -> HashMap<&'static str, FuncionNativa> {
     m.insert("escribir", nativa_escribir);
     m.insert("empujar", nativa_empujar);
     // SQLite
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_abrir", sqlite_abrir);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_cerrar", sqlite_cerrar);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_ejecutar", sqlite_ejecutar);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_consultar", sqlite_consultar);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_ejecutar_params", sqlite_ejecutar_params);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_consultar_params", sqlite_consultar_params);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_ultimo_id", sqlite_ultimo_id);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_tablas", sqlite_tablas);
-#[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     m.insert("_sqlite_columnas", sqlite_columnas);
     // Archivo
     m.insert("_archivo_leer", nativa_archivo_leer);
@@ -462,10 +462,7 @@ fn nativa_dividir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor
     };
 
     Ok(Valor::Arreglo(
-        partes
-            .into_iter()
-            .map(|p| Valor::from_serde(&p))
-            .collect(),
+        partes.into_iter().map(|p| Valor::from_serde(&p)).collect(),
     ))
 }
 
@@ -551,10 +548,7 @@ fn nativa_tipo(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, S
 }
 
 /// `_archivo_leer(ruta)` — lee texto de un archivo en disco
-fn nativa_archivo_leer(
-    args: &[Valor],
-    _almacen: &dyn AlmacenValores,
-) -> Result<Valor, String> {
+fn nativa_archivo_leer(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let ruta = match args.first() {
         Some(Valor::Texto(t)) => t.clone(),
         _ => return Err("_archivo_leer(ruta): ruta debe ser texto".to_string()),
@@ -565,10 +559,7 @@ fn nativa_archivo_leer(
 }
 
 /// `_archivo_escribir(ruta, contenido)` — escribe texto a un archivo en disco
-fn nativa_archivo_escribir(
-    args: &[Valor],
-    _almacen: &dyn AlmacenValores,
-) -> Result<Valor, String> {
+fn nativa_archivo_escribir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let ruta = match args.first() {
         Some(Valor::Texto(t)) => t.clone(),
         _ => return Err("_archivo_escribir(ruta, contenido): ruta debe ser texto".to_string()),
@@ -909,10 +900,7 @@ fn sqlite_ultimo_id(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Val
 
 /// `_sqlite_ejecutar_params(indice, sql, arreglo_valores)` → filas_afectadas
 #[cfg(feature = "sqlite")]
-fn sqlite_ejecutar_params(
-    args: &[Valor],
-    _almacen: &dyn AlmacenValores,
-) -> Result<Valor, String> {
+fn sqlite_ejecutar_params(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     if args.len() < 3 {
         return Err(
             "_sqlite_ejecutar_params(indice, sql, valores) requiere 3 argumentos".to_string(),
@@ -942,10 +930,7 @@ fn sqlite_ejecutar_params(
 
 /// `_sqlite_consultar_params(indice, sql, arreglo_valores)` → JSON array de mapas
 #[cfg(feature = "sqlite")]
-fn sqlite_consultar_params(
-    args: &[Valor],
-    _almacen: &dyn AlmacenValores,
-) -> Result<Valor, String> {
+fn sqlite_consultar_params(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     if args.len() < 3 {
         return Err(
             "_sqlite_consultar_params(indice, sql, valores) requiere 3 argumentos".to_string(),
@@ -1265,6 +1250,66 @@ fn valor_es_verdadero(valor: &Valor) -> bool {
 /// Busca una declaración de función por nombre.
 /// Si no encuentra por nombre exacto, intenta sin el prefijo de módulo
 /// (ej: "estadisticas_gastos_por_categoria" → busca "gastos_por_categoria").
+// ─── Clases: instancias, `este` y métodos ──────────────────────────
+
+/// Busca la clase declarada con ese nombre.
+fn buscar_clase<'a>(nombre: &str, declaraciones: &'a [Declaracion]) -> Option<&'a Declaracion> {
+    declaraciones.iter().find(|d| {
+        matches!(d, Declaracion::Clase { nombre: n, .. } if n == nombre)
+    })
+}
+
+/// Busca un método (o el `constructor`) dentro de la clase.
+fn buscar_metodo<'a>(
+    clase: &str,
+    metodo: &str,
+    declaraciones: &'a [Declaracion],
+) -> Option<&'a forja_syntax::ast::Metodo> {
+    match buscar_clase(clase, declaraciones)? {
+        Declaracion::Clase { metodos, .. } => metodos.iter().find(|m| m.nombre == metodo),
+        _ => None,
+    }
+}
+
+/// Nombre de la clase de una instancia (`Valor::Mapa` con `__clase`).
+fn clase_de(valor: &Valor) -> Option<String> {
+    match valor {
+        Valor::Mapa(m) => match m.get("__clase") {
+            Some(Valor::Texto(nombre)) => Some(nombre.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Ejecuta un método con `este` ligado a la instancia y devuelve la instancia
+/// actualizada (para que una mutación dentro del método se vea afuera).
+fn ejecutar_metodo(
+    metodo: &forja_syntax::ast::Metodo,
+    instancia: Valor,
+    args: &[Valor],
+    almacen: &dyn AlmacenValores,
+    declaraciones: &[Declaracion],
+) -> Result<(Valor, Valor), String> {
+    let mut ambito = Ambito::nuevo();
+    let este = instancia.clone();
+    ambito.asignar("este".to_string(), este.clone());
+    ambito.asignar("self".to_string(), este);
+    for (i, parametro) in metodo.parametros.iter().enumerate() {
+        let valor = args.get(i).cloned().unwrap_or(Valor::Nulo);
+        ambito.asignar(parametro.nombre.clone(), valor);
+    }
+    let retorno = evaluar_bloque(&metodo.cuerpo, &mut ambito, almacen, declaraciones)?;
+    // El AST llama `self` a `este`; se prefiere esa copia porque es la que el
+    // método mutó.
+    let actualizada = ambito
+        .obtener("self")
+        .or_else(|| ambito.obtener("este"))
+        .cloned()
+        .unwrap_or(instancia);
+    Ok((actualizada, retorno))
+}
+
 fn buscar_funcion<'a>(
     nombre: &str,
     declaraciones: &'a [Declaracion],
@@ -1464,6 +1509,21 @@ fn evaluar_declaracion(
 
         Declaracion::Asignacion { nombre, valor, .. } => {
             let val = evaluar_expresion(valor, ambito, almacen, declaraciones)?;
+            // `este.x = ...` / `obj.campo = ...`: el parser lo entrega como una
+            // asignación con el nombre punteado (no hay AST de miembro).
+            if let Some((objeto, campo)) = nombre.split_once('.') {
+                let actual = ambito
+                    .obtener(objeto)
+                    .cloned()
+                    .or_else(|| almacen.obtener(objeto).map(|j| Valor::from_serde(&j)));
+                if let Some(Valor::Mapa(mut mapa)) = actual {
+                    mapa.insert(campo.to_string(), val);
+                    let actualizado = Valor::Mapa(mapa);
+                    ambito.asignar(objeto.to_string(), actualizado.clone());
+                    almacen.fijar(objeto, actualizado.to_json_valor());
+                    return Ok(Valor::Nulo);
+                }
+            }
             ambito.asignar(nombre.clone(), val.clone());
             almacen.fijar(nombre, val.to_json_valor());
             Ok(Valor::Nulo)
@@ -1475,8 +1535,20 @@ fn evaluar_declaracion(
             valor,
             ..
         } => {
-            let obj_val = evaluar_expresion(objeto, ambito, almacen, declaraciones)?;
             let val = evaluar_expresion(valor, ambito, almacen, declaraciones)?;
+            // `este.x = ...` o `obj.campo = ...`: se escribe en el mapa del
+            // objeto dentro del ámbito (y en la variable, si es un identificador).
+            if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
+                let obj_val = evaluar_expresion(objeto, ambito, almacen, declaraciones)?;
+                if let Valor::Mapa(mut m) = obj_val {
+                    m.insert(miembro.clone(), val.clone());
+                    let actualizado = Valor::Mapa(m);
+                    ambito.asignar(nombre.clone(), actualizado.clone());
+                    almacen.fijar(nombre, actualizado.to_json_valor());
+                    return Ok(Valor::Nulo);
+                }
+            }
+            let obj_val = evaluar_expresion(objeto, ambito, almacen, declaraciones)?;
             let clave = format!("{}_{}", obj_val.to_display(), miembro);
             almacen.fijar(&clave, val.to_json_valor());
             Ok(Valor::Nulo)
@@ -1567,6 +1639,26 @@ fn evaluar_declaracion(
                 } else {
                     return Err(format!("Variable '{}' no encontrada", obj_name));
                 };
+                // Método de una clase: `este` es la instancia y la mutación
+                // que haga el método se escribe de vuelta en la variable.
+                if let Some(clase) = clase_de(&obj_val) {
+                    if let Some(metodo_fn) = buscar_metodo(&clase, metodo, declaraciones) {
+                        let (actualizada, retorno) =
+                            ejecutar_metodo(metodo_fn, obj_val, &args, almacen, declaraciones)?;
+                        ambito.asignar(obj_name.to_string(), actualizada.clone());
+                        almacen.fijar(obj_name, actualizada.to_json_valor());
+                        return Ok(retorno);
+                    }
+                }
+                if let Some(clase) = clase_de(&obj_val) {
+                    if let Some(metodo_fn) = buscar_metodo(&clase, metodo, declaraciones) {
+                        let (actualizada, retorno) =
+                            ejecutar_metodo(metodo_fn, obj_val, &args, almacen, declaraciones)?;
+                        ambito.asignar(obj_name.to_string(), actualizada.clone());
+                        almacen.fijar(obj_name, actualizada.to_json_valor());
+                        return Ok(retorno);
+                    }
+                }
                 let mut metodo_args = vec![obj_val];
                 metodo_args.extend(args);
                 let resultado = ejecutar_funcion(metodo, &metodo_args, declaraciones, almacen)?;
@@ -1649,20 +1741,22 @@ fn nativa_sobre_variable(
     if argumentos.len() != 2 {
         return None;
     }
-    let Expresion::Identificador { nombre: variable, .. } = &argumentos[0] else {
+    let Expresion::Identificador {
+        nombre: variable, ..
+    } = &argumentos[0]
+    else {
         return None;
     };
 
-    let previo = ambito
-        .obtener(variable)
-        .cloned()
-        .or_else(|| almacen.obtener(variable).map(|json| Valor::from_serde(&json)))?;
+    let previo = ambito.obtener(variable).cloned().or_else(|| {
+        almacen
+            .obtener(variable)
+            .map(|json| Valor::from_serde(&json))
+    })?;
     let mut valores: Vec<Valor> = match &previo {
         Valor::Arreglo(items) => items.clone(),
         Valor::Texto(texto) => match serde_json::from_str::<serde_json::Value>(texto) {
-            Ok(serde_json::Value::Array(items)) => {
-                items.iter().map(Valor::from_serde).collect()
-            }
+            Ok(serde_json::Value::Array(items)) => items.iter().map(Valor::from_serde).collect(),
             _ => return Some(Err(format!("{nombre}: '{}' no es un arreglo", variable))),
         },
         _ => return Some(Err(format!("{nombre}: '{}' no es un arreglo", variable))),
@@ -1802,9 +1896,33 @@ fn evaluar_expresion(
             }
         }
 
+        // ── Asignación a campo (`este.x = v`, `obj.campo = v`) ──
+        Expresion::AsignacionCampo {
+            objeto,
+            campo,
+            valor,
+        } => {
+            let val = evaluar_expresion(valor, ambito, almacen, declaraciones)?;
+            let obj_val = evaluar_expresion(objeto, ambito, almacen, declaraciones)?;
+            if let Valor::Mapa(mut mapa) = obj_val {
+                mapa.insert(campo.clone(), val.clone());
+                let actualizado = Valor::Mapa(mapa);
+                if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
+                    ambito.asignar(nombre.clone(), actualizado.clone());
+                    almacen.fijar(nombre, actualizado.to_json_valor());
+                }
+            }
+            Ok(val)
+        }
+
         // ── Acceso a miembro ──────────────────────────────────
         Expresion::AccesoMiembro { objeto, miembro } => {
             let obj = evaluar_expresion(objeto, ambito, almacen, declaraciones)?;
+            if let Valor::Mapa(m) = &obj {
+                if let Some(valor) = m.get(miembro) {
+                    return Ok(valor.clone());
+                }
+            }
             let clave = format!("{}_{}", obj.to_display(), miembro);
             if let Some(json_val) = almacen.obtener(&clave) {
                 Ok(Valor::from_serde(&json_val))
@@ -1815,18 +1933,35 @@ fn evaluar_expresion(
 
         // ── Instanciación ─────────────────────────────────────
         Expresion::Instanciacion { clase, argumentos } => {
-            let mut mapa = serde_json::Map::new();
-            mapa.insert(
-                "__clase".to_string(),
-                serde_json::Value::String(clase.clone()),
-            );
-            for (i, arg) in argumentos.iter().enumerate() {
-                let val = evaluar_expresion(arg, ambito, almacen, declaraciones)?;
-                mapa.insert(format!("arg_{}", i), val.to_json_valor());
+            let mut instancia = std::collections::HashMap::new();
+            instancia.insert("__clase".to_string(), Valor::Texto(clase.clone()));
+            let mut valores = Vec::new();
+            for arg in argumentos {
+                valores.push(evaluar_expresion(arg, ambito, almacen, declaraciones)?);
             }
-            let json_str = serde_json::to_string(&serde_json::Value::Object(mapa))
-                .map_err(|e| format!("Error serializando instancia: {}", e))?;
-            Ok(Valor::Texto(json_str))
+            // El parser nombra `constructor(...)` como el método "nuevo".
+            let ctor = buscar_metodo(clase, "nuevo", declaraciones)
+                .or_else(|| buscar_metodo(clase, "constructor", declaraciones))
+                .or_else(|| buscar_metodo(clase, "new", declaraciones));
+            if let Some(ctor) = ctor {
+                let (actualizada, _) = ejecutar_metodo(
+                    ctor,
+                    Valor::Mapa(instancia),
+                    &valores,
+                    almacen,
+                    declaraciones,
+                )?;
+                instancia = match actualizada {
+                    Valor::Mapa(m) => m,
+                    otro => {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("__clase".to_string(), Valor::Texto(clase.clone()));
+                        let _ = otro;
+                        m
+                    }
+                };
+            }
+            Ok(Valor::Mapa(instancia))
         }
 
         // ── Referencia (préstamo) ─────────────────────────────
@@ -1883,11 +2018,7 @@ fn evaluar_expresion(
             if let (Valor::Arreglo(items), Valor::Entero(n)) = (&obj, &idx) {
                 return match items.get(*n as usize) {
                     Some(valor) => Ok(valor.clone()),
-                    None => Err(format!(
-                        "Índice {} fuera de rango (len={})",
-                        n,
-                        items.len()
-                    )),
+                    None => Err(format!("Índice {} fuera de rango (len={})", n, items.len())),
                 };
             }
             let obj_str = obj.to_display();
@@ -2139,12 +2270,28 @@ fn evaluar_expresion(
             metodo,
             argumentos,
         } => {
-            let mut args = Vec::new();
+            let mut valores = Vec::new();
             let obj_val = evaluar_expresion(objeto, ambito, almacen, declaraciones)?;
-            args.push(obj_val.clone());
             for arg in argumentos {
-                args.push(evaluar_expresion(arg, ambito, almacen, declaraciones)?);
+                valores.push(evaluar_expresion(arg, ambito, almacen, declaraciones)?);
             }
+
+            // `p.metodo(args)`: si `p` es una instancia, se ejecuta el método de
+            // su clase con `este` ligado, y la mutación vuelve a la variable.
+            if let Some(clase) = clase_de(&obj_val) {
+                if let Some(metodo_fn) = buscar_metodo(&clase, metodo, declaraciones) {
+                    let (actualizada, retorno) =
+                        ejecutar_metodo(metodo_fn, obj_val.clone(), &valores, almacen, declaraciones)?;
+                    if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
+                        ambito.asignar(nombre.clone(), actualizada.clone());
+                        almacen.fijar(nombre, actualizada.to_json_valor());
+                    }
+                    return Ok(retorno);
+                }
+            }
+
+            let mut args = vec![obj_val];
+            args.extend(valores);
             let resultado = ejecutar_funcion(metodo, &args, declaraciones, almacen)?;
             // Métodos que mutan (ej: params.empujar(x)): actualizar variable original
             if metodo == "empujar" {
@@ -2352,7 +2499,10 @@ funcion calcular() -> Texto {
 "#,
             "calcular",
         );
-        assert_eq!(resultado.expect("no debería fallar"), Valor::Texto("10".to_string()));
+        assert_eq!(
+            resultado.expect("no debería fallar"),
+            Valor::Texto("10".to_string())
+        );
     }
 
     #[test]
@@ -2374,7 +2524,10 @@ funcion calcular() -> Texto {
 "#,
             "calcular",
         );
-        assert_eq!(resultado.expect("no debería fallar"), Valor::Texto("12".to_string()));
+        assert_eq!(
+            resultado.expect("no debería fallar"),
+            Valor::Texto("12".to_string())
+        );
     }
 
     #[test]

@@ -85,3 +85,34 @@ funcion calcular() -> Texto {
     // 3 elementos: 9, 3, 4 → longitud 3, primero 9
     assert_eq!(ejecutar(fuente), "Texto(\"arreglo|3|9\")");
 }
+
+#[test]
+fn clases_constructor_metodos_y_mutacion() {
+    let fuente = r#"
+clase Punto {
+    x
+    y
+
+    constructor(x, y) {
+        este.x = x
+        este.y = y
+    }
+
+    funcion suma() {
+        retornar este.x + este.y
+    }
+
+    funcion mover(dx) {
+        este.x = este.x + dx
+    }
+}
+
+funcion calcular() -> Texto {
+    variable p = nuevo Punto(2, 3)
+    variable antes = p.suma()
+    p.mover(10)
+    retornar a_texto(antes) + "|" + a_texto(p.suma())
+}
+"#;
+    assert_eq!(ejecutar(fuente), "Texto(\"5|15\")");
+}
