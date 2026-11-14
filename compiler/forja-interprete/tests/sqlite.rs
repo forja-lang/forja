@@ -68,3 +68,20 @@ funcion calcular() -> Texto {{
     assert_eq!(ejecutar(&fuente), "Texto(\"hola|verdadero\")");
     let _ = std::fs::remove_file(&ruta);
 }
+
+#[test]
+fn arreglos_son_valores_reales() {
+    // Antes los arreglos eran texto JSON: `tipo()` decía "texto" y la
+    // asignación por índice/mutación dependía de parsear y volver a serializar.
+    let fuente = r#"
+funcion calcular() -> Texto {
+    variable xs = [1, 2, 3]
+    xs[1] = 9
+    empujar(xs, 4)
+    remover(xs, 0)
+    retornar tipo(xs) + "|" + a_texto(longitud(xs)) + "|" + a_texto(xs[0])
+}
+"#;
+    // 3 elementos: 9, 3, 4 → longitud 3, primero 9
+    assert_eq!(ejecutar(fuente), "Texto(\"arreglo|3|9\")");
+}

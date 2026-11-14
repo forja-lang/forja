@@ -14,6 +14,8 @@ pub enum Valor {
     Nulo,
     /// Mapa con claves String para representar valores estructurados (Ok, Error, Algo, etc.)
     Mapa(HashMap<String, Valor>),
+    /// Arreglo con identidad de valor (antes eran texto JSON).
+    Arreglo(Vec<Valor>),
 }
 
 impl std::fmt::Display for Valor {
@@ -26,6 +28,7 @@ impl std::fmt::Display for Valor {
             Valor::Booleano(false) => f.write_str("falso"),
             Valor::Nulo => f.write_str("nulo"),
             Valor::Mapa(m) => write!(f, "Mapa({:?})", m),
+            Valor::Arreglo(items) => write!(f, "Arreglo({items:?})"),
         }
     }
 }
@@ -71,6 +74,9 @@ impl From<Valor> for serde_json::Value {
                 }
                 serde_json::Value::Object(mapa)
             }
+            Valor::Arreglo(items) => {
+                serde_json::Value::Array(items.into_iter().map(serde_json::Value::from).collect())
+            }
         }
     }
 }
@@ -89,6 +95,9 @@ impl From<serde_json::Value> for Valor {
                 }
             }
             serde_json::Value::Bool(b) => Valor::Booleano(b),
+            serde_json::Value::Array(items) => {
+                Valor::Arreglo(items.into_iter().map(Valor::from).collect())
+            }
             serde_json::Value::Object(obj) => {
                 let mut mapa = HashMap::new();
                 for (k, v) in obj {

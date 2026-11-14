@@ -151,6 +151,7 @@ impl Valor {
             Valor::Decimal(n) => *n != 0.0,
             Valor::Texto(t) => !t.is_empty(),
             Valor::Mapa(m) => !m.is_empty(),
+            Valor::Arreglo(items) => !items.is_empty(),
             Valor::Nulo => false,
         }
     }
@@ -171,6 +172,9 @@ impl Valor {
                 }
                 serde_json::Value::Object(mapa)
             }
+            Valor::Arreglo(items) => serde_json::Value::Array(
+                items.iter().map(|v| v.to_json_valor()).collect(),
+            ),
             Valor::Nulo => serde_json::Value::Null,
         }
     }
@@ -259,6 +263,10 @@ impl Valor {
                     .map(|(k, v)| format!("{}: {}", k, v.to_display()))
                     .collect();
                 format!("{{{}}}", parts.join(", "))
+            }
+            Valor::Arreglo(items) => {
+                let parts: Vec<String> = items.iter().map(|v| v.to_display()).collect();
+                format!("[{}]", parts.join(", "))
             }
             Valor::Nulo => "nulo".to_string(),
         }
@@ -432,6 +440,7 @@ fn nativa_dividir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor
         Valor::Entero(n) => n.to_string(),
         Valor::Decimal(f) => f.to_string(),
         Valor::Booleano(b) => b.to_string(),
+        Valor::Arreglo(_) | Valor::Mapa(_) | Valor::Nulo => String::new(),
         Valor::Mapa(m) => format!("{:?}", m),
         Valor::Nulo => String::new(),
     };
@@ -452,10 +461,12 @@ fn nativa_dividir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor
             .collect()
     };
 
-    let json_arr = serde_json::Value::Array(partes);
-    let json_str =
-        serde_json::to_string(&json_arr).map_err(|e| format!("Error serializando array: {}", e))?;
-    Ok(Valor::Texto(json_str))
+    Ok(Valor::Arreglo(
+        partes
+            .into_iter()
+            .map(|p| Valor::from_serde(&p))
+            .collect(),
+    ))
 }
 
 /// `a_numero(texto)` — convierte texto a entero (i64)
@@ -481,12 +492,12 @@ fn nativa_a_numero(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valo
                 },
             }
         }
-        Valor::Mapa(_) => Ok(Valor::Entero(0)),
+        Valor::Mapa(_) | Valor::Arreglo(_) => Ok(Valor::Entero(0)),
         Valor::Nulo => Ok(Valor::Entero(0)),
     }
 }
 
-/// `longitud(valor)` — longitud de array (JSON) o texto
+/// `longitud(valor)` — longitud de arreglo o de texto
 fn nativa_longitud(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let val = args
         .first()
@@ -506,6 +517,7 @@ fn nativa_longitud(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valo
         Valor::Decimal(_) => Ok(Valor::Entero(1)),
         Valor::Booleano(_) => Ok(Valor::Entero(1)),
         Valor::Mapa(m) => Ok(Valor::Entero(m.len() as i64)),
+        Valor::Arreglo(items) => Ok(Valor::Entero(items.len() as i64)),
         Valor::Nulo => Ok(Valor::Entero(0)),
     }
 }
@@ -532,6 +544,7 @@ fn nativa_tipo(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, S
         }
         Valor::Booleano(_) => "booleano",
         Valor::Mapa(_) => "mapa",
+        Valor::Arreglo(_) => "arreglo",
         Valor::Nulo => "nulo",
     };
     Ok(Valor::Texto(nombre.to_string()))
@@ -695,6 +708,10 @@ fn sqlite_valor_a_json(val: rusqlite::types::Value) -> serde_json::Value {
 fn args_a_params(val: &Valor) -> Result<Vec<Box<dyn rusqlite::types::ToSql>>, String> {
     let json_str = match val {
         Valor::Texto(s) => s.clone(),
+        Valor::Arreglo(_) => {
+            // Ya es un arreglo: se convierte a JSON para reusar el parseo de abajo.
+            serde_json::to_string(&val.to_json_valor()).unwrap_or_default()
+        }
         Valor::Entero(n) => return Ok(vec![Box::new(*n)]),
         Valor::Decimal(f) => return Ok(vec![Box::new(*f)]),
         Valor::Booleano(b) => return Ok(vec![Box::new(*b as i64)]),
@@ -1482,6 +1499,15 @@ fn evaluar_declaracion(
                         m.insert(idx_val.to_display(), val.clone());
                         ambito.asignar(nombre.to_string(), Valor::Mapa(m));
                     }
+                    Valor::Arreglo(mut items) => {
+                        if let Valor::Entero(n) = idx_val {
+                            if (n as usize) < items.len() {
+                                items[n as usize] = val.clone();
+                                ambito.asignar(nombre.to_string(), Valor::Arreglo(items));
+                                almacen.fijar(nombre, val.to_json_valor());
+                            }
+                        }
+                    }
                     Valor::Texto(s) => {
                         if let Ok(serde_json::Value::Object(mut mapa)) =
                             serde_json::from_str::<serde_json::Value>(&s)
@@ -1631,9 +1657,12 @@ fn nativa_sobre_variable(
         .obtener(variable)
         .cloned()
         .or_else(|| almacen.obtener(variable).map(|json| Valor::from_serde(&json)))?;
-    let mut valores: Vec<serde_json::Value> = match &previo {
-        Valor::Texto(texto) => match serde_json::from_str(texto) {
-            Ok(serde_json::Value::Array(items)) => items,
+    let mut valores: Vec<Valor> = match &previo {
+        Valor::Arreglo(items) => items.clone(),
+        Valor::Texto(texto) => match serde_json::from_str::<serde_json::Value>(texto) {
+            Ok(serde_json::Value::Array(items)) => {
+                items.iter().map(Valor::from_serde).collect()
+            }
             _ => return Some(Err(format!("{nombre}: '{}' no es un arreglo", variable))),
         },
         _ => return Some(Err(format!("{nombre}: '{}' no es un arreglo", variable))),
@@ -1645,7 +1674,7 @@ fn nativa_sobre_variable(
     };
 
     if nombre == "empujar" {
-        valores.push(siguiente.to_json_valor());
+        valores.push(siguiente);
     } else {
         let indice = match siguiente {
             Valor::Entero(i) if i >= 0 && (i as usize) < valores.len() => i as usize,
@@ -1654,11 +1683,7 @@ fn nativa_sobre_variable(
         valores.remove(indice);
     }
 
-    let texto = match serde_json::to_string(&serde_json::Value::Array(valores)) {
-        Ok(texto) => texto,
-        Err(e) => return Some(Err(format!("{nombre}: {e}"))),
-    };
-    let nuevo = Valor::Texto(texto);
+    let nuevo = Valor::Arreglo(valores);
     ambito.asignar(variable.clone(), nuevo.clone());
     almacen.fijar(variable, nuevo.to_json_valor());
     Some(Ok(Valor::Nulo))
@@ -1815,11 +1840,7 @@ fn evaluar_expresion(
             for elem in elementos {
                 values.push(evaluar_expresion(elem, ambito, almacen, declaraciones)?);
             }
-            let json_arr: Vec<serde_json::Value> =
-                values.iter().map(|v| v.to_json_valor()).collect();
-            let json_str = serde_json::to_string(&json_arr)
-                .map_err(|e| format!("Error serializando array: {}", e))?;
-            Ok(Valor::Texto(json_str))
+            Ok(Valor::Arreglo(values))
         }
 
         // ── Mapa literal ──────────────────────────────────────
@@ -1857,6 +1878,17 @@ fn evaluar_expresion(
             if let Valor::Mapa(m) = &obj {
                 let clave = idx.to_display();
                 return Ok(m.get(&clave).cloned().unwrap_or(Valor::Nulo));
+            }
+            // Arreglo con identidad de valor
+            if let (Valor::Arreglo(items), Valor::Entero(n)) = (&obj, &idx) {
+                return match items.get(*n as usize) {
+                    Some(valor) => Ok(valor.clone()),
+                    None => Err(format!(
+                        "Índice {} fuera de rango (len={})",
+                        n,
+                        items.len()
+                    )),
+                };
             }
             let obj_str = obj.to_display();
             match idx {
@@ -1999,6 +2031,15 @@ fn evaluar_expresion(
                             Valor::Mapa(mut m) => {
                                 m.insert(idx_val.to_display(), val.clone());
                                 ambito.asignar(nombre.clone(), Valor::Mapa(m));
+                            }
+                            Valor::Arreglo(mut items) => {
+                                if let Valor::Entero(n) = idx_val {
+                                    if (n as usize) < items.len() {
+                                        items[n as usize] = val.clone();
+                                        ambito.asignar(nombre.clone(), Valor::Arreglo(items));
+                                        almacen.fijar(&nombre, val.to_json_valor());
+                                    }
+                                }
                             }
                             Valor::Texto(s) => {
                                 if let Ok(serde_json::Value::Object(mut mapa)) =
