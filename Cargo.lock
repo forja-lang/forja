@@ -1744,8 +1744,10 @@ dependencies = [
 name = "forja-interprete"
 version = "0.11.0"
 dependencies = [
+ "forja-native",
+ "forja-runtime",
  "forja-syntax",
- "rusqlite",
+ "forja-vm",
  "serde_json",
 ]
 

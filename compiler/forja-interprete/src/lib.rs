@@ -6,6 +6,9 @@
 //!
 pub mod valor;
 
+#[cfg(feature = "nativos")]
+pub mod nativos_compartidos;
+
 pub use valor::Valor;
 pub use valor::Valor as ValorGUI;
 
@@ -36,8 +39,6 @@ pub trait AlmacenValores {
 //   - Soporta llamadas a funciones definidas en el AST y funciones nativas
 
 use forja_syntax::ast::*;
-#[cfg(feature = "sqlite")]
-use rusqlite::Connection;
 use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::{Arc, Mutex};
@@ -356,29 +357,8 @@ fn obtener_nativas() -> HashMap<&'static str, FuncionNativa> {
     m.insert("escribir", nativa_escribir);
     m.insert("empujar", nativa_empujar);
     // SQLite
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_abrir", sqlite_abrir);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_cerrar", sqlite_cerrar);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_ejecutar", sqlite_ejecutar);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_consultar", sqlite_consultar);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_ejecutar_params", sqlite_ejecutar_params);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_consultar_params", sqlite_consultar_params);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_ultimo_id", sqlite_ultimo_id);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_tablas", sqlite_tablas);
-    #[cfg(feature = "sqlite")]
-    m.insert("_sqlite_columnas", sqlite_columnas);
     // Archivo
-    m.insert("_archivo_leer", nativa_archivo_leer);
-    m.insert("_archivo_escribir", nativa_archivo_escribir);
     // JSON
-    m.insert("_json_stringificar", nativa_json_stringificar);
     m
 }
 
@@ -547,47 +527,8 @@ fn nativa_tipo(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, S
     Ok(Valor::Texto(nombre.to_string()))
 }
 
-/// `_archivo_leer(ruta)` — lee texto de un archivo en disco
-fn nativa_archivo_leer(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    let ruta = match args.first() {
-        Some(Valor::Texto(t)) => t.clone(),
-        _ => return Err("_archivo_leer(ruta): ruta debe ser texto".to_string()),
-    };
-    let contenido = std::fs::read_to_string(&ruta)
-        .map_err(|e| format!("Error al leer archivo '{}': {}", ruta, e))?;
-    Ok(Valor::Texto(contenido))
-}
 
-/// `_archivo_escribir(ruta, contenido)` — escribe texto a un archivo en disco
-fn nativa_archivo_escribir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    let ruta = match args.first() {
-        Some(Valor::Texto(t)) => t.clone(),
-        _ => return Err("_archivo_escribir(ruta, contenido): ruta debe ser texto".to_string()),
-    };
-    let contenido = match args.get(1) {
-        Some(Valor::Texto(t)) => t.clone(),
-        _ => {
-            return Err("_archivo_escribir(ruta, contenido): contenido debe ser texto".to_string())
-        }
-    };
-    std::fs::write(&ruta, &contenido)
-        .map_err(|e| format!("Error al escribir archivo '{}': {}", ruta, e))?;
-    Ok(Valor::Entero(contenido.len() as i64))
-}
 
-/// `_json_stringificar(valor)` — convierte cualquier valor a JSON string
-fn nativa_json_stringificar(
-    args: &[Valor],
-    _almacen: &dyn AlmacenValores,
-) -> Result<Valor, String> {
-    let val = args
-        .first()
-        .ok_or("_json_stringificar(valor) requiere 1 argumento".to_string())?;
-    let json_valor = val.to_json_valor();
-    let json_str = serde_json::to_string(&json_valor)
-        .map_err(|e| format!("Error al stringificar a JSON: {}", e))?;
-    Ok(Valor::Texto(json_str))
-}
 
 /// `a_texto(valor)` — convierte cualquier valor a texto
 fn nativa_a_texto(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
@@ -647,21 +588,6 @@ fn nativa_empujar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor
 
 /// Heap global de conexiones SQLite (envueltas en Arc<Mutex<>>).
 /// Cada conexión se almacena como `Option` para permitir cerrado lógico.
-#[cfg(feature = "sqlite")]
-static MONTICULO_SQLITE: Mutex<Vec<Option<Arc<Mutex<Connection>>>>> = Mutex::new(Vec::new());
-
-/// Extrae un índice entero de un Valor, aceptando Entero y Decimal.
-fn extraer_indice(valor: &Valor, nombre_fn: &str) -> Result<usize, String> {
-    match valor {
-        Valor::Entero(n) => Ok(*n as usize),
-        Valor::Decimal(f) => Ok(*f as usize),
-        _ => Err(format!(
-            "{}: primer argumento debe ser entero (índice), se recibió: {}",
-            nombre_fn,
-            valor.to_display()
-        )),
-    }
-}
 
 /// Obtiene una conexión del heap por índice (retorna Arc clonado).
 #[cfg(feature = "sqlite")]
@@ -680,409 +606,20 @@ fn sqlite_obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, String> {
 
 /// Convierte un Value de SQLite a serde_json::Value para serialización.
 #[cfg(feature = "sqlite")]
-fn sqlite_valor_a_json(val: rusqlite::types::Value) -> serde_json::Value {
-    match val {
-        rusqlite::types::Value::Null => serde_json::Value::Null,
-        rusqlite::types::Value::Integer(n) => serde_json::Value::Number(n.into()),
-        rusqlite::types::Value::Real(f) => serde_json::Number::from_f64(f)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        rusqlite::types::Value::Text(s) => serde_json::Value::String(s),
-        rusqlite::types::Value::Blob(b) => {
-            serde_json::Value::String(String::from_utf8_lossy(&b).to_string())
-        }
-    }
-}
 
-/// Parsea un Valor::Texto como JSON array para extraer parámetros SQL.
-#[cfg(feature = "sqlite")]
-fn args_a_params(val: &Valor) -> Result<Vec<Box<dyn rusqlite::types::ToSql>>, String> {
-    let json_str = match val {
-        Valor::Texto(s) => s.clone(),
-        Valor::Arreglo(_) => {
-            // Ya es un arreglo: se convierte a JSON para reusar el parseo de abajo.
-            serde_json::to_string(&val.to_json_valor()).unwrap_or_default()
-        }
-        Valor::Entero(n) => return Ok(vec![Box::new(*n)]),
-        Valor::Decimal(f) => return Ok(vec![Box::new(*f)]),
-        Valor::Booleano(b) => return Ok(vec![Box::new(*b as i64)]),
-        Valor::Mapa(m) => {
-            // Intentar extraer un arreglo de valores del mapa
-            // Si el mapa tiene una clave "0", "1", etc., tratarlo como arreglo
-            let mut arr = Vec::new();
-            let mut i = 0;
-            loop {
-                let clave = i.to_string();
-                if let Some(v) = m.get(&clave) {
-                    arr.push(v.to_json_valor());
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-            if !arr.is_empty() {
-                serde_json::to_string(&serde_json::Value::Array(arr)).map_err(|e| {
-                    format!(
-                        "sqlite_error: no se pudo serializar mapa como arreglo: {}",
-                        e
-                    )
-                })?
-            } else {
-                // Fallback: serializar como objeto
-                let mapa: serde_json::Map<String, serde_json::Value> = m
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.to_json_valor()))
-                    .collect();
-                serde_json::to_string(&serde_json::Value::Object(mapa))
-                    .map_err(|e| format!("sqlite_error: no se pudo serializar mapa: {}", e))?
-            }
-        }
-        Valor::Nulo => {
-            return Ok(vec![Box::new(rusqlite::types::Null)]);
-        }
-    };
-    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-        .map_err(|e| format!("sqlite_error: no se pudieron parsear los parámetros: {}", e))?;
-    let arr = match parsed {
-        serde_json::Value::Array(a) => a,
-        _ => return Err("sqlite_error: los parámetros deben ser un arreglo JSON".to_string()),
-    };
-    arr.is_empty();
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::with_capacity(arr.len());
-    for v in &arr {
-        match v {
-            serde_json::Value::String(s) => params.push(Box::new(s.clone())),
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    params.push(Box::new(i));
-                } else if let Some(f) = n.as_f64() {
-                    params.push(Box::new(f));
-                }
-            }
-            serde_json::Value::Bool(b) => params.push(Box::new(*b as i64)),
-            serde_json::Value::Null => params.push(Box::new(rusqlite::types::Null)),
-            _ => return Err("sqlite_error: tipo de parámetro no soportado".to_string()),
-        }
-    }
-    Ok(params)
-}
 
 // ═════════════════════════════════════════════════════════════════════════
 // FUNCIONES SQLITE NATIVAS
 // ═════════════════════════════════════════════════════════════════════════
 
-/// `_sqlite_abrir(ruta)` → índice de conexión (entero)
-#[cfg(feature = "sqlite")]
-fn sqlite_abrir(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    let ruta = match args.first() {
-        Some(Valor::Texto(s)) => s.clone(),
-        _ => return Err("_sqlite_abrir(ruta) requiere 1 argumento: ruta (texto)".to_string()),
-    };
-    let conn = Connection::open(&ruta).map_err(|e| format!("sqlite_error_apertura: {}", e))?;
-    let mut monticulo = MONTICULO_SQLITE
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    let idx = monticulo.len() as i64;
-    monticulo.push(Some(Arc::new(Mutex::new(conn))));
-    Ok(Valor::Entero(idx))
-}
 
-/// `_sqlite_cerrar(indice_conexion)` → 0 éxito, -1 error
-#[cfg(feature = "sqlite")]
-fn sqlite_cerrar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    let idx = match args.first() {
-        Some(v) => extraer_indice(v, "_sqlite_cerrar")?,
-        None => return Err("_sqlite_cerrar(indice) requiere 1 argumento: entero".to_string()),
-    };
-    let mut monticulo = MONTICULO_SQLITE
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    if idx < monticulo.len() {
-        monticulo[idx] = None;
-        Ok(Valor::Entero(0))
-    } else {
-        Err("sqlite_error: índice de conexión inválido".to_string())
-    }
-}
 
-/// `_sqlite_ejecutar(indice_conexion, sql)` → filas_afectadas
-#[cfg(feature = "sqlite")]
-fn sqlite_ejecutar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    if args.len() < 2 {
-        return Err("_sqlite_ejecutar(indice, sql) requiere 2 argumentos".to_string());
-    }
-    let idx = extraer_indice(&args[0], "_sqlite_ejecutar")?;
-    let sql = match &args[1] {
-        Valor::Texto(s) => s.clone(),
-        _ => return Err("_sqlite_ejecutar: segundo argumento debe ser texto (SQL)".to_string()),
-    };
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    match conn.execute(&sql, []) {
-        Ok(filas) => Ok(Valor::Entero(filas as i64)),
-        Err(e) => Err(format!("sqlite_error_ejecucion: {}", e)),
-    }
-}
 
-/// `_sqlite_consultar(indice_conexion, sql)` → JSON array de mapas (como texto)
-#[cfg(feature = "sqlite")]
-fn sqlite_consultar(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    if args.len() < 2 {
-        return Err("_sqlite_consultar(indice, sql) requiere 2 argumentos".to_string());
-    }
-    let idx = extraer_indice(&args[0], "_sqlite_consultar")?;
-    let sql = match &args[1] {
-        Valor::Texto(s) => s.clone(),
-        _ => return Err("_sqlite_consultar: segundo argumento debe ser texto (SQL)".to_string()),
-    };
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
 
-    let mut stmt = conn
-        .prepare(&sql)
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?;
-    let col_cantidad = stmt.column_count();
-    let col_names: Vec<String> = (0..col_cantidad)
-        .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
-        .collect();
 
-    // Extraer datos sin mantener borrow del closure
-    let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> = stmt
-        .query_map([], |row| {
-            let mut row_data = Vec::with_capacity(col_cantidad);
-            for (i, name) in col_names.iter().enumerate().take(col_cantidad) {
-                let name = name.clone();
-                let val = row
-                    .get::<_, rusqlite::types::Value>(i)
-                    .unwrap_or(rusqlite::types::Value::Null);
-                row_data.push((name, val));
-            }
-            Ok(row_data)
-        })
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
 
-    // Convertir a JSON
-    let json_rows: Vec<serde_json::Value> = rows_data
-        .into_iter()
-        .map(|row| {
-            let mut mapa = serde_json::Map::new();
-            for (name, val) in row {
-                mapa.insert(name, sqlite_valor_a_json(val));
-            }
-            serde_json::Value::Object(mapa)
-        })
-        .collect();
 
-    let json_str = serde_json::to_string(&serde_json::Value::Array(json_rows))
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    Ok(Valor::Texto(json_str))
-}
 
-/// `_sqlite_ultimo_id(indice_conexion)` → último rowid insertado
-#[cfg(feature = "sqlite")]
-fn sqlite_ultimo_id(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    let idx = match args.first() {
-        Some(v) => extraer_indice(v, "_sqlite_ultimo_id")?,
-        None => return Err("_sqlite_ultimo_id(indice) requiere 1 argumento: entero".to_string()),
-    };
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    Ok(Valor::Entero(conn.last_insert_rowid()))
-}
-
-/// `_sqlite_ejecutar_params(indice, sql, arreglo_valores)` → filas_afectadas
-#[cfg(feature = "sqlite")]
-fn sqlite_ejecutar_params(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    if args.len() < 3 {
-        return Err(
-            "_sqlite_ejecutar_params(indice, sql, valores) requiere 3 argumentos".to_string(),
-        );
-    }
-    let idx = extraer_indice(&args[0], "_sqlite_ejecutar_params")?;
-    let sql = match &args[1] {
-        Valor::Texto(s) => s.clone(),
-        _ => {
-            return Err(
-                "_sqlite_ejecutar_params: segundo argumento debe ser texto (SQL)".to_string(),
-            )
-        }
-    };
-    let params = args_a_params(&args[2])?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    match conn.execute(&sql, params_refs.as_slice()) {
-        Ok(filas) => Ok(Valor::Entero(filas as i64)),
-        Err(e) => Err(format!("sqlite_error_ejecucion: {}", e)),
-    }
-}
-
-/// `_sqlite_consultar_params(indice, sql, arreglo_valores)` → JSON array de mapas
-#[cfg(feature = "sqlite")]
-fn sqlite_consultar_params(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    if args.len() < 3 {
-        return Err(
-            "_sqlite_consultar_params(indice, sql, valores) requiere 3 argumentos".to_string(),
-        );
-    }
-    let idx = extraer_indice(&args[0], "_sqlite_consultar_params")?;
-    let sql = match &args[1] {
-        Valor::Texto(s) => s.clone(),
-        _ => {
-            return Err(
-                "_sqlite_consultar_params: segundo argumento debe ser texto (SQL)".to_string(),
-            )
-        }
-    };
-    let params = args_a_params(&args[2])?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-
-    let mut stmt = conn
-        .prepare(&sql)
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?;
-    let col_cantidad = stmt.column_count();
-    let col_names: Vec<String> = (0..col_cantidad)
-        .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
-        .collect();
-
-    let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> = stmt
-        .query_map(params_refs.as_slice(), |row| {
-            let mut row_data = Vec::with_capacity(col_cantidad);
-            for (i, name) in col_names.iter().enumerate().take(col_cantidad) {
-                let name = name.clone();
-                let val = row
-                    .get::<_, rusqlite::types::Value>(i)
-                    .unwrap_or(rusqlite::types::Value::Null);
-                row_data.push((name, val));
-            }
-            Ok(row_data)
-        })
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    let json_rows: Vec<serde_json::Value> = rows_data
-        .into_iter()
-        .map(|row| {
-            let mut mapa = serde_json::Map::new();
-            for (name, val) in row {
-                mapa.insert(name, sqlite_valor_a_json(val));
-            }
-            serde_json::Value::Object(mapa)
-        })
-        .collect();
-
-    let json_str = serde_json::to_string(&serde_json::Value::Array(json_rows))
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    Ok(Valor::Texto(json_str))
-}
-
-/// `_sqlite_tablas(indice_conexion)` → JSON array de nombres de tablas (como texto)
-#[cfg(feature = "sqlite")]
-fn sqlite_tablas(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    let idx = match args.first() {
-        Some(v) => extraer_indice(v, "_sqlite_tablas")?,
-        None => return Err("_sqlite_tablas(indice) requiere 1 argumento: entero".to_string()),
-    };
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-
-    let mut stmt = conn.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    ).map_err(|e| format!("sqlite_error_consulta: {}", e))?;
-
-    let nombres: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    let json_arr: Vec<serde_json::Value> =
-        nombres.into_iter().map(serde_json::Value::String).collect();
-    let json_str = serde_json::to_string(&serde_json::Value::Array(json_arr))
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    Ok(Valor::Texto(json_str))
-}
-
-/// `_sqlite_columnas(indice_conexion, tabla)` → JSON array de mapas con info de columnas
-#[cfg(feature = "sqlite")]
-fn sqlite_columnas(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
-    if args.len() < 2 {
-        return Err("_sqlite_columnas(indice, tabla) requiere 2 argumentos".to_string());
-    }
-    let idx = extraer_indice(&args[0], "_sqlite_columnas")?;
-    let tabla = match &args[1] {
-        Valor::Texto(s) => s.clone(),
-        _ => return Err("_sqlite_columnas: segundo argumento debe ser texto (tabla)".to_string()),
-    };
-    let conn_arc = sqlite_obtener_conn(idx)?;
-    let conn = conn_arc
-        .lock()
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-
-    let sql = format!("PRAGMA table_info('{}')", tabla.replace('\'', "''"));
-    let mut stmt = conn
-        .prepare(&sql)
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?;
-
-    // Extraer datos crudos
-    let cols: Vec<(i64, String, String, bool, Option<String>, i64)> = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, bool>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, i64>(5)?,
-            ))
-        })
-        .map_err(|e| format!("sqlite_error_consulta: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    let json_rows: Vec<serde_json::Value> = cols
-        .into_iter()
-        .map(|(cid, nombre, tipo, not_null, default, pk)| {
-            let mut mapa = serde_json::Map::new();
-            mapa.insert("cid".to_string(), serde_json::Value::Number(cid.into()));
-            mapa.insert("nombre".to_string(), serde_json::Value::String(nombre));
-            mapa.insert("tipo".to_string(), serde_json::Value::String(tipo));
-            mapa.insert("not_null".to_string(), serde_json::Value::Bool(not_null));
-            mapa.insert(
-                "default".to_string(),
-                match default {
-                    Some(d) => serde_json::Value::String(d),
-                    None => serde_json::Value::Null,
-                },
-            );
-            mapa.insert("pk".to_string(), serde_json::Value::Number(pk.into()));
-            serde_json::Value::Object(mapa)
-        })
-        .collect();
-
-    let json_str = serde_json::to_string(&serde_json::Value::Array(json_rows))
-        .map_err(|e| format!("sqlite_error_interno: {}", e))?;
-    Ok(Valor::Texto(json_str))
-}
 
 // ═════════════════════════════════════════════════════════════════════════
 // Algoritmos de fecha (copiados de native_registry.rs)
@@ -1167,6 +704,12 @@ pub fn ejecutar_funcion(
     declaraciones: &[Declaracion],
     almacen: &dyn AlmacenValores,
 ) -> Result<Valor, String> {
+    // 0. Nativos compartidos con la VM (`forja-native`): SQLite, archivo, JSON.
+    #[cfg(feature = "nativos")]
+    if let Some(resultado) = nativos_compartidos::invocar(nombre, args) {
+        return resultado;
+    }
+
     // 1. Verificar si es una función nativa
     let nativas = obtener_nativas();
     if let Some(nativa_fn) = nativas.get(nombre) {

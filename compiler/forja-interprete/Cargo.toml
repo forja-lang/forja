@@ -9,11 +9,13 @@ repository = "https://github.com/forja-lang/forja"
 publish = false
 
 [features]
-# SQLite no compila en wasm32: la GUI web lo desactiva.
-default = ["sqlite"]
-sqlite = ["dep:rusqlite"]
+# `nativos` delega SQLite/archivo/JSON en forja-native (no compila en wasm32).
+default = ["nativos"]
+nativos = ["dep:forja-native", "dep:forja-vm", "dep:forja-runtime"]
 
 [dependencies]
 forja-syntax = { path = "../forja-syntax" }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+forja-native = { path = "../forja-native", features = ["sqlite"], optional = true }
+forja-vm = { path = "../forja-vm", optional = true }
+forja-runtime = { path = "../forja-runtime", optional = true }
