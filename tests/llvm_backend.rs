@@ -514,6 +514,27 @@ escribir(m["ciudad"])
 }
 
 #[test]
+fn campos_tipados_por_el_constructor() {
+    // Un campo que el constructor llena desde un parámetro toma el tipo del
+    // parámetro (antes quedaba `Entero` y el texto se imprimía `0`).
+    let fuente = r#"
+clase Nodo {
+    clave
+    valor
+    constructor(c, v) {
+        este.clave = c
+        este.valor = v
+    }
+}
+variable n = nuevo Nodo("a", "b")
+escribir(n.clave + "-" + n.valor)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "a-b");
+    }
+}
+
+#[test]
 fn arreglo_que_arranca_vacio_y_se_llena_de_textos() {
     // El literal `[]` no dice el tipo de las casillas: lo marca el `empujar` de
     // un texto (y su `tipo` en el runtime, para imprimirlo).

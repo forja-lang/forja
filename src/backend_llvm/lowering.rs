@@ -1243,7 +1243,16 @@ impl Lowering {
                     nombre, metodos, ..
                 } if nombre == clase => {
                     for m in metodos {
-                        let pistas = self.pistas_de(&m.nombre, &m.parametros, &m.cuerpo);
+                        // Los constructores se registran como `constructor@Clase`:
+                        // sin eso sus pistas no se encontraban y los campos que el
+                        // constructor llena desde un parámetro quedaban `Entero`
+                        // (un texto guardado ahí se imprimía `0`).
+                        let clave = if m.nombre == "constructor" || m.nombre == "nuevo" {
+                            format!("constructor@{nombre}")
+                        } else {
+                            m.nombre.clone()
+                        };
+                        let pistas = self.pistas_de(&clave, &m.parametros, &m.cuerpo);
                         en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
                     }
                 }
@@ -1253,7 +1262,12 @@ impl Lowering {
                     ..
                 } if clase_nombre == clase => {
                     for m in metodos {
-                        let pistas = self.pistas_de(&m.nombre, &m.parametros, &m.cuerpo);
+                        let clave = if m.nombre == "constructor" || m.nombre == "nuevo" {
+                            format!("constructor@{clase_nombre}")
+                        } else {
+                            m.nombre.clone()
+                        };
+                        let pistas = self.pistas_de(&clave, &m.parametros, &m.cuerpo);
                         en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
                     }
                 }
