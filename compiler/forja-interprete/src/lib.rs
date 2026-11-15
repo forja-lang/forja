@@ -527,9 +527,6 @@ fn nativa_tipo(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, S
     Ok(Valor::Texto(nombre.to_string()))
 }
 
-
-
-
 /// `a_texto(valor)` — convierte cualquier valor a texto
 fn nativa_a_texto(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
     let val = args
@@ -606,20 +603,9 @@ fn sqlite_obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, String> {
 
 /// Convierte un Value de SQLite a serde_json::Value para serialización.
 #[cfg(feature = "sqlite")]
-
-
 // ═════════════════════════════════════════════════════════════════════════
 // FUNCIONES SQLITE NATIVAS
 // ═════════════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
 
 // ═════════════════════════════════════════════════════════════════════════
 // Algoritmos de fecha (copiados de native_registry.rs)
@@ -797,9 +783,9 @@ fn valor_es_verdadero(valor: &Valor) -> bool {
 
 /// Busca la clase declarada con ese nombre.
 fn buscar_clase<'a>(nombre: &str, declaraciones: &'a [Declaracion]) -> Option<&'a Declaracion> {
-    declaraciones.iter().find(|d| {
-        matches!(d, Declaracion::Clase { nombre: n, .. } if n == nombre)
-    })
+    declaraciones
+        .iter()
+        .find(|d| matches!(d, Declaracion::Clase { nombre: n, .. } if n == nombre))
 }
 
 /// Busca un método (o el `constructor`) dentro de la clase.
@@ -1823,8 +1809,13 @@ fn evaluar_expresion(
             // su clase con `este` ligado, y la mutación vuelve a la variable.
             if let Some(clase) = clase_de(&obj_val) {
                 if let Some(metodo_fn) = buscar_metodo(&clase, metodo, declaraciones) {
-                    let (actualizada, retorno) =
-                        ejecutar_metodo(metodo_fn, obj_val.clone(), &valores, almacen, declaraciones)?;
+                    let (actualizada, retorno) = ejecutar_metodo(
+                        metodo_fn,
+                        obj_val.clone(),
+                        &valores,
+                        almacen,
+                        declaraciones,
+                    )?;
                     if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
                         ambito.asignar(nombre.clone(), actualizada.clone());
                         almacen.fijar(nombre, actualizada.to_json_valor());
