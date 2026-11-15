@@ -321,6 +321,21 @@ namespace Forja.Setup
                 DirBox.Text = dir;
             }
 
+            // Requisito: Windows 10 de 64 bits (los binarios son MSVC x64 y usan
+            // la UCRT del sistema). Se mira el registro, no la condición del MSI:
+            // Windows Installer informa VersionNT=603 en Windows 10/11.
+            if (ForjaBootstrapper.WindowsNoSoportado())
+            {
+                System.Windows.MessageBox.Show(
+                    "Forja necesita Windows 10 (64 bits) o posterior.\n\n" +
+                    "Este equipo no cumple ese requisito, y los ejecutables no van a poder arrancar.",
+                    "Sistema no soportado",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                FooterStatus.Text = "Hace falta Windows 10 (64 bits) o posterior.";
+                return;
+            }
+
             // Requisito: runtime de Visual C++ (los .exe enlazan VCRUNTIME140.dll).
             // Se avisa y se ofrece instalarlo; sin él, forja.exe no arranca, así
             // que no se sigue hasta que esté.
