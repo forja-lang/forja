@@ -322,6 +322,44 @@ pub fn nombres_ambiguos(
     duenios
 }
 
+/// Funciones definidas en el programa principal cuyo nombre también exporta
+/// un módulo importado.
+///
+/// Al inlinearse los imports todo queda en un mismo espacio de nombres, así que
+/// la función del usuario y la del módulo se confunden (N4/N28 del plan web).
+/// Devuelve `(nombre, módulos)` ordenado, para avisar al compilar.
+pub fn funciones_que_pisan_imports(
+    funciones_propias: &[String],
+    alias: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+) -> Vec<(String, Vec<String>)> {
+    use std::collections::HashMap;
+
+    let mut duenios: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (modulo, nombres) in alias {
+        for nombre in nombres {
+            if nombre == "*" {
+                continue;
+            }
+            duenios
+                .entry(nombre.as_str())
+                .or_default()
+                .push(modulo.as_str());
+        }
+    }
+
+    let mut colisiones: Vec<(String, Vec<String>)> = Vec::new();
+    for nombre in funciones_propias {
+        if let Some(modulos) = duenios.get(nombre.as_str()) {
+            let mut ordenados: Vec<String> = modulos.iter().map(|m| m.to_string()).collect();
+            ordenados.sort();
+            colisiones.push((nombre.clone(), ordenados));
+        }
+    }
+    colisiones.sort();
+    colisiones.dedup();
+    colisiones
+}
+
 /// Llamadas **sin calificar** a nombres ambiguos en el fuente original.
 ///
 /// Se mira el texto (no el AST) a propósito: después de inlinear imports, una
