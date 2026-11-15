@@ -17,9 +17,13 @@
 
        El runtime de Visual C++ (2015-2022, x64) lo instala el bundle antes de
        este MSI; si alguien corre el .msi suelto en una máquina sin él, forja.exe
-       no arranca (falta VCRUNTIME140.dll). -->
-  <Launch Condition="VersionNT64 AND VersionNT &gt;= 1000"
-          Message="Forja necesita Windows 10 (64 bits) o posterior." />
+       no arranca (falta VCRUNTIME140.dll).
+
+       Los dos chequeos viven en el bootstrapper (forja-setup-ba.exe), no acá:
+       Windows Installer informa `VersionNT = 603` en este Windows 10/11 (build
+       26300) —se ve así en el log de cualquier instalación—, así que una
+       condición `VersionNT >= 1000` rechaza máquinas válidas. La UI lee la
+       versión real del registro (`CurrentMajorVersionNumber`). -->
 
   <ComponentGroup Id="CoreFiles">
     <Component Id="Compiler" Directory="INSTALLDIR" Guid="8f8b7d10-3c1e-4b52-9a11-2c6d0e5a7b01">
