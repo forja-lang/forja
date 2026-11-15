@@ -259,10 +259,15 @@ namespace Forja.Setup
             InstallFolder = targetDir;
             Features = features;
 
-            // El runtime de VC++ lo avisa y lo pide la UI (SetupWindow). En
-            // silencio no hay a quién preguntarle: se sigue y se deja constancia,
+            // Los requisitos los avisa y los pide la UI (SetupWindow). En silencio
+            // no hay a quién preguntarle: se deja constancia en el log y se sigue,
             // porque abortar rompería instalaciones desatendidas que después
             // resuelven el runtime por su cuenta.
+            if (silent && WindowsNoSoportado())
+            {
+                Engine.Log(LogLevel.Error, "Windows anterior a 10 o de 32 bits: los binarios no van a arrancar.");
+            }
+
             if (silent && FaltaVCRuntime())
             {
                 Engine.Log(LogLevel.Error,
@@ -687,6 +692,42 @@ namespace Forja.Setup
                 Scope = "user",
                 Features = Features,
             }.Write();
+        }
+
+        /// <summary>
+        /// ¿El sistema no llega a Windows 10 de 64 bits? Se mira el registro, no
+        /// `VersionNT`: Windows Installer informa 603 (Windows 8.1) en Windows
+        /// 10/11 —está en el log de cualquier instalación— así que una condición
+        /// de MSI con `VersionNT >= 1000` rechaza máquinas válidas.
+        /// `CurrentMajorVersionNumber` existe desde Windows 10 y vale 10 en 10 y
+        /// 11; en 8.1 y anteriores la clave no está.
+        /// </summary>
+        internal static bool WindowsNoSoportado()
+        {
+            if (!Environment.Is64BitOperatingSystem)
+            {
+                return true;
+            }
+
+            try
+            {
+                using (var k = Registry.LocalMachine.OpenSubKey(
+                    @"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
+                {
+                    if (k == null)
+                    {
+                        return false;
+                    }
+
+                    var mayor = k.GetValue("CurrentMajorVersionNumber");
+                    return mayor == null || Convert.ToInt32(mayor) < 10;
+                }
+            }
+            catch
+            {
+                // Si no se puede leer, no se bloquea al usuario por las dudas.
+                return false;
+            }
         }
 
         /// <summary>
