@@ -619,8 +619,22 @@ impl GeneradorBytecode {
                 for d in cuerpo.iter() {
                     Self::extraer_ids_decl(d, &mut declaradas, &mut usadas);
                 }
-                // Capturadas = usadas - declaradas (ordenado para consistencia)
-                let mut capturadas: Vec<String> = usadas.difference(&declaradas).cloned().collect();
+                // Capturadas = usadas - declaradas, sin los nombres de funciones
+                // reales (esos no son variables del entorno).
+                let mut capturadas: Vec<String> = usadas
+                    .difference(&declaradas)
+                    // Sólo se captura lo que es una **variable** del entorno: los
+                    // nombres de funciones y los builtins (`longitud`, `escribir`)
+                    // no son variables y capturarlos los dejaba en nulo.
+                    .filter(|nombre| {
+                        !self.funciones_definidas.contains(*nombre)
+                            && self
+                                .pila_locales
+                                .iter()
+                                .any(|ambito| ambito.contains(*nombre))
+                    })
+                    .cloned()
+                    .collect();
                 capturadas.sort();
                 let cantidad_capturadas = capturadas.len();
 
@@ -664,6 +678,27 @@ impl GeneradorBytecode {
                 self.tipos_ambito = ambito;
                 // El cuerpo de un hilo tampoco hereda las postcondiciones.
                 let post_previas_hilo = std::mem::take(&mut self.postcondiciones_activas);
+                // Los parámetros del hilo son las variables capturadas: hay que
+                // darlas de alta en el ámbito del generador o `f(21)` dentro del
+                // hilo se emitía como `Llamar("f")` (función inexistente) en vez
+                // de cargar el closure capturado.
+                let locales_previos_hilo = std::mem::take(&mut self.pila_locales);
+                self.pila_locales = vec![locales_previos_hilo.last().cloned().unwrap_or_default()];
+                let mut locales_hilo = std::collections::HashSet::new();
+                for cap in &capturadas {
+                    locales_hilo.insert(cap.clone());
+                }
+                self.pila_locales.push(locales_hilo);
+                let indices_previos_hilo = std::mem::take(&mut self.var_indices);
+                let contador_previo_hilo = self.var_counter;
+                self.var_counter = 0;
+                for cap in &capturadas {
+                    self.var_indices.entry(cap.clone()).or_insert_with(|| {
+                        let idx = self.var_counter;
+                        self.var_counter += 1;
+                        idx
+                    });
+                }
                 // Emitir FunctionDef + cuerpo + Return en el buffer temporal
                 let nombre_funcion_def = nombre_funcion.clone();
                 self.emitir(Opcode::DefinirFuncion(nombre_funcion_def, params));
@@ -673,6 +708,9 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::Retornar);
                 self.tipos_ambito = ambito_previo;
                 self.postcondiciones_activas = post_previas_hilo;
+                self.pila_locales = locales_previos_hilo;
+                self.var_indices = indices_previos_hilo;
+                self.var_counter = contador_previo_hilo;
                 // Guardar el cuerpo generado
                 let body = std::mem::replace(&mut self.codigos, opcodes_previos);
                 self.hilo_funciones.push((nombre_funcion, vec![], body));
