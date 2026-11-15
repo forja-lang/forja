@@ -235,7 +235,11 @@ impl GeneradorBytecode {
                 Self::extraer_ids_expr(si_verdadero, usadas);
                 Self::extraer_ids_expr(si_falso, usadas);
             }
-            Expresion::LlamadaFuncion { argumentos, .. } => {
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                // El nombre puede ser una variable que contiene un closure
+                // (`variable f = func()…; f()`): hay que capturarla para el hilo.
+                // Los nombres de funciones reales se filtran al armar la lista.
+                usadas.insert(nombre.clone());
                 for arg in argumentos {
                     Self::extraer_ids_expr(arg, usadas);
                 }
