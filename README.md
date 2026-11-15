@@ -269,7 +269,7 @@ PS C:\forja> forja medir 100 ejemplos/algoritmos/40_fibonacci.fa
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-Forja v0.10.2 — Escribí 'salir' para terminar
+Forja v0.10.3 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
@@ -374,7 +374,7 @@ ejemplos/            submódulo · ejemplos del lenguaje
 
 ## Estado del proyecto
 
-Forja está en **v0.10.2** y en desarrollo activo. El estado verificable de cada
+Forja está en **v0.10.3** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
 **[roadmap oficial](https://forja-lang.github.io/roadmap/)**.
 
