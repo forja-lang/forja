@@ -68,6 +68,20 @@ impl ForjaFast {
                     let hilo_funcion_tabla = self.tabla_funciones.entries.clone();
                     let hilo_sym_to_funcion_indice = self.indice_simbolo_funcion.clone();
                     let hilo_objeto_monticulo = self.runtime.objeto_monticulo.clone();
+                    // Los heaps de textos/arreglos/mapas/Exacto también viajan:
+                    // los valores capturados y el nombre de un closure son
+                    // índices a esos heaps. Sin esto, dentro del hilo un
+                    // `closure(x)` devolvía nulo y los arreglos capturados no
+                    // resolvían (mismo problema que tenía `mapa_async`).
+                    let hilo_texto_monticulo = self.runtime.texto_monticulo.clone();
+                    let hilo_arreglo_monticulo = self.runtime.arreglo_monticulo.clone();
+                    let hilo_mapa_monticulo = self.runtime.mapa_monticulo.clone();
+                    let hilo_exacto_monticulo = self.runtime.exacto_monticulo.clone();
+                    // Los descriptores de clase son los que dicen "este objeto es
+                    // un Closure y su fn está en el campo N". Sin ellos,
+                    // `desempaquetar_closure` devolvía None y llamar a un closure
+                    // capturado por el hilo daba nulo.
+                    let hilo_descriptores = self.runtime.descriptores_clase.clone();
                     let hilo_objeto_shapes = self.runtime.formas_objeto.clone();
                     let hilo_chan_tx_monticulo = self.runtime.canal_envio_monticulo.clone();
                     // el hijo también necesita los receptores; sin esto
@@ -114,6 +128,11 @@ impl ForjaFast {
                             hilo_vm.tabla_funciones.entries = hilo_funcion_tabla;
                             hilo_vm.indice_simbolo_funcion = hilo_sym_to_funcion_indice;
                             hilo_vm.runtime.objeto_monticulo = hilo_objeto_monticulo;
+                            hilo_vm.runtime.texto_monticulo = hilo_texto_monticulo;
+                            hilo_vm.runtime.arreglo_monticulo = hilo_arreglo_monticulo;
+                            hilo_vm.runtime.mapa_monticulo = hilo_mapa_monticulo;
+                            hilo_vm.runtime.exacto_monticulo = hilo_exacto_monticulo;
+                            hilo_vm.runtime.descriptores_clase = hilo_descriptores;
                             hilo_vm.runtime.formas_objeto = hilo_objeto_shapes;
                             hilo_vm.runtime.canal_envio_monticulo = hilo_chan_tx_monticulo;
                             hilo_vm.runtime.canal_recepcion_monticulo = hilo_chan_rx_monticulo;
