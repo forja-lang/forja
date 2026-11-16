@@ -10,6 +10,8 @@ ejemplos/algoritmos/149_tabla_hash.fa          aritmética dinámica de tramo: `
                                                 (ver plans/DECISIONES-PENDIENTES.md §2)
 ejemplos/avanzado/189_benchmark_manual.fa      imprime milisegundos medidos: distinto por definición
 ejemplos/patrones/164_ecuacion_segundo_grado.fa aritmética dinámica (división entera vs decimal)
+ejemplos/patrones/167_estadistica.fa            aritmética dinámica: la casilla se ensancha a Decimal y la
+                                                VM divide entero/entero (varianza 3 vs 3.07)
 ejemplos/patrones/168_regresion_lineal.fa       aritmética dinámica (pendiente/intercepto)
 ejemplos/patrones/169_simulacion_montecarlo.fa  usa `tiempo_actual()`: valores distintos por definición
 ejemplos/avanzado/107_generico_multiple.fa      genérico con parámetros de tipo sin usar en la firma

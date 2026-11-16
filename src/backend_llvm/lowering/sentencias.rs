@@ -53,6 +53,9 @@ impl Lowering {
         for s in cuerpo {
             self.sentencia(s)?;
         }
+        // El pre-escaneo es de este cuerpo: no debe filtrarse al siguiente
+        // (`main` no ve las locales de la función anterior).
+        self.tipos_pre.clear();
         if !self.termina {
             if matches!(ret, T::Nulo) {
                 self.linea("ret void");
@@ -150,6 +153,8 @@ impl Lowering {
         for s in &m.cuerpo {
             self.sentencia(s)?;
         }
+        // Igual que en `funcion`: el pre-escaneo no se filtra al método siguiente.
+        self.tipos_pre.clear();
         if !self.termina {
             if matches!(ret, T::Nulo) {
                 self.linea("ret void");
