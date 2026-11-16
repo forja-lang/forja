@@ -4,19 +4,16 @@
 # Causa común de las de aritmética: la VM decide Entero/Decimal por el VALOR del
 # momento; la ruta nativa fija el tipo del slot (ver plans/TRASPASO-BACKEND-NATIVO.md §6.2.1).
 
-ejemplos/algoritmos/144_cola.fa                 aritmética dinámica (división/cola genérica)
-ejemplos/algoritmos/149_tabla_hash.fa          aritmética dinámica de tramo: `h = h * 31 + clave[i]` deja
-                                                `h` como texto en la VM y el nativo lo fija Entero
-                                                (ver plans/DECISIONES-PENDIENTES.md §2)
+ejemplos/algoritmos/149_tabla_hash.fa          la VM pierde las inserciones (buckets vacíos): `h * 31 + clave[i]`
+                                                deja `h` texto y el índice deja de ser un entero; el nativo sí inserta
 ejemplos/avanzado/189_benchmark_manual.fa      imprime milisegundos medidos: distinto por definición
-ejemplos/patrones/164_ecuacion_segundo_grado.fa aritmética dinámica (división entera vs decimal)
+ejemplos/patrones/164_ecuacion_segundo_grado.fa la VM pierde la parte imaginaria (`0 ± 0i`); el nativo da `0.866i`
 ejemplos/patrones/167_estadistica.fa            aritmética dinámica: la casilla se ensancha a Decimal y la
                                                 VM divide entero/entero (varianza 3 vs 3.07)
-ejemplos/patrones/168_regresion_lineal.fa       aritmética dinámica (pendiente/intercepto)
+ejemplos/patrones/168_regresion_lineal.fa       la VM pierde la pendiente (51 para todo); el nativo da 59/79
 ejemplos/patrones/169_simulacion_montecarlo.fa  usa `tiempo_actual()`: valores distintos por definición
 ejemplos/avanzado/107_generico_multiple.fa      genérico con parámetros de tipo sin usar en la firma
 ejemplos/rasgos_genericos/72_genericos.fa       retorno de `este.campo` sin anotación
 ejemplos/ffi/184_ffi_simple.fa                  FFI rand/reloj: valores distintos y la VM termina con error
-ejemplos/ffi/185_ffi_matematicas.fa             parámetro sin anotar (`potencia(base, exp)`) que recibe un
-                                                `Decimal`: el nativo lo fija Entero y la VM no
+ejemplos/ffi/185_ffi_matematicas.fa             la VM trunca la serie (`log(10) = 0`); el nativo da 2.3025…
 ejemplos/async_await/canales.fa                 la VM no termina (cuelga); la ruta nativa sí
