@@ -286,6 +286,18 @@ impl Lowering {
                 let a = self.como(&arr, T::Arreglo);
                 let iv = self.expr(indice)?;
                 let i = self.como(&iv, T::Int);
+                if self.incierto(objeto) {
+                    // Elemento de un arreglo que vive en un campo: el tipo del
+                    // elemento es una suposición de la inferencia. Si la casilla
+                    // no guarda un arreglo, la VM devuelve `nulo`; el runtime lo
+                    // decide (registro de arreglos) para no reventar.
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_indice_dinamico(ptr {}, i64 {})",
+                        r, a, i
+                    ));
+                    return Ok(self.casilla_a_valor(&r, objeto));
+                }
                 let demostrado = match (objeto.as_ref(), indice.as_ref()) {
                     (
                         Expresion::Identificador { nombre: arr, .. },
@@ -322,18 +334,17 @@ impl Lowering {
                 self.linea(&format!("{} = icmp slt i64 {}, {}", lt, i, longitud));
                 let okc = self.r();
                 self.linea(&format!("{} = and i1 {}, {}", okc, ge0, lt));
-                let err = self.bloque("indice.error");
+                // Fuera de rango la VM devuelve `nulo`, no aborta: se elige la
+                // casilla con un `phi` (0 fuera de rango).
+                let fuera = self.bloque("indice.fuera");
                 let correcto = self.bloque("indice.ok");
+                let fin = self.bloque("indice.fin");
                 self.linea(&format!(
                     "br i1 {}, label %{}, label %{}",
-                    okc, correcto, err
+                    okc, correcto, fuera
                 ));
-                self.etiqueta(&err);
-                let mensaje = self.texto_constante("índice fuera de rango");
-                self.linea(&format!("call void @forja_imprimir_texto(ptr {})", mensaje));
-                self.linea("call void @forja_nueva_linea()");
-                self.linea("call void @exit(i32 1)");
-                self.linea("unreachable");
+                self.etiqueta(&fuera);
+                self.linea(&format!("br label %{}", fin));
                 self.etiqueta(&correcto);
                 let datos = self.r();
                 self.linea(&format!(
@@ -349,7 +360,14 @@ impl Lowering {
                 ));
                 let v = self.r();
                 self.linea(&format!("{} = load i64, ptr {}", v, p));
-                Ok(self.casilla_a_valor(&v, objeto))
+                self.linea(&format!("br label %{}", fin));
+                self.etiqueta(&fin);
+                let resultado = self.r();
+                self.linea(&format!(
+                    "{} = phi i64 [ {}, %{} ], [ 0, %{} ]",
+                    resultado, v, correcto, fuera
+                ));
+                Ok(self.casilla_a_valor(&resultado, objeto))
             }
             Expresion::Asignacion { variable, valor } => {
                 let v = self.expr(valor)?;
@@ -385,6 +403,7 @@ impl Lowering {
                 let i = self.como(&iv, T::Int);
                 let v = self.expr(valor)?;
                 self.marcar_arreglo_texto(objeto, &a, valor);
+                self.marcar_arreglo_arreglo(objeto, valor);
                 let x = self.como_casilla(&v, self.arreglo_de_dec(objeto));
                 self.linea(&format!(
                     "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
@@ -544,6 +563,29 @@ impl Lowering {
     ) -> Result<V, String> {
         let a = self.expr(izquierda)?;
         let b = self.expr(derecha)?;
+        // `"" + este.matriz[i]`: un lado sale de una casilla dudosa, así que lo
+        // convierte el runtime según el tag (la VM decide por el valor).
+        if matches!(operador, Operador::Suma)
+            && (a.t() == T::Texto || b.t() == T::Texto)
+            && (self.incierto(izquierda) || self.incierto(derecha))
+        {
+            let x = if self.incierto(izquierda) {
+                self.a_texto_dinamico(&a)
+            } else {
+                self.como(&a, T::Texto)
+            };
+            let y = if self.incierto(derecha) {
+                self.a_texto_dinamico(&b)
+            } else {
+                self.como(&b, T::Texto)
+            };
+            let r = self.r();
+            self.linea(&format!(
+                "{} = call ptr @forja_concat(ptr {}, ptr {})",
+                r, x, y
+            ));
+            return Ok(V::Texto(r));
+        }
         self.binaria_valores_con(a, b, operador)
     }
 
@@ -1164,6 +1206,18 @@ impl Lowering {
         let v = match nombre {
             "longitud" | "len" | "largo" => {
                 let v = self.arg(nombre, args, 0)?;
+                let incierto_arg = args.first().map(|a| self.incierto(a)).unwrap_or(false);
+                if incierto_arg {
+                    // Mismo caso que `Index`: si la casilla no guarda un arreglo,
+                    // la VM da 0.
+                    let p = self.como(&v, T::Arreglo);
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_longitud_dinamica(ptr {})",
+                        r, p
+                    ));
+                    return Ok(Some(V::Int(r)));
+                }
                 match v.t() {
                     T::Texto => {
                         let s = self.como(&v, T::Texto);
@@ -1391,6 +1445,7 @@ impl Lowering {
                 let arr = self.como(&v, T::Arreglo);
                 if let (Some(rec), Some(val)) = (args.first(), args.get(1)) {
                     self.marcar_arreglo_texto(rec, &arr, val);
+                    self.marcar_arreglo_arreglo(rec, val);
                 }
                 let arg1 = self.arg(nombre, args, 1)?;
                 let dec = args
@@ -2120,6 +2175,14 @@ impl Lowering {
     /// Valor de una casilla i64 leída de `arr`: `Decimal` bit-casteado, `Texto`
     /// como puntero, o entero.
     fn casilla_a_valor(&mut self, v: &str, arr: &Expresion) -> V {
+        if self.arreglo_de_arreglo(arr) {
+            let p = self.r();
+            self.linea(&format!(
+                "{} = call ptr @forja_arreglo_validar(i64 {})",
+                p, v
+            ));
+            return V::Arreglo(p);
+        }
         if self.arreglo_de_dec(arr) {
             let d = self.r();
             self.linea(&format!("{} = bitcast i64 {} to double", d, v));
@@ -2153,6 +2216,29 @@ impl Lowering {
         let r = self.r();
         self.linea(&format!("{} = bitcast double {} to i64", r, d));
         r
+    }
+
+    /// Recuerda que el arreglo guarda arreglos: sus casillas se leen como
+    /// punteros validados (`forja_arreglo_validar`), no como enteros.
+    pub(super) fn marcar_arreglo_arreglo(&mut self, receptor: &Expresion, valor: &Expresion) {
+        if self.tipo_estatico(valor) == T::Arreglo {
+            if let Some(k) = clave_arreglo(receptor) {
+                self.arreglos_arreglo.insert(k, true);
+            }
+        }
+    }
+
+    /// ¿El arreglo guarda arreglos en sus casillas?
+    pub(super) fn arreglo_de_arreglo(&self, e: &Expresion) -> bool {
+        match e {
+            Expresion::Arreglo(items) => items
+                .first()
+                .map(|i| self.tipo_estatico(i) == T::Arreglo)
+                .unwrap_or(false),
+            otro => clave_arreglo(otro)
+                .and_then(|k| self.arreglos_arreglo.get(&k).copied())
+                .unwrap_or(false),
+        }
     }
 
     /// Recuerda que el arreglo guarda textos (para leer sus casillas como
@@ -2202,6 +2288,16 @@ impl Lowering {
                 self.linea(&format!("call void @forja_imprimir_texto(ptr {})", r));
                 return Ok(());
             }
+        }
+        if self.incierto(arg) {
+            // El slot dice «arreglo/texto» pero puede guardar un número: lo
+            // resuelve el runtime, igual que la VM.
+            let v = self.expr(arg)?;
+            let dato = self.como_slot(&v);
+            let p = self.r();
+            self.linea(&format!("{} = inttoptr i64 {} to ptr", p, dato));
+            self.linea(&format!("call void @forja_imprimir_dinamico(ptr {})", p));
+            return Ok(());
         }
         let v = self.expr(arg)?;
         match v.t() {
@@ -2257,8 +2353,12 @@ impl Lowering {
                 )
             }
             T::Int => {
+                // `T::Int` es el comodín de la inferencia: puede ser un número,
+                // un texto o un arreglo. Se imprime por su tag (como la VM).
                 let r = self.como(&v, T::Int);
-                self.linea(&format!("call void @forja_imprimir_entero(i64 {})", r));
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, r));
+                self.linea(&format!("call void @forja_imprimir_dinamico(ptr {})", p));
             }
         }
         Ok(())
@@ -2829,6 +2929,55 @@ fn valor_desde(r: &str, t: &T) -> V {
         T::Funcion => V::Funcion(r.to_string()),
         T::Nulo => V::Nulo,
         T::Int => V::Int(r.to_string()),
+    }
+}
+
+/// ¿El valor de la expresión es una **suposición** de la inferencia? Pasa con
+/// el elemento de un arreglo que vive en un campo (`este.matriz[i]`): el código
+/// asume que la casilla guarda un arreglo, pero puede guardar un entero o un
+/// texto. La VM decide por el valor del momento; acá esos accesos van al runtime.
+fn elemento_de_campo_contenedor(e: &Expresion) -> bool {
+    match e {
+        Expresion::Index { objeto, .. } => {
+            matches!(objeto.as_ref(), Expresion::AccesoMiembro { .. })
+        }
+        _ => false,
+    }
+}
+
+impl Lowering {
+    /// ¿El valor de `e` hay que tratarlo por su tag del runtime?
+    pub(super) fn incierto(&self, e: &Expresion) -> bool {
+        match e {
+            Expresion::Identificador { nombre, .. } => self.inciertos.contains(nombre),
+            Expresion::Grupo(g) => self.incierto(g),
+            // Elemento de un arreglo de un campo, o algo que salió de ahí.
+            Expresion::Index { objeto, .. } => {
+                elemento_de_campo_contenedor(e) || self.incierto(objeto)
+            }
+            // Una closure devuelve un i64 sin tipo declarado: puede ser un
+            // número o un puntero a texto/arreglo (ver `crear_closure`).
+            Expresion::LlamadaFuncion { nombre, .. } => self
+                .vars
+                .get(nombre)
+                .map(|v| v.t == T::Closure)
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
+    /// `"" + v` con el tag del runtime (arreglo → repr, texto → tal cual,
+    /// escalar → número), como la VM.
+    fn a_texto_dinamico(&mut self, v: &V) -> String {
+        let dato = self.como_slot(v);
+        let p = self.r();
+        self.linea(&format!("{} = inttoptr i64 {} to ptr", p, dato));
+        let r = self.r();
+        self.linea(&format!(
+            "{} = call ptr @forja_a_texto_dinamico(ptr {})",
+            r, p
+        ));
+        r
     }
 }
 

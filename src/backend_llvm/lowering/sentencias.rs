@@ -227,6 +227,14 @@ impl Lowering {
                     })
                     .unwrap_or(T::Int);
                 let slot = self.alloca(&t, nombre);
+                // Un inicializador que sale de una casilla dudosa (`variable f =
+                // este.matriz[i]`) deja la variable marcada: sus accesos van por
+                // el tag del runtime, como en la VM.
+                if let Some(e) = valor {
+                    if self.incierto(e) {
+                        self.inciertos.insert(nombre.clone());
+                    }
+                }
                 // recordar si el arreglo guarda textos (para leer sus casillas)
                 if let Some(e) = valor {
                     if self.arreglo_de_texto(e) {
@@ -248,6 +256,9 @@ impl Lowering {
                 self.vars.insert(nombre.clone(), Var { slot, t });
             }
             Declaracion::Asignacion { nombre, valor, .. } => {
+                if self.incierto(valor) {
+                    self.inciertos.insert(nombre.clone());
+                }
                 let v = self.expr(valor)?;
                 let (slot, t) = match self.vars.get(nombre) {
                     Some(var) => (var.slot.clone(), var.t.clone()),
@@ -304,6 +315,7 @@ impl Lowering {
                         columna: 0,
                     };
                     self.marcar_arreglo_texto(&rec, &a, valor);
+                    self.marcar_arreglo_arreglo(&rec, valor);
                     self.linea(&format!(
                         "call void @forja_arreglo_fijar(ptr {}, i64 {}, i64 {})",
                         a, i, x_slot

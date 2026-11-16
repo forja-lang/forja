@@ -217,6 +217,14 @@ pub struct Lowering {
     /// Variables/campos cuyo arreglo guarda `Decimal` (double bit-casteado en la
     /// casilla i64, como el texto guarda un puntero).
     arreglos_dec: HashMap<String, bool>,
+    /// Variables/campos cuyo **tipo es una suposición** de la inferencia (el
+    /// elemento de un arreglo guardado en un campo, `este.matriz[i]`, o algo que
+    /// salió de ahí). Sobre esos valores las operaciones preguntan el tipo al
+    /// runtime en vez de creerle al slot, que es lo que hace la VM.
+    inciertos: std::collections::HashSet<String>,
+    /// Variables/campos cuyo arreglo guarda arreglos (las casillas son punteros
+    /// a otros arreglos; se validan al leerlas, ver `forja_arreglo_validar`).
+    arreglos_arreglo: HashMap<String, bool>,
     /// Clases con `@derive(Mostrar)`: `escribir(obj)` las formatea.
     derive_mostrar: std::collections::HashSet<String>,
     /// Clases con `@derive(Igual)`: `==` compara campo por campo.
@@ -263,7 +271,12 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_imprimir_nulo", "void ()"),
     ("forja_nueva_linea", "void ()"),
     ("forja_arreglo_nuevo", "ptr (i64, i64)"),
+    ("forja_registrar_texto", "void (ptr)"),
+    ("forja_imprimir_dinamico", "void (ptr)"),
+    ("forja_a_texto_dinamico", "ptr (ptr)"),
     ("forja_arreglo_longitud", "i64 (ptr)"),
+    ("forja_indice_dinamico", "i64 (ptr, i64)"),
+    ("forja_longitud_dinamica", "i64 (ptr)"),
     ("forja_arreglo_rellenar", "ptr (i64, i64, i64)"),
     ("forja_arreglo_a_texto", "ptr (ptr)"),
     ("forja_imprimir_arreglo", "void (ptr)"),
@@ -281,6 +294,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_dividir", "ptr (ptr, ptr)"),
     ("forja_recortar", "ptr (ptr)"),
     ("forja_arreglo_obtener", "i64 (ptr, i64)"),
+    ("forja_arreglo_validar", "ptr (i64)"),
     ("forja_arreglo_fijar", "void (ptr, i64, i64)"),
     ("forja_empujar", "void (ptr, i64)"),
     ("forja_reservar", "void (ptr, i64)"),
@@ -326,6 +340,8 @@ impl Lowering {
             evidencia_texto: std::collections::HashSet::new(),
             arreglos_texto: HashMap::new(),
             arreglos_dec: HashMap::new(),
+            inciertos: std::collections::HashSet::new(),
+            arreglos_arreglo: HashMap::new(),
             derive_mostrar: std::collections::HashSet::new(),
             derive_igual: std::collections::HashSet::new(),
             etiquetas: Vec::new(),
@@ -521,8 +537,16 @@ impl Lowering {
                 e
             }
             (V::Int(r), T::Texto) => {
+                // Un `Entero` puede ser en realidad un texto/arreglo que llegó
+                // por un slot sin tipo (`T::Int` es el comodín): el runtime
+                // decide por su tag, como la VM.
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, r));
                 let d = self.r();
-                self.linea(&format!("{} = call ptr @forja_a_texto(i64 {})", d, r));
+                self.linea(&format!(
+                    "{} = call ptr @forja_a_texto_dinamico(ptr {})",
+                    d, p
+                ));
                 d
             }
             (V::Dec(r), T::Texto) => {
@@ -1071,6 +1095,12 @@ impl Lowering {
         salida.push_str(&self.cuerpos);
         let _ = writeln!(salida, "define void @forja_init() {{");
         let _ = writeln!(salida, "entry:");
+        // Los literales de texto se registran como textos: así `longitud`/`[i]`
+        // saben qué son aunque lleguen por un slot tipado de otra cosa (la VM
+        // decide por el valor, no por el slot).
+        for nombre in self.consts.values() {
+            let _ = writeln!(salida, "  call void @forja_registrar_texto(ptr {})", nombre);
+        }
         salida.push_str(&cuerpo_inicializar_fn);
         let _ = writeln!(salida, "  ret void");
         let _ = writeln!(salida, "}}");
@@ -1384,6 +1414,10 @@ impl Lowering {
                     T::Enum("Opcion".to_string())
                 }
                 Expresion::Ok(_) | Expresion::Error(_) => T::Enum("Resultado".to_string()),
+                // `resultado` es la palabra reservada de las postcondiciones,
+                // pero también un nombre de variable normal (`variable resultado
+                // = []` … `retornar resultado`).
+                Expresion::Resultado => locales.get("resultado").cloned().unwrap_or(T::Int),
                 // `retornar arr` devuelve el tipo del parámetro, no un entero.
                 Expresion::Identificador { nombre, .. } => params
                     .iter()
@@ -1535,6 +1569,12 @@ impl Lowering {
             Expresion::LiteralNumero(_) => T::Int,
             Expresion::Arreglo(_) => T::Arreglo,
             Expresion::Mapa(_) => T::Mapa,
+            // `resultado` como variable normal (fuera de una postcondición).
+            Expresion::Resultado => self
+                .vars
+                .get("resultado")
+                .map(|v| v.t.clone())
+                .unwrap_or(T::Int),
             // `partes[0]` de un arreglo de textos es Texto (puntero), no Entero.
             Expresion::Index { objeto, .. } if self.arreglo_de_texto(objeto) => T::Texto,
             Expresion::Index { objeto, .. } if self.tipo_estatico(objeto) == T::Texto => T::Texto,
@@ -1861,6 +1901,11 @@ fn tipo_por_forma(e: &Expresion) -> Option<T> {
         Expresion::Mapa(_) => T::Mapa,
         Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
         Expresion::LiteralBooleano(_) => T::Bool,
+        // `variable f = func(x) { … }`: una closure es un valor con su propio
+        // tipo. Sin esto, pasarla a un parámetro sin anotar (`mapa(arr, f)`)
+        // dejaba el parámetro como `Entero` y la llamada saltaba al objeto de la
+        // closure como si fuera código (segfault).
+        Expresion::Closure { .. } => T::Closure,
         _ => return None,
     })
 }
@@ -1893,12 +1938,21 @@ fn evidencia_de_llamadas(
 ) {
     /// Tipo de un argumento: por su forma o por la variable de la que sale
     /// (`variable horas = 2.5` … `predecir(horas)`).
-    fn tipo_arg(a: &Expresion, vars: &HashMap<String, T>) -> Option<T> {
+    fn tipo_arg(
+        a: &Expresion,
+        vars: &HashMap<String, T>,
+        retornos: &HashMap<String, T>,
+    ) -> Option<T> {
         tipo_por_forma(a).or_else(|| match a {
             Expresion::Identificador { nombre, .. } => vars.get(nombre).cloned(),
+            // `variable x = f()` con `f` de retorno anotado: el tipo de `x` es
+            // el de `f` (`aprox = aproximar_e(n)` es `Decimal` aunque la
+            // evidencia no pueda verlo por la forma).
+            Expresion::LlamadaFuncion { nombre, .. } => retornos.get(nombre).cloned(),
             _ => None,
         })
     }
+    #[allow(clippy::too_many_arguments)]
     fn anotar(
         mapa: &mut HashMap<String, Vec<Option<T>>>,
         en_conflicto: &mut std::collections::HashSet<(String, usize)>,
@@ -1907,6 +1961,7 @@ fn evidencia_de_llamadas(
         vars_texto: &std::collections::HashSet<String>,
         nombre: &str,
         args: &[Expresion],
+        retornos: &HashMap<String, T>,
     ) {
         // Las llamadas punteadas (`x.metodo`) se registran sin el receptor.
         let clave = nombre.rsplit('.').next().unwrap_or(nombre).to_string();
@@ -1917,7 +1972,9 @@ fn evidencia_de_llamadas(
             entrada.resize(args.len(), None);
         }
         for (i, a) in args.iter().enumerate() {
-            let Some(t) = tipo_arg(a, vars) else { continue };
+            let Some(t) = tipo_arg(a, vars, retornos) else {
+                continue;
+            };
             if t == T::Int {
                 continue;
             }
@@ -1943,6 +2000,7 @@ fn evidencia_de_llamadas(
         args_por_llamada: &mut HashMap<String, Vec<Expresion>>,
         cadenas_texto: &mut std::collections::HashSet<String>,
         vars: &mut HashMap<String, T>,
+        retornos: &HashMap<String, T>,
     ) {
         match e {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -1954,9 +2012,18 @@ fn evidencia_de_llamadas(
                     cadenas_texto,
                     nombre,
                     argumentos,
+                    retornos,
                 );
                 for a in argumentos {
-                    en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(
+                        a,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
                 }
             }
             Expresion::LlamadaMetodo {
@@ -1972,6 +2039,7 @@ fn evidencia_de_llamadas(
                     cadenas_texto,
                     metodo,
                     argumentos,
+                    retornos,
                 );
                 en_expr(
                     objeto,
@@ -1980,9 +2048,18 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
                 for a in argumentos {
-                    en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(
+                        a,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
                 }
             }
             // `nuevo Clase(args)`: la evidencia de un constructor es por clase
@@ -1996,9 +2073,18 @@ fn evidencia_de_llamadas(
                     cadenas_texto,
                     &format!("constructor@{clase}"),
                     argumentos,
+                    retornos,
                 );
                 for a in argumentos {
-                    en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(
+                        a,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
                 }
             }
             Expresion::Closure { parametros, cuerpo } => {
@@ -2015,6 +2101,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     &mut propias,
+                    retornos,
                 );
             }
             Expresion::Hilo { cuerpo } => en_sentencias(
@@ -2024,9 +2111,18 @@ fn evidencia_de_llamadas(
                 args_por_llamada,
                 cadenas_texto,
                 vars,
+                retornos,
             ),
             Expresion::Coincidir { brazos, expr: o } => {
-                en_expr(o, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                en_expr(
+                    o,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                    retornos,
+                );
                 for b in brazos {
                     en_sentencias(
                         &b.cuerpo,
@@ -2035,6 +2131,7 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     );
                 }
             }
@@ -2048,6 +2145,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
                 en_expr(
                     derecha,
@@ -2056,6 +2154,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
             }
             Expresion::Unaria { expr, .. } | Expresion::Grupo(expr) => en_expr(
@@ -2065,6 +2164,7 @@ fn evidencia_de_llamadas(
                 args_por_llamada,
                 cadenas_texto,
                 vars,
+                retornos,
             ),
             Expresion::Ternario {
                 condicion,
@@ -2078,6 +2178,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
                 en_expr(
                     si_verdadero,
@@ -2086,6 +2187,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
                 en_expr(
                     si_falso,
@@ -2094,6 +2196,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
             }
             Expresion::Index { objeto, indice } => {
@@ -2104,6 +2207,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
                 en_expr(
                     indice,
@@ -2112,17 +2216,42 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 );
             }
             Expresion::Arreglo(items) => {
                 for i in items {
-                    en_expr(i, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(
+                        i,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
                 }
             }
             Expresion::Mapa(pares) => {
                 for (k, v) in pares {
-                    en_expr(k, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
-                    en_expr(v, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(
+                        k,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
+                    en_expr(
+                        v,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
                 }
             }
             Expresion::Asignacion { valor, .. }
@@ -2135,6 +2264,7 @@ fn evidencia_de_llamadas(
                 args_por_llamada,
                 cadenas_texto,
                 vars,
+                retornos,
             ),
             Expresion::AccesoMiembro { objeto, .. } => en_expr(
                 objeto,
@@ -2143,6 +2273,7 @@ fn evidencia_de_llamadas(
                 args_por_llamada,
                 cadenas_texto,
                 vars,
+                retornos,
             ),
             Expresion::Try(inner)
             | Expresion::Ok(inner)
@@ -2154,6 +2285,7 @@ fn evidencia_de_llamadas(
                 args_por_llamada,
                 cadenas_texto,
                 vars,
+                retornos,
             ),
             _ => {}
         }
@@ -2165,6 +2297,7 @@ fn evidencia_de_llamadas(
         args_por_llamada: &mut HashMap<String, Vec<Expresion>>,
         cadenas_texto: &mut std::collections::HashSet<String>,
         vars: &mut HashMap<String, T>,
+        retornos: &HashMap<String, T>,
     ) {
         for d in cuerpo {
             match d {
@@ -2176,14 +2309,22 @@ fn evidencia_de_llamadas(
                     if es_arreglo_de_textos(v, cadenas_texto) {
                         cadenas_texto.insert(nombre.clone());
                     }
-                    if let Some(t) = tipo_arg(v, vars) {
+                    if let Some(t) = tipo_arg(v, vars, retornos) {
                         vars.insert(nombre.clone(), t);
                     }
-                    en_expr(v, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                    en_expr(
+                        v,
+                        mapa,
+                        en_conflicto,
+                        args_por_llamada,
+                        cadenas_texto,
+                        vars,
+                        retornos,
+                    );
                 }
                 Declaracion::Variable { valor: None, .. } => {}
                 Declaracion::Asignacion { nombre, valor, .. } => {
-                    if let Some(t) = tipo_arg(valor, vars) {
+                    if let Some(t) = tipo_arg(valor, vars, retornos) {
                         vars.insert(nombre.clone(), t);
                     }
                     en_expr(
@@ -2193,6 +2334,7 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     );
                 }
                 Declaracion::AsignacionMiembro { valor, .. }
@@ -2203,6 +2345,7 @@ fn evidencia_de_llamadas(
                     args_por_llamada,
                     cadenas_texto,
                     vars,
+                    retornos,
                 ),
                 Declaracion::Si {
                     condicion,
@@ -2216,6 +2359,7 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     );
                     en_sentencias(
                         bloque_verdadero,
@@ -2224,9 +2368,18 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     );
                     if let Some(b) = bloque_falso {
-                        en_sentencias(b, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                        en_sentencias(
+                            b,
+                            mapa,
+                            en_conflicto,
+                            args_por_llamada,
+                            cadenas_texto,
+                            vars,
+                            retornos,
+                        );
                     }
                 }
                 Declaracion::Mientras { condicion, bloque } => {
@@ -2237,6 +2390,7 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     );
                     en_sentencias(
                         bloque,
@@ -2245,6 +2399,7 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     );
                 }
                 Declaracion::Para { bloque, .. } | Declaracion::Repetir { bloque, .. } => {
@@ -2255,14 +2410,27 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         vars,
+                        retornos,
                     )
                 }
-                Declaracion::Retornar { valor: Some(v) } => {
-                    en_expr(v, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars)
-                }
-                Declaracion::Expresion(e) => {
-                    en_expr(e, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars)
-                }
+                Declaracion::Retornar { valor: Some(v) } => en_expr(
+                    v,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                    retornos,
+                ),
+                Declaracion::Expresion(e) => en_expr(
+                    e,
+                    mapa,
+                    en_conflicto,
+                    args_por_llamada,
+                    cadenas_texto,
+                    vars,
+                    retornos,
+                ),
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
                     anotar(
                         mapa,
@@ -2272,9 +2440,18 @@ fn evidencia_de_llamadas(
                         cadenas_texto,
                         nombre,
                         argumentos,
+                        retornos,
                     );
                     for a in argumentos {
-                        en_expr(a, mapa, en_conflicto, args_por_llamada, cadenas_texto, vars);
+                        en_expr(
+                            a,
+                            mapa,
+                            en_conflicto,
+                            args_por_llamada,
+                            cadenas_texto,
+                            vars,
+                            retornos,
+                        );
                     }
                 }
                 Declaracion::Funcion {
@@ -2300,14 +2477,21 @@ fn evidencia_de_llamadas(
                         args_por_llamada,
                         cadenas_texto,
                         &mut propias,
+                        retornos,
                     );
                 }
                 Declaracion::Clase { metodos, .. }
                 | Declaracion::Implementacion { metodos, .. } => {
                     for m in metodos {
+                        // Igual que en `Funcion`: en la segunda vuelta el tipo del
+                        // parámetro también puede venir de las llamadas
+                        // (`t.insertar("x")` → `insertar(clave)` es Texto).
                         let mut propias = vars.clone();
-                        for p in &m.parametros {
-                            if let Some(t) = T::de_tipo(&p.tipo) {
+                        let conocidos = mapa.get(&m.nombre).cloned().unwrap_or_default();
+                        for (i, p) in m.parametros.iter().enumerate() {
+                            let t =
+                                T::de_tipo(&p.tipo).or_else(|| conocidos.get(i).cloned().flatten());
+                            if let Some(t) = t {
                                 propias.insert(p.nombre.clone(), t);
                             }
                         }
@@ -2318,6 +2502,7 @@ fn evidencia_de_llamadas(
                             args_por_llamada,
                             cadenas_texto,
                             &mut propias,
+                            retornos,
                         );
                     }
                 }
@@ -2330,11 +2515,41 @@ fn evidencia_de_llamadas(
         std::collections::HashSet::new();
     // Además de los tipos, se guardan los argumentos de cada llamada: sirven
     // para saber qué parámetros reciben un arreglo de textos.
+    // Tipos de retorno anotados: permiten inferir `variable x = f()`.
+    let mut retornos: HashMap<String, T> = HashMap::new();
+    fn recoger_retornos(decls: &[Declaracion], retornos: &mut HashMap<String, T>) {
+        for d in decls {
+            match d {
+                Declaracion::Funcion {
+                    nombre,
+                    tipo_retorno,
+                    ..
+                } => {
+                    if let Some(t) = T::de_tipo(tipo_retorno) {
+                        retornos.insert(nombre.clone(), t);
+                    }
+                }
+                Declaracion::Clase { metodos, .. }
+                | Declaracion::Implementacion { metodos, .. } => {
+                    for m in metodos {
+                        if let Some(t) = T::de_tipo(&m.tipo_retorno) {
+                            retornos.insert(m.nombre.clone(), t);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    recoger_retornos(decls, &mut retornos);
+
     let mut por_llamada_args: HashMap<String, Vec<Expresion>> = HashMap::new();
     let mut cadenas_texto: std::collections::HashSet<String> = std::collections::HashSet::new();
-    // Dos vueltas: la segunda ya conoce los tipos de los parámetros que la
-    // primera dedujo de las llamadas (`validar_usuario(email)` → `validar_email`).
-    for _ in 0..2 {
+    // Tres vueltas: cada una conoce los tipos de parámetros que la anterior
+    // dedujo de las llamadas (`validar_usuario(email)` → `validar_email`). La
+    // última alcanza las cadenas largas: `ht.insertar("x")` → `insertar(clave)`
+    // → `este.hash(clave)`.
+    for _ in 0..3 {
         en_sentencias(
             decls,
             &mut mapa,
@@ -2342,6 +2557,7 @@ fn evidencia_de_llamadas(
             &mut por_llamada_args,
             &mut cadenas_texto,
             &mut HashMap::new(),
+            &retornos,
         );
     }
     // Argumentos que son un arreglo de textos: en el callee, las casillas de ese
@@ -2397,6 +2613,10 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
     #[derive(Default)]
     struct Uso {
         arreglo: bool,
+        /// `p["clave"]`: indexar con un texto es un mapa (los arreglos se
+        /// indexan con enteros). Sin esto `p` quedaba como arreglo y la casilla
+        /// del mapa se leía como `%ForjaArreglo` (segfault).
+        mapa: bool,
         texto: bool,
         /// El parámetro se usa en aritmética: no puede ser `Texto` aunque además
         /// se concatene (`escribir("x" + n)` y `n * 2` en la misma función).
@@ -2433,7 +2653,11 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
         match e {
             Expresion::Index { objeto, indice } => {
                 if es(objeto, nombre) {
-                    uso.arreglo = true;
+                    if matches!(indice.as_ref(), Expresion::LiteralTexto(_)) {
+                        uso.mapa = true;
+                    } else {
+                        uso.arreglo = true;
+                    }
                 }
                 en_expr(objeto, nombre, uso);
                 en_expr(indice, nombre, uso);
@@ -2573,6 +2797,8 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
     en_sentencias(cuerpo, nombre, &mut uso);
     if uso.arreglo {
         Some(T::Arreglo)
+    } else if uso.mapa && !uso.texto && !uso.numerico {
+        Some(T::Mapa)
     } else if uso.texto && !uso.numerico && !escapa(cuerpo, nombre) {
         Some(T::Texto)
     } else {

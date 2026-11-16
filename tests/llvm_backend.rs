@@ -327,6 +327,55 @@ escribir("no se llega")
 }
 
 #[test]
+fn casilla_con_numero_se_comporta_como_la_vm() {
+    // La VM decide por el valor: `c.f[0]` guarda un entero, así que `longitud`
+    // da 0, `[i]` da `nulo` y `escribir` imprime el número. Antes la ruta nativa
+    // lo leía como `%ForjaArreglo` y hacía segfault.
+    // shortcut: `nulo` y el entero 0 comparten representación en la casilla, así
+    // que `c.f[0][0]` imprime 0 y no "nulo" (la VM sí los distingue). Upgrade:
+    // valores con tag, como el `Value` de la VM.
+    let fuente = r#"
+clase C {
+    f
+    constructor() { este.f = [] }
+}
+funcion main() {
+    variable c = nuevo C()
+    c.f[0] = 1
+    escribir("slot=" + c.f[0])
+    escribir("long=" + longitud(c.f[0]))
+    escribir("sub=" + c.f[0][0])
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        let limpio = salida.replace("\r\n", "\n");
+        assert_eq!(limpio.trim(), "slot=1\nlong=0\nsub=0");
+    }
+}
+
+#[test]
+fn indice_fuera_de_rango_no_aborta_y_la_casilla_crece() {
+    // La VM no aborta por índice fuera de rango: lee la casilla que no está y
+    // `a[3] = 9` alarga el arreglo con huecos.
+    let fuente = r#"
+funcion main() {
+    variable a = [1, 2]
+    escribir("oob=" + a[5])
+    variable b = []
+    b[3] = 9
+    escribir("huecos=" + b[0] + "," + b[3] + " len=" + longitud(b))
+    escribir("bien=" + a[1])
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        let limpio = salida.replace("\r\n", "\n");
+        assert_eq!(limpio.trim(), "oob=0\nhuecos=0,9 len=4\nbien=2");
+    }
+}
+
+#[test]
 fn payload_de_resultado_anotado() {
     // `funcion f() -> Resultado<Texto, Texto>`: el payload de `Ok`/`Error` se
     // enlaza con esos tipos (el preludio asume Entero/Texto).
