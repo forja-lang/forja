@@ -37,7 +37,17 @@ impl Lowering {
         self.prologo.clear();
         self.termina = false;
         self.ret_actual = ret.clone();
-        let mut tipos_pre = std::mem::take(&mut self.tipos_pre);
+        // Pistas frescas para este cuerpo (nada del cuerpo anterior) con los
+        // tipos ya resueltos de los parámetros: `r = r * base` con `base:
+        // Decimal` marca `r` como Decimal y no como Entero.
+        let mut tipos_pre: HashMap<String, T> = HashMap::new();
+        for (i, p) in parametros.iter().enumerate() {
+            if let Some(t) = tipos.get(i) {
+                if !matches!(t, T::Int | T::Nulo) {
+                    tipos_pre.insert(p.nombre.clone(), t.clone());
+                }
+            }
+        }
         self.preescanear_tipos(cuerpo, &mut tipos_pre);
         self.tipos_pre = tipos_pre;
 
@@ -116,9 +126,19 @@ impl Lowering {
         self.prologo.clear();
         self.termina = false;
         self.ret_actual = ret.clone();
-        let mut tipos_pre = std::mem::take(&mut self.tipos_pre);
+        // Igual que en `funcion`: pistas frescas con los tipos de los parámetros.
+        let mut tipos_pre: HashMap<String, T> = HashMap::new();
+        for (i, p) in m.parametros.iter().enumerate() {
+            if let Some(t) = tipos.get(i) {
+                if !matches!(t, T::Int | T::Nulo) {
+                    tipos_pre.insert(p.nombre.clone(), t.clone());
+                }
+            }
+        }
         self.preescanear_tipos(&m.cuerpo, &mut tipos_pre);
         self.tipos_pre = tipos_pre;
+        // `-> T`: el `retornar` devuelve los bits tal cual (sin convertir).
+        self.ret_dinamico = matches!(m.tipo_retorno, Some(Tipo::Parametro(_)));
 
         let slot_este = self.alloca(&T::Clase(clase.to_string()), "este");
         self.guardar(
@@ -496,7 +516,13 @@ impl Lowering {
                     }
                     (Some(e), ret) => {
                         let v = self.expr(e)?;
-                        let r = self.como(&v, ret.clone());
+                        // `-> T`: la casilla devuelve lo que haya (puntero o
+                        // número), sin convertir al tipo del slot.
+                        let r = if self.ret_dinamico {
+                            self.como_slot(&v)
+                        } else {
+                            self.como(&v, ret.clone())
+                        };
                         self.linea(&format!("ret {} {}", ret.llvm().to_llvm_ir(), r));
                     }
                 }

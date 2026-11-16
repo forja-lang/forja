@@ -222,6 +222,19 @@ pub struct Lowering {
     /// salió de ahí). Sobre esos valores las operaciones preguntan el tipo al
     /// runtime en vez de creerle al slot, que es lo que hace la VM.
     inciertos: std::collections::HashSet<String>,
+    /// Métodos que declaran `-> T` (parámetro de tipo de una clase genérica):
+    /// el valor que devuelven no tiene tipo estático, así que se imprime y se
+    /// concatena por su tag en runtime.
+    metodos_param: std::collections::HashSet<String>,
+    /// Funciones que devuelven un parámetro de tipo (`funcion f<T>(x: T) -> T`).
+    funciones_param: std::collections::HashSet<String>,
+    /// Parámetros declarados con un parámetro de tipo (`x: T`): la casilla es
+    /// i64 y el argumento viaja con sus bits tal cual. Clave `nombre:índice`.
+    params_dinamicos: std::collections::HashSet<String>,
+    /// La función/método que se está emitiendo devuelve un parámetro de tipo
+    /// (`-> T`): el `retornar` pasa los bits tal cual, sin convertir (antes un
+    /// texto se convertía a número y `frente()` devolvía 0).
+    ret_dinamico: bool,
     /// Variables/campos cuyo arreglo guarda arreglos (las casillas son punteros
     /// a otros arreglos; se validan al leerlas, ver `forja_arreglo_validar`).
     arreglos_arreglo: HashMap<String, bool>,
@@ -342,6 +355,10 @@ impl Lowering {
             arreglos_dec: HashMap::new(),
             inciertos: std::collections::HashSet::new(),
             arreglos_arreglo: HashMap::new(),
+            metodos_param: std::collections::HashSet::new(),
+            funciones_param: std::collections::HashSet::new(),
+            params_dinamicos: std::collections::HashSet::new(),
+            ret_dinamico: false,
             derive_mostrar: std::collections::HashSet::new(),
             derive_igual: std::collections::HashSet::new(),
             etiquetas: Vec::new(),
@@ -687,10 +704,18 @@ impl Lowering {
                     ..
                 } => {
                     let params = self.tipos_params(nombre, parametros, cuerpo);
-                    let ret = if *externa && tipo_retorno.is_none() {
-                        T::Nulo
-                    } else if matches!(tipo_retorno, Some(Tipo::Parametro(_))) {
+                    for (i, p) in parametros.iter().enumerate() {
+                        if matches!(p.tipo, Some(Tipo::Parametro(_))) {
+                            self.params_dinamicos.insert(format!("{nombre}:{i}"));
+                        }
+                    }
+                    if matches!(tipo_retorno, Some(Tipo::Parametro(_))) {
+                        self.funciones_param.insert(nombre.clone());
+                    }
+                    let ret = if matches!(tipo_retorno, Some(Tipo::Parametro(_))) {
                         T::Int
+                    } else if *externa && tipo_retorno.is_none() {
+                        T::Nulo
                     } else {
                         self.tipo_declarado(tipo_retorno)
                             // sin anotación: se infiere del primer `retornar expr`
@@ -763,6 +788,14 @@ impl Lowering {
                                 m.nombre.clone()
                             };
                             let params = self.tipos_params(&clave, &m.parametros, &m.cuerpo);
+                            if matches!(m.tipo_retorno, Some(Tipo::Parametro(_))) {
+                                self.metodos_param.insert(m.nombre.clone());
+                            }
+                            for (i, p) in m.parametros.iter().enumerate() {
+                                if matches!(p.tipo, Some(Tipo::Parametro(_))) {
+                                    self.params_dinamicos.insert(format!("{}:{i}", m.nombre));
+                                }
+                            }
                             (m.nombre.clone(), params, self.retorno_metodo(m))
                         })
                         .collect();
@@ -1338,6 +1371,11 @@ impl Lowering {
             .iter()
             .enumerate()
             .map(|(i, p)| {
+                // `x: T` (parámetro de tipo sin resolver): la casilla es i64 y el
+                // argumento viaja con sus bits tal cual (un texto es un puntero).
+                if matches!(p.tipo, Some(Tipo::Parametro(_))) {
+                    return T::Int;
+                }
                 let evidencia = por_llamada.get(i).cloned().flatten();
                 let declarado = self.tipo_declarado(&p.tipo);
                 // `p: Par` con `Par<A, B>` (plantilla) y la evidencia diciendo
@@ -1513,6 +1551,25 @@ impl Lowering {
                 .cloned()
                 .unwrap_or_else(|| self.tipo_estatico(e)),
             Expresion::Grupo(g) => self.tipo_con_pistas(g, pistas),
+            Expresion::Unaria { expr, .. } => self.tipo_con_pistas(expr, pistas),
+            // `r = r * base` con `base: Decimal`: `r` es Decimal aunque arranque
+            // en `variable r = 1` (la VM ensancha la casilla).
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                use crate::ast::Operador;
+                let a = self.tipo_con_pistas(izquierda, pistas);
+                let b = self.tipo_con_pistas(derecha, pistas);
+                if a == T::Dec || b == T::Dec {
+                    T::Dec
+                } else if matches!(operador, Operador::Suma) && (a == T::Texto || b == T::Texto) {
+                    T::Texto
+                } else {
+                    self.tipo_estatico(e)
+                }
+            }
             other => self.tipo_estatico(other),
         }
     }

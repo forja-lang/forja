@@ -969,7 +969,14 @@ impl Lowering {
             for (i, a) in argumentos.iter().enumerate() {
                 let v = self.expr(a)?;
                 let t = params.get(i).cloned().unwrap_or_else(|| v.t());
-                args.push((self.como(&v, t.clone()), t.llvm().to_llvm_ir()));
+                // `funcion f<T>(x: T)`: los bits tal cual (un texto es un puntero).
+                let crudo = self.params_dinamicos.contains(&format!("{nombre}:{i}"));
+                let x = if crudo {
+                    self.como_slot(&v)
+                } else {
+                    self.como(&v, t.clone())
+                };
+                args.push((x, t.llvm().to_llvm_ir()));
             }
             let r = self.r();
             let lista: Vec<String> = args.iter().map(|(v, t)| format!("{} {}", t, v)).collect();
@@ -2453,7 +2460,14 @@ impl Lowering {
             for (i, a) in args.iter().enumerate() {
                 let v = self.expr(a)?;
                 let t = params.get(i).cloned().unwrap_or_else(|| v.t());
-                lista.push(format!("{} {}", t.llvm().to_llvm_ir(), self.como(&v, t)));
+                // Constructor de una clase genérica (`constructor(a: A)`).
+                let crudo = self.params_dinamicos.contains(&format!("{ctor}:{i}"));
+                let x = if crudo {
+                    self.como_slot(&v)
+                } else {
+                    self.como(&v, t.clone())
+                };
+                lista.push(format!("{} {}", t.llvm().to_llvm_ir(), x));
             }
             self.linea(&format!(
                 "call void @{}_{}({})",
@@ -2595,7 +2609,14 @@ impl Lowering {
         for (i, a) in argumentos.iter().enumerate() {
             let v = self.expr(a)?;
             let t = params.get(i).cloned().unwrap_or_else(|| v.t());
-            lista.push(format!("{} {}", t.llvm().to_llvm_ir(), self.como(&v, t)));
+            // Parámetro `T` de un método genérico: los bits tal cual.
+            let crudo = self.params_dinamicos.contains(&format!("{metodo}:{i}"));
+            let x = if crudo {
+                self.como_slot(&v)
+            } else {
+                self.como(&v, t.clone())
+            };
+            lista.push(format!("{} {}", t.llvm().to_llvm_ir(), x));
         }
         let r = self.r();
         if matches!(ret, T::Nulo) {
@@ -2954,6 +2975,14 @@ impl Lowering {
             // Elemento de un arreglo de un campo, o algo que salió de ahí.
             Expresion::Index { objeto, .. } => {
                 elemento_de_campo_contenedor(e) || self.incierto(objeto)
+            }
+            // `-> T` (genérico sin especializar): devuelve los bits, el tipo se
+            // resuelve por tag al usarlo.
+            Expresion::LlamadaMetodo { metodo, .. } => self.metodos_param.contains(metodo.as_str()),
+            Expresion::LlamadaFuncion { nombre, .. }
+                if self.funciones_param.contains(nombre.as_str()) =>
+            {
+                true
             }
             // Una closure devuelve un i64 sin tipo declarado: puede ser un
             // número o un puntero a texto/arreglo (ver `crear_closure`).
