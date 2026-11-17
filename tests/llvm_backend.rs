@@ -1192,3 +1192,26 @@ main()
         assert_eq!(salida.trim().replace("\r\n", "\n"), "5\nHola Ana");
     }
 }
+
+#[test]
+fn nulo_vs_cero_en_texto_queda_documentado() {
+    // handoff5 §1.4. Lo que **sí** anda: un `Texto` nulo concatena "nulo"
+    // (igual que la VM). Lo que no: `variable n = nulo` sin anotación se tipa
+    // `Entero`, así que la casilla es el 0 y se imprime "0" donde la VM dice
+    // "nulo". Es el mismo agujero que `nulo`/`0` (handoff4 §3.1): se cierra
+    // cuando haya valores con tag. Si esto empieza a fallar, es que se arregló:
+    // actualizar también el `shortcut:` y este comentario.
+    let fuente = r#"
+funcion main() {
+    variable t: Texto
+    variable n = nulo
+    escribir("x" + n)
+    escribir(t + "y")
+    escribir("a" + t)
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "x0\nnuloy\nanulo");
+    }
+}
