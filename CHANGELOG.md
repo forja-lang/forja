@@ -9,6 +9,19 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### GUI — el runtime que ya viene con Forja ahora funciona
 
+- **`forja ejecutar` respeta `estado:` y `recarga:` en apps GUI.** `estado:` es un
+  JSON con las variables del store con las que arranca la app (se pasa como
+  `--load-state=`, que el runtime ya leía pero la CLI rechazaba); `recarga:`
+  reinicia el `.exe` cuando cambia cualquier `.fa` del proyecto (la ventana se
+  arma una vez, así que se reinicia, no se recarga en caliente).
+- **Test de click sin ventana** (`gui-rt`): recorre el camino real del botón
+  (`MaterialButton` → `ejecutar_callback_y_actualizar` → store → re-extraer
+  layout). `masonry_testing` no sirve acá: monta widgets de Masonry y el árbol de
+  la app es una vista de Xilem.
+- **`salir_app()` compila en wasm** (era `Valor::Nulo()` en vez de `Valor::Nulo`);
+  `forja-wasm`, `forja-wasm-gui` y `forja-gui-dom` vuelven a verificar en
+  `wasm32-unknown-unknown`.
+
 - **Las apps GUI pueden importar módulos propios.** Antes el payload era el
   fuente tal cual y el intérprete ignora `importar`, así que llamar a una función
   de un módulo del proyecto fallaba en runtime. Ahora `forja compilar` incrusta el

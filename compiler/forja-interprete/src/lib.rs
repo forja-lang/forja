@@ -546,7 +546,7 @@ fn nativa_salir_app(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Val
     #[cfg(not(target_arch = "wasm32"))]
     std::process::exit(0);
     #[cfg(target_arch = "wasm32")]
-    Ok(Valor::Nulo())
+    Ok(Valor::Nulo)
 }
 
 /// `escribir(valor…)` — imprime los argumentos separados por espacio.
