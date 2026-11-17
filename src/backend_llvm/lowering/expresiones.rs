@@ -275,9 +275,11 @@ impl Lowering {
                             r, m, ks
                         ));
                     } else {
-                        let ki = self.como(&kv, T::Int);
+                        // Los bits tal cual: la clave puede ser un Texto que
+                        // llegó por un slot Entero (el runtime decide por tag).
+                        let ki = self.como_slot(&kv);
                         self.linea(&format!(
-                            "{} = call i64 @forja_mapa_obtener_i64(ptr {}, i64 {})",
+                            "{} = call i64 @forja_mapa_obtener_dinamico(ptr {}, i64 {})",
                             r, m, ki
                         ));
                     }
@@ -467,9 +469,9 @@ impl Lowering {
                             m, ks, x, es_texto
                         ));
                     } else {
-                        let ki = self.como(&kv, T::Int);
+                        let ki = self.como_slot(&kv);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {}, i64 {})",
+                            "call void @forja_mapa_fijar_dinamico(ptr {}, i64 {}, i64 {}, i64 {})",
                             m, ki, x, es_texto
                         ));
                     }
@@ -1243,6 +1245,23 @@ impl Lowering {
                         let m = self.como(&v, T::Mapa);
                         let r = self.r();
                         self.linea(&format!("{} = call i64 @forja_mapa_longitud(ptr {})", r, m));
+                        V::Int(r)
+                    }
+                    // Un `Entero` puede llevar un puntero a texto o a arreglo
+                    // (`variable p = partes[i]`): la longitud se decide por el
+                    // tag. Leyendo `len` a ciegas, un texto daba su primer
+                    // bloque como longitud (`envolver` de std/texto, `709`).
+                    T::Int => {
+                        // Los bits tal cual: `como(v, Texto)` convertiría un
+                        // número a texto en vez de reenviar el puntero.
+                        let bits = self.como_slot(&v);
+                        let ptr = self.r();
+                        self.linea(&format!("{} = inttoptr i64 {} to ptr", ptr, bits));
+                        let r = self.r();
+                        self.linea(&format!(
+                            "{} = call i64 @forja_longitud_dinamica(ptr {})",
+                            r, ptr
+                        ));
                         V::Int(r)
                     }
                     _ => {

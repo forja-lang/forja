@@ -268,13 +268,16 @@ int64_t forja_indice_de(const char *s, const char *sub) {
     return p ? (int64_t)(p - s) : -1;
 }
 
-char *forja_subcadena(const char *s, int64_t ini, int64_t fin) {
+/* El 3er argumento es la LONGITUD (como la VM), no el índice final:
+   `subcadena("hola mundo", 1, 9)` = "ola mundo". */
+char *forja_subcadena(const char *s, int64_t ini, int64_t cant) {
     if (!s) return forja_dup("");
     int64_t n = (int64_t)strlen(s);
     if (ini < 0) ini = 0;
-    if (fin > n) fin = n;
-    if (fin < ini) fin = ini;
-    int64_t len = fin - ini;
+    if (ini > n) ini = n;
+    if (cant < 0) cant = 0;
+    if (ini + cant > n) cant = n - ini;
+    int64_t len = cant;
     char *r = forja_texto_alloc(len + 1);
     memcpy(r, s + ini, (size_t)len);
     r[len] = '\0';
@@ -675,6 +678,23 @@ int64_t forja_mapa_obtener_texto(void *pm, const char *clave) {
     if (!m || m->len == 0) return 0;
     ForjaPar *p = forja_mapa_slot(m, forja_hash_texto(clave), -1, clave);
     return p->usado ? p->valor : 0;
+}
+
+/* Clave de mapa decidida por el **valor**, no por el slot: la VM indexa con el
+ * valor del momento. `m[partes[i][0]] = v` llega como los bits de un Texto en
+ * un slot Entero; guardarlo con `fijar_i64` dejaba la clave como número y la
+ * entrada se perdía (`fusionar` de std/colecciones, ejemplo `732`). */
+void forja_mapa_fijar_dinamico(void *pm, int64_t clave, int64_t valor, int64_t es_texto) {
+    if (forja_tag_de((void *)(intptr_t)clave) == FORJA_T_TEXTO)
+        forja_mapa_fijar_texto(pm, (const char *)(intptr_t)clave, valor, es_texto);
+    else
+        forja_mapa_fijar_i64(pm, clave, valor, es_texto);
+}
+
+int64_t forja_mapa_obtener_dinamico(void *pm, int64_t clave) {
+    if (forja_tag_de((void *)(intptr_t)clave) == FORJA_T_TEXTO)
+        return forja_mapa_obtener_texto(pm, (const char *)(intptr_t)clave);
+    return forja_mapa_obtener_i64(pm, clave);
 }
 
 /* `m[clave]` como texto: si la casilla guarda un Texto se devuelve tal cual, si

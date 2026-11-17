@@ -327,9 +327,11 @@ impl Lowering {
                             m, ks, x_slot, es_texto
                         ));
                     } else {
-                        let ki = self.como(&iv, T::Int);
+                        // Clave que no es Texto estático: puede serlo en runtime
+                        // (`res[pares(m)[i][0]] = v`), así que decide el tag.
+                        let ki = self.como_slot(&iv);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {}, i64 {})",
+                            "call void @forja_mapa_fijar_dinamico(ptr {}, i64 {}, i64 {}, i64 {})",
                             m, ki, x_slot, es_texto
                         ));
                     }

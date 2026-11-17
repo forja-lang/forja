@@ -324,6 +324,8 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_mapa_obtener_i64", "i64 (ptr, i64)"),
     ("forja_mapa_fijar_texto", "void (ptr, ptr, i64, i64)"),
     ("forja_mapa_obtener_texto", "i64 (ptr, ptr)"),
+    ("forja_mapa_fijar_dinamico", "void (ptr, i64, i64, i64)"),
+    ("forja_mapa_obtener_dinamico", "i64 (ptr, i64)"),
     ("forja_mapa_valor_a_texto_i64", "ptr (ptr, i64)"),
     ("forja_mapa_valor_a_texto_texto", "ptr (ptr, ptr)"),
     ("forja_canal_nuevo", "ptr ()"),
@@ -1481,6 +1483,8 @@ impl Lowering {
                     .firmas
                     .get(nombre)
                     .map(|(_, r)| r.clone())
+                    // Los builtins también tienen tipo de retorno conocido.
+                    .or_else(|| tipo_builtin(nombre))
                     .unwrap_or(T::Int),
                 Expresion::LlamadaMetodo { objeto, metodo, .. } => {
                     self_.retorno_metodo_de(objeto, metodo).unwrap_or(T::Int)
@@ -1951,8 +1955,16 @@ fn tipo_builtin(nombre: &str) -> Option<T> {
         "a_mayusculas" | "a_minusculas" => T::Texto,
         "tiempo_ms" => T::Int,
         "repetir_arreglo" | "arreglo_relleno" => T::Arreglo,
+        // `pares(m)`/`claves(m)`/`valores(m)` arman un arreglo: sin esto el
+        // retorno se infería Entero y la casilla se leía como `%ForjaArreglo`
+        // por `inttoptr` (segfault en `fusionar`, ejemplo `732`).
+        "_mapa_pares" | "_mapa_claves" | "_mapa_valores" => T::Arreglo,
         "dividir" => T::Arreglo,
         "recortar" => T::Texto,
+        // `unir_elementos(arr, sep)` arma un Texto: sin esto el retorno de
+        // `retornar unir_elementos(...)` se infería Entero y se imprimía `0`
+        // (`a_titulo` de std/texto, ejemplo `709`).
+        "unir_elementos" | "reemplazar" | "invertir" => T::Texto,
         "contiene" | "empieza_con" | "termina_con" => T::Int,
         // `leer()` devuelve Texto (o el nulo en el slot de texto al final de la
         // entrada); si el slot fuera `Entero` el nulo se perdía como 0.
@@ -2795,6 +2807,12 @@ fn inferir_parametro(nombre: &str, cuerpo: &[Declaracion]) -> Option<T> {
                     && argumentos.first().map(|a| es(a, nombre)).unwrap_or(false)
                 {
                     uso.arreglo = true;
+                }
+                // `contiene("0123456789", ch)`: la aguja es Texto. Sin esto un
+                // parámetro que sólo se usa así quedaba `Entero` y el texto
+                // llegaba como número (`_es_digito` → segfault, `709`).
+                if f == "contiene" && argumentos.get(1).map(|a| es(a, nombre)).unwrap_or(false) {
+                    uso.texto = true;
                 }
                 for a in argumentos {
                     en_expr(a, nombre, uso);

@@ -24,3 +24,7 @@ ejemplos/algoritmos/211_colecciones.fa          `encontrar()` devuelve `nulo` so
 ejemplos/otros/test_basico.fa                   la VM imprime dos saltos de linea de mas en `escribir_linea`
                                                 (3 lineas en vez de 1); el nativo da un salto
 ejemplos/otros/test_sobrecarga.fa               idem `test_basico`: `escribir_linea` de la VM agrega dos lineas
+ejemplos/stdlib/709_texto.fa                    `envolver` termina con un `nulo` pegado en la VM
+                                                (`...español.nulo`); el nativo da el texto bien envuelto
+ejemplos/juegos/153_ahorcado.fa                 elige la palabra con `tiempo_actual()`: distinta por definición
+                                                (coincidió una vez por casualidad)
