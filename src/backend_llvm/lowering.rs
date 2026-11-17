@@ -228,6 +228,10 @@ pub struct Lowering {
     metodos_param: std::collections::HashSet<String>,
     /// Funciones que devuelven un parámetro de tipo (`funcion f<T>(x: T) -> T`).
     funciones_param: std::collections::HashSet<String>,
+    /// Firma `(parámetros, retorno)` del closure creado en cada registro
+    /// (`%vN`) y de la variable que lo guarda. Sin esto la llamada asumía
+    /// `i64(i64, …)` y una closure que devuelve texto daba un entero.
+    firmas_closure: HashMap<String, (Vec<T>, T)>,
     /// Postcondiciones (`asegura`) del cuerpo en curso: se verifican antes de
     /// cada `retornar`, con `resultado` ya vinculado.
     postcondiciones: Vec<crate::ast::Contrato>,
@@ -364,6 +368,7 @@ impl Lowering {
             arreglos_arreglo: HashMap::new(),
             metodos_param: std::collections::HashSet::new(),
             funciones_param: std::collections::HashSet::new(),
+            firmas_closure: HashMap::new(),
             postcondiciones: Vec::new(),
             anteriores: HashMap::new(),
             params_dinamicos: std::collections::HashSet::new(),
@@ -837,7 +842,11 @@ impl Lowering {
                                 &m.parametros,
                                 &m.cuerpo,
                             );
-                            (m.nombre.clone(), params, self.retorno_metodo(clase_nombre, m))
+                            (
+                                m.nombre.clone(),
+                                params,
+                                self.retorno_metodo(clase_nombre, m),
+                            )
                         })
                         .collect();
                     self.clases
@@ -1343,7 +1352,7 @@ impl Lowering {
                         } else {
                             m.nombre.clone()
                         };
-                        let pistas = self.pistas_de(&nombre, &clave, &m.parametros, &m.cuerpo);
+                        let pistas = self.pistas_de(nombre, &clave, &m.parametros, &m.cuerpo);
                         en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
                     }
                 }
@@ -1358,8 +1367,7 @@ impl Lowering {
                         } else {
                             m.nombre.clone()
                         };
-                        let pistas =
-                            self.pistas_de(clase_nombre, &clave, &m.parametros, &m.cuerpo);
+                        let pistas = self.pistas_de(clase_nombre, &clave, &m.parametros, &m.cuerpo);
                         en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
                     }
                 }
@@ -1763,6 +1771,25 @@ impl Lowering {
     }
 }
 
+/// `V` a partir de un registro de IR y su tipo (el inverso de `valor_param`).
+fn valor_de(t: &T, r: String) -> V {
+    match t {
+        T::Bool => V::Bool(r),
+        T::Dec => V::Dec(r),
+        T::Texto => V::Texto(r),
+        T::Arreglo => V::Arreglo(r),
+        T::Mapa => V::Mapa(r),
+        T::Exacto => V::Exacto(r),
+        T::Enum(c) => V::Enum(r, c.clone()),
+        T::Canal => V::Canal(r),
+        T::Closure => V::Closure(r),
+        T::Clase(c) => V::Clase(r, c.clone()),
+        T::Funcion => V::Funcion(r),
+        T::Nulo => V::Nulo,
+        T::Int => V::Int(r),
+    }
+}
+
 fn cero(t: &T) -> &'static str {
     match t {
         T::Dec => "0.000000e+00",
@@ -2067,7 +2094,7 @@ fn evidencia_de_llamadas(
             vars,
             args_por_llamada,
             vars_texto,
-            &nombre.rsplit('.').next().unwrap_or(nombre).to_string(),
+            nombre.rsplit('.').next().unwrap_or(nombre),
             args,
             retornos,
         )

@@ -4,6 +4,7 @@ use super::*;
 use crate::ast::{Declaracion, Expresion, Metodo, Parametro};
 
 impl Lowering {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn funcion(
         &mut self,
         nombre: &str,
@@ -276,6 +277,13 @@ impl Lowering {
                         self.arreglos_dec.insert(nombre.clone(), true);
                     }
                 }
+                // `variable op = sumar`: la firma de la función viaja con la
+                // variable para que la llamada indirecta `op(1, 2)` no adivine.
+                if let Some(Expresion::Identificador { nombre: f, .. }) = valor {
+                    if let Some(firma) = self.firmas.get(f).cloned() {
+                        self.firmas_closure.insert(slot.clone(), firma);
+                    }
+                }
                 // `variable r = f()` con `f() -> Resultado<Texto, Texto>`: se
                 // recuerdan los tipos del payload para el `coincidir`.
                 if let Some(Expresion::LlamadaFuncion { nombre: f, .. }) = valor {
@@ -284,6 +292,7 @@ impl Lowering {
                     }
                 }
                 let inicial = v.unwrap_or(V::Nulo);
+                self.propagar_firma_closure(&inicial, &slot);
                 self.guardar(&slot, inicial, &t);
                 self.vars.insert(nombre.clone(), Var { slot, t });
             }
@@ -296,6 +305,7 @@ impl Lowering {
                     Some(var) => (var.slot.clone(), var.t.clone()),
                     None => return Err(format!("asignación a `{nombre}` no declarada")),
                 };
+                self.propagar_firma_closure(&v, &slot);
                 self.guardar(&slot, v, &t);
             }
             Declaracion::AsignacionMiembro {
@@ -597,6 +607,16 @@ impl Lowering {
     ///
     /// shortcut: sólo precondiciones; las `asegura` habría que inyectarlas antes
     /// de cada `retornar`. Upgrade: cuando algún ejemplo lo necesite.
+    /// Si el valor es una closure recién creada (`%vN`), su firma pasa a la
+    /// variable que la guarda: la llamada `f(1)` la consulta por el slot.
+    fn propagar_firma_closure(&mut self, v: &V, slot: &str) {
+        if let V::Closure(reg) = v {
+            if let Some(firma) = self.firmas_closure.get(reg).cloned() {
+                self.firmas_closure.insert(slot.to_string(), firma);
+            }
+        }
+    }
+
     /// Abre el bloque de postcondiciones de un cuerpo: vincula `resultado`,
     /// captura `anterior(expr)` y las deja activas para los `retornar`.
     fn abrir_contratos(
@@ -687,41 +707,20 @@ fn valor_param(t: &T, i: usize) -> V {
     valor_de(t, format!("%p{}", i))
 }
 
-/// `V` a partir de un registro de IR y su tipo (el inverso de `valor_param`).
-fn valor_de(t: &T, r: String) -> V {
-    match t {
-        T::Bool => V::Bool(r),
-        T::Dec => V::Dec(r),
-        T::Texto => V::Texto(r),
-        T::Arreglo => V::Arreglo(r),
-        T::Mapa => V::Mapa(r),
-        T::Exacto => V::Exacto(r),
-        T::Enum(c) => V::Enum(r, c.clone()),
-        T::Canal => V::Canal(r),
-        T::Closure => V::Closure(r),
-        T::Clase(c) => V::Clase(r, c.clone()),
-        T::Funcion => V::Funcion(r),
-        T::Nulo => V::Nulo,
-        T::Int => V::Int(r),
-    }
-}
-
 /// Junta los interiores de todos los `anterior(expr)` de una condición (en
 /// cualquier posición). La clave de cada snapshot es su forma, así que el orden
 /// no importa.
 fn recoger_anteriores<'a>(e: &'a Expresion, out: &mut Vec<&'a Expresion>) {
     match e {
         Expresion::Anterior(inner) => out.push(inner),
-        Expresion::Grupo(x) | Expresion::Unaria { expr: x, .. } | Expresion::Referencia { expr: x, .. } => {
-            recoger_anteriores(x, out)
-        }
+        Expresion::Grupo(x)
+        | Expresion::Unaria { expr: x, .. }
+        | Expresion::Referencia { expr: x, .. } => recoger_anteriores(x, out),
         Expresion::Try(x) | Expresion::Ok(x) | Expresion::Error(x) | Expresion::Algo(x) => {
             recoger_anteriores(x, out)
         }
         Expresion::Binaria {
-            izquierda,
-            derecha,
-            ..
+            izquierda, derecha, ..
         } => {
             recoger_anteriores(izquierda, out);
             recoger_anteriores(derecha, out);
@@ -742,9 +741,7 @@ fn recoger_anteriores<'a>(e: &'a Expresion, out: &mut Vec<&'a Expresion>) {
             }
         }
         Expresion::LlamadaMetodo {
-            objeto,
-            argumentos,
-            ..
+            objeto, argumentos, ..
         } => {
             recoger_anteriores(objeto, out);
             for a in argumentos {
@@ -776,7 +773,9 @@ fn recoger_anteriores<'a>(e: &'a Expresion, out: &mut Vec<&'a Expresion>) {
             recoger_anteriores(array, out);
             recoger_anteriores(valor, out);
         }
-        Expresion::AsignacionCompuesta { objetivo, valor, .. } => {
+        Expresion::AsignacionCompuesta {
+            objetivo, valor, ..
+        } => {
             recoger_anteriores(objetivo, out);
             recoger_anteriores(valor, out);
         }

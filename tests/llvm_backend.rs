@@ -1148,3 +1148,47 @@ escribir("no se llega")
         assert_ne!(codigo, 0, "debería abortar");
     }
 }
+
+#[test]
+fn closure_que_devuelve_texto_se_llama_por_su_firma() {
+    // Antes la llamada asumía `i64(i64, …)`: una closure que devuelve texto
+    // salía por bits y se imprimía un número (handoff5 §2, shortcut 1108).
+    let fuente = r#"
+funcion main() {
+    variable f = func(n: Entero) { retornar "n=" + n }
+    escribir(f(7))
+    variable g = func(a: Entero, b: Entero) { retornar a * b }
+    escribir(g(3, 4))
+    variable h = func(x: Texto) { retornar x + "!" }
+    escribir(h("hola"))
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "n=7\n12\nhola!");
+    }
+}
+
+#[test]
+fn llamada_indirecta_usa_la_firma_de_la_funcion() {
+    // `variable op = restar` + `op(9, 4)`: antes se asumía i64(i64, …) y el
+    // retorno se tomaba como entero aunque devolviera texto (handoff5 §2, 1134).
+    let fuente = r#"
+funcion restar(a: Entero, b: Entero) -> Entero {
+    retornar a - b
+}
+funcion nombrar(x: Texto) -> Texto {
+    retornar "Hola " + x
+}
+funcion main() {
+    variable op = restar
+    escribir(op(9, 4))
+    variable saludo = nombrar
+    escribir(saludo("Ana"))
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "5\nHola Ana");
+    }
+}

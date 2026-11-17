@@ -1107,17 +1107,33 @@ impl Lowering {
                 ));
                 let envp = self.r();
                 self.linea(&format!("{} = load ptr, ptr {}", envp, pe));
+                let firma = self.firmas_closure.get(&var.slot).cloned();
                 let mut lista = vec![format!("ptr {}", envp)];
-                for a in argumentos {
+                for (i, a) in argumentos.iter().enumerate() {
                     let v = self.expr(a)?;
-                    let x = self.como(&v, T::Int);
-                    lista.push(format!("i64 {}", x));
+                    let t = firma
+                        .as_ref()
+                        .and_then(|(ps, _)| ps.get(i).cloned())
+                        .unwrap_or(T::Int);
+                    let x = self.como(&v, t.clone());
+                    lista.push(format!("{} {}", t.llvm().to_llvm_ir(), x));
                 }
+                let ret = firma.as_ref().map(|(_, r)| r.clone()).unwrap_or(T::Int);
                 let r = self.r();
-                // shortcut: se asume retorno i64 (las closures que devuelven
-                // texto requieren guardar la firma en el objeto).
-                self.linea(&format!("{} = call i64 {}({})", r, fp, lista.join(", ")));
-                return Ok(V::Int(r));
+                if matches!(ret, T::Nulo) {
+                    self.linea(&format!("call void {}({})", fp, lista.join(", ")));
+                    return Ok(V::Nulo);
+                }
+                self.linea(&format!(
+                    "{} = call {} {}({})",
+                    r,
+                    ret.llvm().to_llvm_ir(),
+                    fp,
+                    lista.join(", ")
+                ));
+                // shortcut: sin firma registrada (closure que llega por un
+                // parámetro o por una casilla) se asume `i64(i64, …)`.
+                return Ok(valor_de(&ret, r));
             }
         }
         // Llamada indirecta: `variable op = sumador` o `ops[i]` con función.
@@ -1133,22 +1149,35 @@ impl Lowering {
                         V::Funcion(p)
                     }
                 };
+                // Si la variable salió de una función conocida (`variable op =
+                // sumar`) se usa su firma; si no, `i64(i64, …)`.
+                let firma = self.firmas_closure.get(&var.slot).cloned();
                 let mut lista = Vec::new();
-                for a in argumentos {
+                for (i, a) in argumentos.iter().enumerate() {
                     let v = self.expr(a)?;
-                    let x = self.como(&v, T::Int);
-                    lista.push(format!("i64 {}", x));
+                    let t = firma
+                        .as_ref()
+                        .and_then(|(ps, _)| ps.get(i).cloned())
+                        .unwrap_or(T::Int);
+                    let x = self.como(&v, t.clone());
+                    lista.push(format!("{} {}", t.llvm().to_llvm_ir(), x));
                 }
+                let ret = firma.as_ref().map(|(_, r)| r.clone()).unwrap_or(T::Int);
                 let r = self.r();
-                // shortcut: las llamadas indirectas asumen firma i64(i64, ...).
-                // Upgrade: guardar la firma junto al puntero cuando haya closures.
+                // shortcut: sin firma (la función llegó por un parámetro o una
+                // casilla de arreglo) se asume `i64(i64, …)`.
+                if matches!(ret, T::Nulo) {
+                    self.linea(&format!("call void {}({})", callee.r(), lista.join(", ")));
+                    return Ok(V::Nulo);
+                }
                 self.linea(&format!(
-                    "{} = call i64 {}({})",
+                    "{} = call {} {}({})",
                     r,
+                    ret.llvm().to_llvm_ir(),
                     callee.r(),
                     lista.join(", ")
                 ));
-                return Ok(V::Int(r));
+                return Ok(valor_de(&ret, r));
             }
         }
         if let Some((params, ret)) = self.externas.get(nombre).cloned() {
@@ -1652,6 +1681,9 @@ impl Lowering {
             pe, obj
         ));
         self.linea(&format!("store ptr {}, ptr {}", env, pe));
+        // La firma queda asociada al registro del objeto; al guardarlo en una
+        // variable se propaga al slot (`propagar_firma_closure`).
+        self.firmas_closure.insert(obj.clone(), (tipos, ret));
         Ok(V::Closure(obj))
     }
 
