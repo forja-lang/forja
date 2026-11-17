@@ -17,3 +17,5 @@ ejemplos/rasgos_genericos/72_genericos.fa       retorno de `este.campo` sin anot
 ejemplos/ffi/184_ffi_simple.fa                  FFI rand/reloj: valores distintos y la VM termina con error
 ejemplos/ffi/185_ffi_matematicas.fa             la VM trunca la serie (`log(10) = 0`); el nativo da 2.3025…
 ejemplos/async_await/canales.fa                 la VM no termina (cuelga); la ruta nativa sí
+ejemplos/gui/900_storybook.fa               ejemplo GUI: la VM imprime el log de estado (`⚡ [GUI State]`),
+                                                el AOT nativo no tiene runtime GUI
