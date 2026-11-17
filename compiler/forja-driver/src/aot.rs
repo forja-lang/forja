@@ -1,22 +1,51 @@
-//! Generación de ejecutables AOT (stub + payload + footer FBC/FBG).
+//! Generación de ejecutables AOT (stub + payload + footer FBC/FBG/FBA).
 //!
 //! El payload depende del tipo de app:
 //! - consola: **bytecode** de la VM, footer `FBC`.
 //! - GUI: **fuente Forja**, footer `FBG`. El runtime `forja-rt-gui` lo evalúa con
 //!   `forja-gui-rt` (el AST es lo que consume el runtime gráfico, no el bytecode).
+//! - GUI con imports: el **AST resuelto en JSON**, footer `FBA`. El runtime no
+//!   resuelve imports, así que los módulos viajan ya inlinados.
 
 use std::fs;
 
 const FBC_MAGIC: &[u8; 4] = b"FBC\0";
 const FBG_MAGIC: &[u8; 4] = b"FBG\0";
+const FBA_MAGIC: &[u8; 4] = b"FBA\0";
+
+/// Qué se incrusta antes del footer.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Payload {
+    /// Bytecode de la VM (`FBC`).
+    Bytecode,
+    /// Fuente Forja de una app GUI (`FBG`): el runtime lo parsea al arrancar.
+    FuenteGui,
+    /// AST resuelto de una app GUI, en JSON (`FBA`).
+    AstGui,
+}
+
+impl Payload {
+    pub fn es_gui(self) -> bool {
+        matches!(self, Payload::FuenteGui | Payload::AstGui)
+    }
+
+    fn magic(self) -> &'static [u8; 4] {
+        match self {
+            Payload::Bytecode => FBC_MAGIC,
+            Payload::FuenteGui => FBG_MAGIC,
+            Payload::AstGui => FBA_MAGIC,
+        }
+    }
+}
 
 /// Arma el ejecutable: `stub` + `payload` + [tamaño u32 LE] + magic.
 pub fn generar_ejecutable(
     payload: &[u8],
     salida: &str,
-    gui: bool,
+    tipo: Payload,
     con_consola: bool,
 ) -> Result<(), String> {
+    let gui = tipo.es_gui();
     // 1. Obtener la ruta del compilador original (antes de shadow copy)
     let ruta_propia = std::env::var("FORJA_ORIGINAL_EXE")
         .map(std::path::PathBuf::from)
@@ -89,7 +118,7 @@ pub fn generar_ejecutable(
     // Footer: [4 bytes: size u32 LE][4 bytes: magic]
     let tamano_bytes = (payload.len() as u32).to_le_bytes();
     binario.extend_from_slice(&tamano_bytes);
-    binario.extend_from_slice(magic_payload(gui));
+    binario.extend_from_slice(tipo.magic());
 
     // 4. Escribir archivo de salida
     fs::write(salida, &binario).map_err(|e| format!("Error escribiendo '{}': {}", salida, e))?;
@@ -107,15 +136,6 @@ pub fn generar_ejecutable(
     }
 
     Ok(())
-}
-
-/// Magic del footer según el tipo de payload: bytecode (`FBC`) o fuente GUI (`FBG`).
-fn magic_payload(gui: bool) -> &'static [u8; 4] {
-    if gui {
-        FBG_MAGIC
-    } else {
-        FBC_MAGIC
-    }
 }
 
 /// Ajusta el campo `Subsystem` del Optional Header del PE.
@@ -150,12 +170,13 @@ fn fijar_subsistema_pe(pe: &mut [u8], ventana: bool) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests_subsistema_pe {
-    use super::{fijar_subsistema_pe, magic_payload};
+    use super::{fijar_subsistema_pe, Payload};
 
     #[test]
     fn magic_del_footer_distingue_gui_de_bytecode() {
-        assert_eq!(magic_payload(true), b"FBG\0");
-        assert_eq!(magic_payload(false), b"FBC\0");
+        assert_eq!(Payload::FuenteGui.magic(), b"FBG\0");
+        assert_eq!(Payload::AstGui.magic(), b"FBA\0");
+        assert_eq!(Payload::Bytecode.magic(), b"FBC\0");
     }
 
     /// Arma un PE mínimo: firma MZ, e_lfanew, "PE\0\0" y un Optional Header con

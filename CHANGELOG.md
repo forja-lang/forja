@@ -9,6 +9,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### GUI — el runtime que ya viene con Forja ahora funciona
 
+- **Las apps GUI pueden importar módulos propios.** Antes el payload era el
+  fuente tal cual y el intérprete ignora `importar`, así que llamar a una función
+  de un módulo del proyecto fallaba en runtime. Ahora `forja compilar` incrusta el
+  **AST ya resuelto** (`resolver_imports`) serializado en JSON, con footer `FBA`
+  propio; el runtime lo deserializa y dibuja igual. Los `FBC` (bytecode) y `FBG`
+  (fuente) siguen funcionando.
+
 - **`escribir(resultado)` ahora muestra el valor.** `resultado` es keyword del
   lenguaje (postcondiciones), así que en posición de expresión se parseaba como
   `Expresion::Resultado` y la etiqueta quedaba **vacía**: ningún botón parecía
