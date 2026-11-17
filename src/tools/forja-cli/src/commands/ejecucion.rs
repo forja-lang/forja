@@ -344,6 +344,13 @@ fn hay_que_recompilar_gui(fuente: &str, salida: &std::path::Path) -> bool {
             return true;
         }
     }
+    // Los módulos importados también viajan en el payload (AST resuelto): un
+    // cambio en `util.fa` tiene que rearmar el `.exe` igual que el fuente
+    // principal. Se mira todo el `.fa` del directorio en vez de trackear el
+    // grafo de imports (barato y cubre los módulos de subcarpetas).
+    if mas_nuevo_que(&directorio_del_fuente(fuente), exe_mod) {
+        return true;
+    }
     // Si cambiaron el runtime (stub), hay que volver a incrustar el fuente.
     let stub = std::env::current_exe()
         .ok()
@@ -357,6 +364,41 @@ fn hay_que_recompilar_gui(fuente: &str, salida: &std::path::Path) -> bool {
         })
         .and_then(|m| m.modified().ok());
     matches!(stub, Some(t) if t > exe_mod)
+}
+
+/// Directorio del `.fa` (el propio archivo si no tiene padre).
+fn directorio_del_fuente(fuente: &str) -> std::path::PathBuf {
+    let ruta = std::path::Path::new(fuente);
+    match ruta.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => std::path::PathBuf::from("."),
+    }
+}
+
+/// ¿Hay algún `.fa` bajo `dir`, hasta 3 niveles, más nuevo que `limite`?
+fn mas_nuevo_que(dir: &std::path::Path, limite: std::time::SystemTime) -> bool {
+    let Ok(entradas) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let profundidad = dir.components().count();
+    for entrada in entradas.flatten() {
+        let ruta = entrada.path();
+        let Ok(meta) = entrada.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            if ruta.components().count() - profundidad < 3 && mas_nuevo_que(&ruta, limite) {
+                return true;
+            }
+            continue;
+        }
+        if ruta.extension().and_then(|e| e.to_str()) == Some("fa")
+            && meta.modified().is_ok_and(|m| m > limite)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Hash FNV-1a de 64 bits (estable entre corridas; no hay dependencias extra).
@@ -784,5 +826,27 @@ pub(crate) fn recolectar_archivos_fa(directorio: &Path, out: &mut Vec<String>) {
         {
             out.push(ruta_hijo.to_string_lossy().to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_mtime_gui {
+    use super::mas_nuevo_que;
+
+    #[test]
+    fn un_modulo_importado_mas_nuevo_fuerza_recompilar() {
+        let dir = std::env::temp_dir().join(format!("forja_mtime_{}", std::process::id()));
+        let sub = dir.join("modulos");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(dir.join("app.fa"), "funcion main() {}").unwrap();
+        std::fs::write(sub.join("util.fa"), "funcion doble(n: Entero) -> Entero { retornar n }")
+            .unwrap();
+
+        // Un `.fa` recién escrito es más nuevo que la época: hay que recompilar.
+        assert!(mas_nuevo_que(&dir, std::time::UNIX_EPOCH));
+        // Y no es más nuevo que el futuro: se puede reusar el `.exe`.
+        let futuro = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        assert!(!mas_nuevo_que(&dir, futuro));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
