@@ -2461,7 +2461,9 @@ impl Lowering {
                 let v = self.expr(a)?;
                 let t = params.get(i).cloned().unwrap_or_else(|| v.t());
                 // Constructor de una clase genérica (`constructor(a: A)`).
-                let crudo = self.params_dinamicos.contains(&format!("{ctor}:{i}"));
+                let crudo = self
+                    .params_dinamicos
+                    .contains(&format!("{clase}::{ctor}:{i}"));
                 let x = if crudo {
                     self.como_slot(&v)
                 } else {
@@ -2610,7 +2612,9 @@ impl Lowering {
             let v = self.expr(a)?;
             let t = params.get(i).cloned().unwrap_or_else(|| v.t());
             // Parámetro `T` de un método genérico: los bits tal cual.
-            let crudo = self.params_dinamicos.contains(&format!("{metodo}:{i}"));
+            let crudo = self
+                .params_dinamicos
+                .contains(&format!("{clase}::{metodo}:{i}"));
             let x = if crudo {
                 self.como_slot(&v)
             } else {
@@ -2977,8 +2981,16 @@ impl Lowering {
                 elemento_de_campo_contenedor(e) || self.incierto(objeto)
             }
             // `-> T` (genérico sin especializar): devuelve los bits, el tipo se
-            // resuelve por tag al usarlo.
-            Expresion::LlamadaMetodo { metodo, .. } => self.metodos_param.contains(metodo.as_str()),
+            // resuelve por tag al usarlo. Con la clase del receptor en la clave,
+            // una especialización con `-> Booleano` no cae acá.
+            Expresion::LlamadaMetodo { objeto, metodo, .. } => match self.tipo_estatico(objeto) {
+                T::Clase(c) => self.metodos_param.contains(&format!("{c}::{metodo}")),
+                // Receptor sin tipo: puede ser cualquiera, se sigue tratando por tag.
+                _ => self
+                    .metodos_param
+                    .iter()
+                    .any(|k| k.ends_with(&format!("::{metodo}"))),
+            },
             Expresion::LlamadaFuncion { nombre, .. }
                 if self.funciones_param.contains(nombre.as_str()) =>
             {
