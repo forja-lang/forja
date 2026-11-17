@@ -19,3 +19,8 @@ ejemplos/ffi/185_ffi_matematicas.fa             la VM trunca la serie (`log(10) 
 ejemplos/async_await/canales.fa                 la VM no termina (cuelga); la ruta nativa sí
 ejemplos/gui/900_storybook.fa               ejemplo GUI: la VM imprime el log de estado (`⚡ [GUI State]`),
                                                 el AOT nativo no tiene runtime GUI
+ejemplos/algoritmos/211_colecciones.fa          `encontrar()` devuelve `nulo` sobre una casilla Entero: falta el
+                                                encajado de escalares (handoff7 §3), el nulo se pierde como 0
+ejemplos/otros/test_basico.fa                   la VM imprime dos saltos de linea de mas en `escribir_linea`
+                                                (3 lineas en vez de 1); el nativo da un salto
+ejemplos/otros/test_sobrecarga.fa               idem `test_basico`: `escribir_linea` de la VM agrega dos lineas

@@ -60,6 +60,7 @@ impl Lowering {
             self.vars.insert(p.nombre.clone(), Var { slot, t });
         }
 
+        self.ret_dinamico = false;
         self.marcar_params_texto(nombre, parametros);
         self.verificar_contratos(precondiciones, "precondición")?;
         self.abrir_contratos(postcondiciones, &ret)?;
@@ -132,6 +133,7 @@ impl Lowering {
         self.prologo.clear();
         self.termina = false;
         self.ret_actual = ret.clone();
+        self.ret_dinamico = matches!(m.tipo_retorno, Some(Tipo::Parametro(_)));
         // Igual que en `funcion`: pistas frescas con los tipos de los parámetros.
         let mut tipos_pre: HashMap<String, T> = HashMap::new();
         for (i, p) in m.parametros.iter().enumerate() {

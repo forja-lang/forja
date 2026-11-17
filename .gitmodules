@@ -48,3 +48,7 @@
 [submodule "library/gui-dom"]
 	path = library/gui-dom
 	url = https://github.com/forja-lang/forja-gui-dom.git
+[submodule "patches"]
+	path = patches
+	url = https://github.com/forja-lang/patches.git
+	branch = main

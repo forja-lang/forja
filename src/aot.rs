@@ -88,6 +88,37 @@ mod tests {
     }
 
     #[test]
+    fn un_modulo_de_la_stdlib_llega_reescrito_sin_alias() {
+        // `importar std/json` + `json.parsear(...)`: el payload tiene que traer la
+        // función de la stdlib y la llamada sin el prefijo `json.` (lo reescribe
+        // `resolver_imports`).
+        let dir = std::env::temp_dir().join(format!("forja_gui_std_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let app = "importar gui
+importar \"std/json\"
+
+funcion main() {
+    variable r = json.parsear(\"{\\\"n\\\": 1}\")
+    columna(etiqueta(a_texto(1)))
+}
+";
+
+        // La stdlib se busca desde la raíz del repo (`library/`).
+        let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let json = payload_gui(app, &raiz).expect("payload");
+        let texto = String::from_utf8_lossy(&json);
+        assert!(
+            texto.contains("\"Parsear\"") || texto.contains("\"parsear\""),
+            "el payload tiene que traer `parsear` de std/json"
+        );
+        assert!(
+            !texto.contains("json.parsear"),
+            "la llamada calificada tiene que quedar reescrita a `parsear`"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn el_payload_de_una_app_gui_trae_los_modulos_propios() {
         let dir = std::env::temp_dir().join(format!("forja_gui_ast_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

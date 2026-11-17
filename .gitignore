@@ -20,7 +20,6 @@ dist/
 temp_gui_project/
 temp_gui_android_project/
 ejemplos/android/
-patches/
 fuzz/
 src/bin/fuzz_simple.rs
 main_rs/

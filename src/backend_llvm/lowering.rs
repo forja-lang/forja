@@ -295,6 +295,13 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_imprimir_nulo", "void ()"),
     ("forja_nueva_linea", "void ()"),
     ("forja_arreglo_nuevo", "ptr (i64, i64)"),
+    ("forja_leer_linea", "ptr ()"),
+    ("forja_escribir_linea", "void (ptr)"),
+    ("forja_unir_elementos", "ptr (ptr, ptr)"),
+    ("forja_tipo_de", "ptr (ptr)"),
+    ("forja_mapa_claves", "ptr (ptr)"),
+    ("forja_mapa_valores", "ptr (ptr)"),
+    ("forja_mapa_pares", "ptr (ptr)"),
     ("forja_registrar_texto", "void (ptr)"),
     ("forja_imprimir_dinamico", "void (ptr)"),
     ("forja_a_texto_dinamico", "ptr (ptr)"),
@@ -2002,6 +2009,9 @@ fn tipo_builtin(nombre: &str) -> Option<T> {
         "dividir" => T::Arreglo,
         "recortar" => T::Texto,
         "contiene" | "empieza_con" | "termina_con" => T::Int,
+        // `leer()` devuelve Texto (o el nulo en el slot de texto al final de la
+        // entrada); si el slot fuera `Entero` el nulo se perdía como 0.
+        "leer" => T::Texto,
         _ => return None,
     })
 }
@@ -2069,10 +2079,48 @@ fn evidencia_de_llamadas(
     ) -> Option<T> {
         tipo_por_forma(a).or_else(|| match a {
             Expresion::Identificador { nombre, .. } => vars.get(nombre).cloned(),
+            Expresion::Grupo(inner) => tipo_arg(inner, vars, retornos),
+            Expresion::Unaria { expr, .. } => tipo_arg(expr, vars, retornos),
             // `variable x = f()` con `f` de retorno anotado: el tipo de `x` es
-            // el de `f` (`aprox = aproximar_e(n)` es `Decimal` aunque la
-            // evidencia no pueda verlo por la forma).
+            // el de `f` (`aprox = aproximar_e(n)` es `Decimal`).
             Expresion::LlamadaFuncion { nombre, .. } => retornos.get(nombre).cloned(),
+            // Una cuenta también es evidencia: `potencia((x - 1) / (x + 1), …)`
+            // es `Decimal` porque `x` lo es. Sin esto el parámetro sin anotar
+            // quedaba `Entero` y truncaba a 0.
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                use crate::ast::Operador;
+                let ta = tipo_arg(izquierda, vars, retornos);
+                let tb = tipo_arg(derecha, vars, retornos);
+                if ta == Some(T::Dec) || tb == Some(T::Dec) {
+                    Some(T::Dec)
+                } else if matches!(operador, Operador::Suma)
+                    && (ta == Some(T::Texto) || tb == Some(T::Texto))
+                {
+                    Some(T::Texto)
+                } else if ta == Some(T::Int) && tb == Some(T::Int) {
+                    Some(T::Int)
+                } else {
+                    None
+                }
+            }
+            // `si cond { a } sino { b }`: vale el tipo si ambos lados coinciden.
+            Expresion::Ternario {
+                si_verdadero,
+                si_falso,
+                ..
+            } => {
+                let a = tipo_arg(si_verdadero, vars, retornos);
+                let b = tipo_arg(si_falso, vars, retornos);
+                if a == b {
+                    a
+                } else {
+                    None
+                }
+            }
             _ => None,
         })
     }
