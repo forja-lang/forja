@@ -1,0 +1,48 @@
+diff --git a/src/backend_llvm/lowering.rs b/src/backend_llvm/lowering.rs
+--- a/src/backend_llvm/lowering.rs
++++ b/src/backend_llvm/lowering.rs
+@@ -1203,16 +1203,8 @@
+     fn inferir_campo(&self, clase: &str, campo: &str, decls: &[Declaracion]) -> Option<T> {
+         fn tipo_valor(e: &Expresion, pistas: &HashMap<String, T>) -> Option<T> {
+             Some(match e {
+-                Expresion::LiteralTexto(_) => T::Texto,
+-                Expresion::LiteralDecimal(_) => T::Dec,
+-                Expresion::LiteralExacto(..) => T::Exacto,
+-                Expresion::Arreglo(_) => T::Arreglo,
+-                Expresion::Mapa(_) => T::Mapa,
+-                Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+-                Expresion::LiteralBooleano(_) => T::Bool,
+-                // `este.campo = valor` con `valor` un parámetro o local con tipo.
+                 Expresion::Identificador { nombre, .. } => pistas.get(nombre).cloned()?,
+-                _ => return None,
++                otro => tipo_de_literal(otro)?,
+             })
+         }
+         fn en_expr(e: &Expresion, campo: &str, pistas: &HashMap<String, T>, out: &mut Vec<T>) {
+@@ -1456,12 +1448,6 @@
+             locales: &HashMap<String, T>,
+         ) -> Option<T> {
+             Some(match e {
+-                Expresion::LiteralTexto(_) => T::Texto,
+-                Expresion::LiteralDecimal(_) => T::Dec,
+-                Expresion::LiteralExacto(..) => T::Exacto,
+-                Expresion::Arreglo(_) => T::Arreglo,
+-                Expresion::Mapa(_) => T::Mapa,
+-                Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
+                 // `Algo`/`Ninguno` y `Ok`/`Error` son los tipos del preludio:
+                 // sin esto una función de la stdlib sin anotación se tomaba como
+                 // Entero y el `coincidir` de quien la llama fallaba.
+@@ -1967,6 +1953,13 @@
+ /// Tipo de una expresión por su forma (sin tabla de variables): literales,
+ /// arreglos y objetos. `None` cuando no hay nada seguro que decir.
+ fn tipo_por_forma(e: &Expresion) -> Option<T> {
++    tipo_de_literal(e)
++}
++
++/// Tipo de un literal, para los sitios que sólo miran la forma de la expresión.
++/// Lo comparten `tipo_por_forma`, `inferir_campo` y `tipo_estatico` para que las
++/// tablas no se separen (había cuatro copias).
++fn tipo_de_literal(e: &Expresion) -> Option<T> {
+     Some(match e {
+         Expresion::LiteralTexto(_) => T::Texto,
+         Expresion::LiteralDecimal(_) => T::Dec,

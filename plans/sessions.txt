@@ -1,0 +1,53 @@
+pi --session 01a1c848-0936-725b-b052-9f252671602b
+pi --session 01a1c848-0e18-7130-b964-574c9db6d959
+
+forja nuevo debería crear forja.yaml, primero fijarse si el json forja.json funciona y que hace, encima lo crear con forja 0.1.0
+crea la carpeta modulos y en el json pide declarar todos los moudlos
+// muestreo — Programa en Forja (fa)
+// Creado con 'forja new'
+
+en el main fa le faltaría la versión también
+
+
+solucionar esto urg
+⚠️  no se pudo escribir C:\Windows\system32\forja.yaml: Acceso denegado. (os error 5)
+Forja v0.11.0 — Modo interactivo (VM)
+     2026-11-15 14:19:32  ·  instancia 18e8479e55a7cdb4
+     historial: repl_historial.txt
+     Escribí '/salir' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado
+    /configurar para elegir opciones  ·  /variables para ver estado  ·  /limpiar para reiniciar
+    /recargar para recargar funciones (hot reload)  ·  /ayuda para la lista
+
+arreglar esto también
+> funcion dividir (a: Decimal, b: Decimal){
+... retornar a/b
+... }
+> dividir(1/2700)
+ ERROR  ● Tipos de datos — línea 1 — La función 'dividir' espera 2 argumentos, pero se pasaron 1
+  Ayuda: Revisá la cantidad de argumentos.
+> dividir(1,2700)
+> escribir(dividir(1,2700))
+0
+> escribir(1/2700)
+0
+> var a: Exacto = 1
+> var b: Exacto = 2700
+> escribir(a/b)
+0.00037037037037037037
+
+> funcion dividir (a: Decimal, b: Decimal){
+... retornar a/b
+... }
+> dividir(1/2700)
+ ERROR  ● Tipos de datos — línea 1 — La función 'dividir' espera 2 argumentos, pero se pasaron 1
+  Ayuda: Revisá la cantidad de argumentos.
+> dividir(1,2700)
+> escribir(dividir(1,2700))
+0
+> escribir(1/2700)
+0
+> var a: Exacto = 1
+> var b: Exacto = 2700
+> escribir(a/b)
+0.00037037037037037037
+no funciona importar en repl
