@@ -9,6 +9,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### GUI — el runtime que ya viene con Forja ahora funciona
 
+- **`forja transpilar` y `destino: nativo` arreglados con clases y textos multilínea:**
+  el constructor se generaba como `Clase { }` vacío (el parser emite
+  `este.campo = valor` como `Expresion::AsignacionCampo`, no como
+  `AsignacionMiembro`), los campos ignoraban su tipo declarado (`codigo: Entero`
+  salía `String`) y `esc_ast_texto` no escapaba `\n`/`\r`/`\t` («bare CR not
+  allowed in string»). Además esos caminos ahora resuelven los `importar`, así que
+  una app con módulos propios (o `std/json`) transpila y corre.
 - **`forja ejecutar` respeta `estado:` y `recarga:` en apps GUI.** `estado:` es un
   JSON con las variables del store con las que arranca la app (se pasa como
   `--load-state=`, que el runtime ya leía pero la CLI rechazaba); `recarga:`
