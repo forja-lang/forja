@@ -101,14 +101,14 @@ impl Lowering {
         let ret = if es_ctor {
             T::Nulo
         } else {
-            self.retorno_metodo(m)
+            self.retorno_metodo(clase, m)
         };
         let clave = if m.nombre == "constructor" || m.nombre == "nuevo" {
             format!("constructor@{clase}")
         } else {
             m.nombre.clone()
         };
-        let tipos: Vec<T> = self.tipos_params(&clave, &m.parametros, &m.cuerpo);
+        let tipos: Vec<T> = self.tipos_params(Some(clase), &clave, &m.parametros, &m.cuerpo);
         let mut ps = vec!["ptr %este".to_string()];
         for (i, t) in tipos.iter().enumerate() {
             ps.push(format!("{} %p{}", t.llvm().to_llvm_ir(), i));

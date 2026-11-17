@@ -1532,7 +1532,7 @@ impl Lowering {
             v.sort_by(|a, b| a.0.cmp(&b.0));
             v
         };
-        let tipos = self.tipos_params("", parametros, cuerpo);
+        let tipos = self.tipos_params(None, "", parametros, cuerpo);
         let ret = self
             .inferir_retorno(cuerpo, parametros, &tipos)
             .unwrap_or(T::Int);
