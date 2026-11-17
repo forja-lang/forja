@@ -1215,3 +1215,66 @@ main()
         assert_eq!(salida.trim().replace("\r\n", "\n"), "x0\nnuloy\nanulo");
     }
 }
+
+#[test]
+fn debug_tags_no_aborta_en_un_programa_normal() {
+    // `FORJA_DEBUG_TAGS=1` (handoff5 §1.5) aborta si al registro de objetos
+    // entra algo que no sea texto o arreglo. Un programa con textos, arreglos y
+    // escalares mezclados tiene que correr igual: los escalares no se registran.
+    let fuente = r#"
+funcion main() {
+    variable nombres = ["ana", "beto"]
+    variable i = 0
+    mientras (i < longitud(nombres)) {
+        escribir(nombres[i] + " " + i)
+        i = i + 1
+    }
+    variable frase = "hola" + 2.5
+    escribir(frase)
+    escribir(longitud(frase))
+}
+main()
+"#;
+    if !hay_clang() {
+        return;
+    }
+    let directorio: PathBuf = std::env::temp_dir().join(format!(
+        "forja_llvm_dbg_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&directorio).expect("dir temporal");
+    let ll = directorio.join("main.ll");
+    let rt = directorio.join("forja_rt.c");
+    let exe = directorio.join(if cfg!(windows) { "main.exe" } else { "main" });
+    std::fs::write(&ll, ir(fuente)).expect("escribir .ll");
+    std::fs::write(&rt, forja::backend_llvm::RUNTIME_C).expect("escribir runtime");
+    let compilado = Command::new("clang")
+        .args(["-O1", "-w"])
+        .arg("-o")
+        .arg(&exe)
+        .arg(&ll)
+        .arg(&rt)
+        .output()
+        .expect("clang");
+    assert!(
+        compilado.status.success(),
+        "clang falló:\n{}",
+        String::from_utf8_lossy(&compilado.stderr)
+    );
+    let corrida = Command::new(&exe)
+        .env("FORJA_DEBUG_TAGS", "1")
+        .output()
+        .expect("ejecutar");
+    let _ = std::fs::remove_dir_all(&directorio);
+    let salida = String::from_utf8_lossy(&corrida.stdout).replace("\r\n", "\n");
+    assert_eq!(corrida.status.code(), Some(0), "abortó: {salida}");
+    assert!(
+        !salida.contains("FORJA_DEBUG_TAGS"),
+        "el chequeo se disparó: {salida}"
+    );
+    assert!(salida.starts_with("ana 0"), "salida inesperada: {salida}");
+}
