@@ -222,13 +222,39 @@ pub(crate) fn cmd_ejecutar(args: &[String]) {
                 process::exit(1);
             }
         }
-        let estado = process::Command::new(&salida).status().unwrap_or_else(|e| {
-            eprintln!("Error ejecutando '{}': {e}", salida.display());
-            process::exit(1);
-        });
-        process::exit(estado.code().unwrap_or(0));
+        // `estado:` (forja.yaml) = snapshot JSON del store que la app GUI restaura
+        // al arrancar. El runtime lo lee de `--load-state=`.
+        let estado_inicial = match cfg.estado.as_str() {
+            "" => None,
+            ruta => match std::fs::read_to_string(ruta) {
+                Ok(json) => Some(json.trim().to_string()),
+                Err(e) => {
+                    eprintln!("⚠️  no pude leer 'estado: {ruta}': {e}");
+                    None
+                }
+            },
+        };
+        let comando = || {
+            let mut cmd = process::Command::new(&salida);
+            if let Some(json) = &estado_inicial {
+                cmd.arg(format!("--load-state={json}"));
+            }
+            cmd
+        };
+        let codigo = if cfg.recarga {
+            correr_gui_en_caliente(path, &salida, &salida_texto, cfg.consola, comando)
+        } else {
+            comando()
+                .status()
+                .unwrap_or_else(|e| {
+                    eprintln!("Error ejecutando '{}': {e}", salida.display());
+                    process::exit(1);
+                })
+                .code()
+                .unwrap_or(0)
+        };
+        process::exit(codigo);
     }
-
     if asm_mode {
         match ejecutar_asm(&fuente, path) {
             Ok(salida) => {
@@ -327,6 +353,56 @@ pub(crate) fn cmd_ejecutar(args: &[String]) {
     }
 }
 
+/// Hot reload de una app GUI: la ventana se arma una sola vez con el AST
+/// incrustado, así que no hay recarga dentro del proceso. Se reinicia el `.exe`
+/// cuando cambia algún `.fa` del proyecto (el estado del store no sobrevive: para
+/// eso está `estado:` en `forja.yaml`, que se relee en cada arranque).
+///
+/// `shortcut:` es un reinicio, no un snapshot en caliente; si se quiere preservar
+/// el estado entre recargas, la app tiene que guardarlo y `estado:` apuntar ahí.
+fn correr_gui_en_caliente(
+    fuente: &str,
+    salida: &std::path::Path,
+    salida_texto: &str,
+    con_consola: bool,
+    comando: impl Fn() -> process::Command,
+) -> i32 {
+    use std::time::Duration;
+
+    let dir = directorio_del_fuente(fuente);
+    println!("🔄 Hot reload activo: esperando cambios en {}...", dir.display());
+    // Se compara contra el `.fa` más nuevo *visto*, no contra el `.exe`, para no
+    // recompilar en bucle cuando el fuente no compila.
+    let mut visto = ultimo_fa(&dir);
+    loop {
+        let mut hijo = match comando().spawn() {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("Error ejecutando '{}': {e}", salida.display());
+                return 1;
+            }
+        };
+        loop {
+            if let Ok(Some(estado)) = hijo.try_wait() {
+                return estado.code().unwrap_or(0);
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            if ultimo_fa(&dir) != visto {
+                break;
+            }
+        }
+        println!("📝 Cambio detectado: recompilando...");
+        hijo.kill().ok();
+        hijo.wait().ok();
+        if let Err(e) = forja::aot::AOTCompiler::compilar_con(fuente, salida_texto, true, con_consola)
+        {
+            // Se sigue esperando: el próximo cambio vuelve a intentar.
+            eprintln!("⚠️  {e}");
+        }
+        visto = ultimo_fa(&dir);
+    }
+}
+
 /// ¿Hace falta rearmar el ejecutable GUI del `forja ejecutar`?
 ///
 /// Escribir 23 MB cada corrida hace que el antivirus los escanee (~0,5 s). Si el
@@ -348,7 +424,7 @@ fn hay_que_recompilar_gui(fuente: &str, salida: &std::path::Path) -> bool {
     // cambio en `util.fa` tiene que rearmar el `.exe` igual que el fuente
     // principal. Se mira todo el `.fa` del directorio en vez de trackear el
     // grafo de imports (barato y cubre los módulos de subcarpetas).
-    if mas_nuevo_que(&directorio_del_fuente(fuente), exe_mod) {
+    if ultimo_fa(&directorio_del_fuente(fuente)).is_some_and(|t| t > exe_mod) {
         return true;
     }
     // Si cambiaron el runtime (stub), hay que volver a incrustar el fuente.
@@ -375,30 +451,34 @@ fn directorio_del_fuente(fuente: &str) -> std::path::PathBuf {
     }
 }
 
-/// ¿Hay algún `.fa` bajo `dir`, hasta 3 niveles, más nuevo que `limite`?
-fn mas_nuevo_que(dir: &std::path::Path, limite: std::time::SystemTime) -> bool {
-    let Ok(entradas) = std::fs::read_dir(dir) else {
-        return false;
-    };
+/// Momento del `.fa` más nuevo bajo `dir` (no recursivo en todos los niveles:
+/// baja hasta 3).
+///
+/// `shortcut:` máximo 3 niveles de subcarpetas; si un proyecto anida módulos más
+/// profundo, subir el límite acá.
+fn ultimo_fa(dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    let mut ultimo: Option<std::time::SystemTime> = None;
     let profundidad = dir.components().count();
-    for entrada in entradas.flatten() {
+    for entrada in std::fs::read_dir(dir).ok()?.flatten() {
         let ruta = entrada.path();
         let Ok(meta) = entrada.metadata() else {
             continue;
         };
-        if meta.is_dir() {
-            if ruta.components().count() - profundidad < 3 && mas_nuevo_que(&ruta, limite) {
-                return true;
+        let modificado = if meta.is_dir() {
+            if ruta.components().count() - profundidad >= 3 {
+                continue;
             }
-            continue;
-        }
-        if ruta.extension().and_then(|e| e.to_str()) == Some("fa")
-            && meta.modified().is_ok_and(|m| m > limite)
-        {
-            return true;
+            ultimo_fa(&ruta)
+        } else if ruta.extension().and_then(|e| e.to_str()) == Some("fa") {
+            meta.modified().ok()
+        } else {
+            None
+        };
+        if let Some(t) = modificado {
+            ultimo = Some(ultimo.map_or(t, |u| u.max(t)));
         }
     }
-    false
+    ultimo
 }
 
 /// Hash FNV-1a de 64 bits (estable entre corridas; no hay dependencias extra).
@@ -831,22 +911,31 @@ pub(crate) fn recolectar_archivos_fa(directorio: &Path, out: &mut Vec<String>) {
 
 #[cfg(test)]
 mod tests_mtime_gui {
-    use super::mas_nuevo_que;
+    use super::ultimo_fa;
 
     #[test]
-    fn un_modulo_importado_mas_nuevo_fuerza_recompilar() {
+    fn el_modulo_importado_cuenta_para_la_recompilacion() {
         let dir = std::env::temp_dir().join(format!("forja_mtime_{}", std::process::id()));
         let sub = dir.join("modulos");
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(dir.join("app.fa"), "funcion main() {}").unwrap();
-        std::fs::write(sub.join("util.fa"), "funcion doble(n: Entero) -> Entero { retornar n }")
-            .unwrap();
+        assert!(ultimo_fa(&dir).is_some(), "app.fa tiene que contar");
 
-        // Un `.fa` recién escrito es más nuevo que la época: hay que recompilar.
-        assert!(mas_nuevo_que(&dir, std::time::UNIX_EPOCH));
-        // Y no es más nuevo que el futuro: se puede reusar el `.exe`.
-        let futuro = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
-        assert!(!mas_nuevo_que(&dir, futuro));
+        std::fs::write(
+            sub.join("util.fa"),
+            "funcion doble(n: Entero) -> Entero { retornar n }",
+        )
+        .unwrap();
+        let con_modulo = ultimo_fa(&dir).unwrap();
+        assert!(
+            con_modulo >= std::fs::metadata(dir.join("app.fa")).unwrap().modified().unwrap(),
+            "el .fa de la subcarpeta tiene que entrar en la cuenta"
+        );
+        assert!(con_modulo <= std::time::SystemTime::now());
+
+        let vacio = dir.join("vacio");
+        std::fs::create_dir_all(&vacio).unwrap();
+        assert_eq!(ultimo_fa(&vacio), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

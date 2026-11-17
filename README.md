@@ -213,7 +213,8 @@ contratos: verdadero       # requiere/asegura/invariantes
 pila: falso                # pila de llamadas en errores
 matematica_rapida: falso   # aritmética rápida
 perfil: ''                 # '' | recoger | usar
-recarga: falso             # recarga de módulos (destino: nativo)
+recarga: falso             # recarga de módulos (destino: nativo y apps GUI)
+estado: ''                  # JSON con el estado inicial de una app GUI
 permitir_red: ''           # hosts del sandbox de red (coma)
 permitir_puertos: ''       # puertos del sandbox de red (coma)
 max_archivo_mb: 10         # límite del archivo fuente

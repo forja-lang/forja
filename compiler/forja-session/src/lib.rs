@@ -99,6 +99,9 @@ pub struct Config {
     /// Recarga de módulos en caliente (con `destino: nativo`).
     #[serde(with = "bool_es")]
     pub recarga: bool,
+    /// Archivo JSON con el estado inicial de una app GUI (`forja ejecutar`).
+    /// Vacío = la app arranca con los valores de `main()`.
+    pub estado: String,
     /// Hosts permitidos en el sandbox de red (separados por coma).
     pub permitir_red: String,
     /// Puertos permitidos en el sandbox de red (separados por coma).
@@ -147,6 +150,7 @@ impl Default for Config {
             verificar_rangos: true,
             perfil: String::new(),
             recarga: false,
+            estado: String::new(),
             permitir_red: String::new(),
             permitir_puertos: String::new(),
             max_archivo_mb: 10,
@@ -321,6 +325,11 @@ pub fn escribir(ruta: &Path, cfg: &Config) -> Result<(), String> {
         "Recarga módulos en caliente (hot reload) para destino nativo/GUI. Valores: verdadero | falso",
         "recarga",
         booleano(cfg.recarga)
+    );
+    opcion!(
+        "Estado inicial de una app GUI: ruta a un JSON con las variables del store. Vacío = arranca con los valores de main().",
+        "estado",
+        escalar(&cfg.estado)
     );
     opcion!(
         "Hosts permitidos por el sandbox de red; vacío = sin red. Separalos por coma.",

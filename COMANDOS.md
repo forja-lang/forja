@@ -54,6 +54,8 @@ Compila y ejecuta con el motor y el destino elegidos en `forja.yaml` (la CLI no 
 | `destino` | `maquina` (default) \| `ensamblador` \| `nativo` | VM, ASM nativo o GUI/AOT |
 | `matematica_rapida` | `verdadero` \| `falso` | Aritmética sin checks (sólo benchmarks) |
 | `perfil` | `''` \| `recoger` \| `usar` | PGO |
+| `recarga` | `verdadero` \| `falso` | Reinicia la app cuando cambia un `.fa` (nativo y apps GUI) |
+| `estado` | ruta a un `.json` \| `''` | Variables del store con las que arranca una app GUI |
 
 ```bash
 cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa
