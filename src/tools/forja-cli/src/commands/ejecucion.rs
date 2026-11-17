@@ -615,6 +615,9 @@ pub(crate) fn ejecutar_nativo(
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = parser::Parser::nuevo(tokens);
     let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
+    // El transpilador sólo comenta `importar`: los módulos .fa tienen que llegar
+    // resueltos, igual que en el payload de `forja compilar`.
+    let programa = resolver_modulos(fuente, entrada_ruta, programa);
 
     // 2. Detectar si usa GUI (`importar gui` o `importar std/gui`)
     if !importa_gui(fuente) {

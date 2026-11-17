@@ -35,6 +35,26 @@ pub(crate) fn rechazar_flags(args: &[String]) {
     }
 }
 
+/// Resuelve los `importar` para el transpilador (`destino: nativo`, `forja transpilar`).
+pub(crate) fn resolver_modulos(
+    fuente: &str,
+    entrada: &str,
+    programa: forja::ast::Programa,
+) -> forja::ast::Programa {
+    let base = Path::new(entrada)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    match forja::resolver_imports(fuente, &base) {
+        Ok(resuelto) => resuelto,
+        Err(e) => {
+            eprintln!("⚠️  no pude resolver los imports: {e}");
+            programa
+        }
+    }
+}
+
 /// ¿El fuente importa el paquete gráfico? (`importar gui` / `std/gui`)
 ///
 /// Se mira sólo la línea del import (sin comentarios), así `importar "gui"`,
@@ -221,6 +241,9 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     let mut prestamo_checker =
         semantics::PrestamoChecker::con_estricto(forja::config::actual().estricto);
     let _ = prestamo_checker.analizar(&programa);
+
+    // El transpilador sólo comenta `importar`: los módulos .fa viajan resueltos.
+    let programa = crate::commands::resolver_modulos(&fuente, input_path, programa);
 
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::nuevo();

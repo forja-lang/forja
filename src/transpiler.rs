@@ -1086,25 +1086,11 @@ impl Transpiler {
                 for metodo in metodos {
                     if metodo.nombre == "nuevo" {
                         for decl_cuerpo in &metodo.cuerpo {
-                            if let Declaracion::AsignacionMiembro {
-                                objeto,
-                                miembro,
-                                valor,
-                                ..
-                            } = decl_cuerpo
-                            {
-                                // este.campo = expr → inferir tipo
-                                if let Expresion::Identificador {
-                                    nombre: ref nombre_self,
-                                    ..
-                                } = objeto.as_ref()
-                                {
-                                    if nombre_self == "self" {
-                                        let tipo_inferido =
-                                            self.inferir_tipo_expr(valor, &metodo.parametros);
-                                        tipos_campos.insert(miembro.clone(), tipo_inferido);
-                                    }
-                                }
+                            // este.campo = expr → inferir tipo
+                            if let Some((campo, valor)) = Self::asignacion_a_este(decl_cuerpo) {
+                                let tipo_inferido =
+                                    self.inferir_tipo_expr(valor, &metodo.parametros);
+                                tipos_campos.insert(campo, tipo_inferido);
                             }
                         }
                     }
@@ -1190,6 +1176,31 @@ impl Transpiler {
         }
     }
 
+/// `este.campo = valor` como `(campo, valor)`.
+///
+/// El parser emite estas asignaciones como
+/// `Declaracion::Expresion(Expresion::AsignacionCampo { .. })`; la variante
+/// `AsignacionMiembro` quedó vieja y no la produce nadie, pero se acepta por las
+/// dudas. Sin esto el constructor se generaba con `Clase { }` vacío y Rust
+/// fallaba con «missing fields in initializer».
+fn asignacion_a_este<'a>(decl: &'a Declaracion) -> Option<(String, &'a Expresion)> {
+    let es_este = |objeto: &Expresion| {
+        matches!(objeto, Expresion::Identificador { nombre, .. } if nombre == "este" || nombre == "self")
+    };
+    match decl {
+        Declaracion::Expresion(Expresion::AsignacionCampo {
+            objeto, campo, valor,
+        }) if es_este(objeto) => Some((campo.clone(), valor)),
+        Declaracion::AsignacionMiembro {
+            objeto,
+            miembro,
+            valor,
+            ..
+        } if es_este(objeto) => Some((miembro.clone(), valor)),
+        _ => None,
+    }
+}
+
     fn generar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
             if let Declaracion::Clase {
@@ -1266,7 +1277,12 @@ impl Transpiler {
     }
 
     fn inferir_tipo_campo(&self, campo: &VariableClase) -> String {
-        // Buscar el tipo inferido desde el constructor (recolectar_clases)
+        // El tipo declarado manda: `codigo: Entero` es `i64`, no `String`. Antes
+        // se ignoraba y todo caía al fallback.
+        if let Some(ref tipo) = campo.tipo {
+            return self.tipo_a_rust(tipo);
+        }
+        // Sin tipo declarado: el inferido desde el constructor (recolectar_clases)
         for informacion in self.clases.values() {
             if let Some(tipo) = informacion.tipos_campos.get(&campo.nombre) {
                 return tipo.clone();
@@ -1306,29 +1322,13 @@ impl Transpiler {
                 .cuerpo
                 .iter()
                 .filter_map(|decl| {
-                    if let Declaracion::AsignacionMiembro {
-                        objeto,
-                        miembro,
-                        valor,
-                        ..
-                    } = decl
-                    {
-                        if let Expresion::Identificador {
-                            nombre: ref nombre_self,
-                            ..
-                        } = objeto.as_ref()
-                        {
-                            if nombre_self == "self" {
-                                // El valor puede ser un identificador (param) o una expresión
-                                let val_str = match valor.as_ref() {
-                                    Expresion::Identificador { nombre: id, .. } => id.clone(),
-                                    other => self.transpilar_expresion(other),
-                                };
-                                return Some((miembro.clone(), val_str));
-                            }
-                        }
-                    }
-                    None
+                    let (campo, valor) = Self::asignacion_a_este(decl)?;
+                    // El valor puede ser un identificador (param) o una expresión
+                    let val_str = match valor {
+                        Expresion::Identificador { nombre: id, .. } => id.clone(),
+                        other => self.transpilar_expresion(other),
+                    };
+                    Some((campo, val_str))
                 })
                 .collect();
 
@@ -3508,8 +3508,16 @@ impl Transpiler {
         }
     }
 
+    /// Escapa un texto para meterlo en un literal Rust de una línea.
+    ///
+    /// Sin `\n`/`\r`/`\t`, un texto multilínea o con un `\r` literal generaba
+    /// Rust inválido: `error: bare CR not allowed in string`.
     fn esc_ast_texto(&self, s: &str) -> String {
-        s.replace('\\', "\\\\").replace('"', "\\\"")
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t")
     }
 
     #[allow(dead_code)]
