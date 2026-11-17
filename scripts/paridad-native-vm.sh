@@ -48,6 +48,15 @@ if ! command -v timeout >/dev/null 2>&1; then
     exit 2
 fi
 
+# Cabecera de la corrida: los números sólo son comparables con el mismo árbol,
+# el mismo commit y el mismo binario. Media hora perdida una vez por medir con un
+# `forja.exe` que no era el que se creía (handoff5 §3.4).
+echo "árbol:   $(git rev-parse --short HEAD 2>/dev/null || echo '?') $(git log --oneline -1 2>/dev/null | cut -d' ' -f2- | cut -c1-60)"
+sucios="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
+echo "sucio:   $sucios archivo(s) sin commitear"
+echo "binario: $FORJA ($(date -r "$FORJA" '+%Y-%m-%d %H:%M' 2>/dev/null || echo '?'))"
+echo "ejemplos: $(find ejemplos -name '*.fa' | wc -l | tr -d ' ')"
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
