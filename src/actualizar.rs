@@ -47,6 +47,8 @@ impl Manifiesto {
         }
         if self.tiene("Runtime") {
             bins.push("forja-rt");
+            // Apps GUI: `forja compilar` necesita el runtime gráfico al lado.
+            bins.push("forja-rt-gui");
         }
         bins
     }
@@ -485,20 +487,26 @@ fn version_disponible(actual: &str) -> Option<String> {
 }
 
 pub fn avisar_actualizar() {
-    let actual = env!("CARGO_PKG_VERSION");
-    let Some(nueva) = version_disponible(actual) else {
-        return;
-    };
+    // La consulta (cacheada 24 h) va en un hilo aparte: cuando el caché está
+    // vencido se golpea GitHub y eso frenaba **cada** comando ~0,5 s (o más con
+    // red lenta). El aviso va a stderr para no mezclarse con la salida del
+    // programa que el usuario está ejecutando.
+    std::thread::spawn(|| {
+        let actual = env!("CARGO_PKG_VERSION");
+        let Some(nueva) = version_disponible(actual) else {
+            return;
+        };
 
-    if es_mas_nueva(&nueva, actual) {
-        println!(
-            "{}  Hay una versión nueva de Forja ({} → {}, canal {}). Ejecutá: forja actualizar\n",
-            crate::error::color::AMARILLO,
-            actual,
-            nueva,
-            nombre_canal(leer_canal()),
-        );
-    }
+        if es_mas_nueva(&nueva, actual) {
+            eprintln!(
+                "{}  Hay una versión nueva de Forja ({} → {}, canal {}). Ejecutá: forja actualizar",
+                crate::error::color::AMARILLO,
+                actual,
+                nueva,
+                nombre_canal(leer_canal()),
+            );
+        }
+    });
 }
 
 /// Auto-actualización silenciosa opt-in (`forja autoactualizar activar`).
@@ -1150,7 +1158,7 @@ mod tests {
             ruta: "C:\\Forja".into(),
             features: vec!["Core".into(), "Runtime".into()],
         };
-        assert_eq!(m.binarios(), vec!["forja", "forja-rt"]);
+        assert_eq!(m.binarios(), vec!["forja", "forja-rt", "forja-rt-gui"]);
     }
 }
 

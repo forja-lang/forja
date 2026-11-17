@@ -44,95 +44,112 @@ cargo run --release --bin forja -- ejemplos/fundamentos/01_hola.fa
 cargo run --release --bin forja -- ejemplos/algoritmos/40_fibonacci.fa
 ```
 
-### `forja run|ejecutar|correr <archivo> [--vm fast|vm|jit] [--asm] [--native] [--fast-math]`
+### `forja run|ejecutar|correr <archivo>`
 
-Compila y ejecuta en la VM seleccionada. No necesitás Rust.
+Compila y ejecuta con el motor y el destino elegidos en `forja.yaml` (la CLI no usa flags):
+
+| Clave | Valores | Qué hace |
+|---|---|---|
+| `motor` | `rapido` (default) \| `jit` | Motor de ejecución |
+| `destino` | `maquina` (default) \| `ensamblador` \| `nativo` | VM, ASM nativo o GUI/AOT |
+| `matematica_rapida` | `verdadero` \| `falso` | Aritmética sin checks (sólo benchmarks) |
+| `perfil` | `''` \| `recoger` \| `usar` | PGO |
 
 ```bash
-# ForjaFast (default) — 🏆 recomendado
 cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa
 
-# VM Original
-cargo run --release --bin forja -- run ejemplos/fundamentos/10_clases.fa --vm vm
+# Motor JIT: `motor: jit` en forja.yaml
+cargo run --release --bin forja -- run ejemplos/fundamentos/07_funciones.fa
 
-# VM JIT (Direct Threading)
-cargo run --release --bin forja -- run ejemplos/fundamentos/07_funciones.fa --vm jit
-
-# Assembly nativo (⚡ más rápido, requiere gcc)
-cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa --asm
-
-# Fast-Math: omite verificaciones aritméticas (solo con --vm fast)
-# - En programas 100% Decimal se activa SOLO automáticamente (sin flag):
-#   omite el check de división por cero float (x / 0.0 → inf en vez de nulo)
-# - Con --fast-math se fuerza además sin checks de tipo (modo unsafe,
-#   puede producir valores indefinidos en código con tipos mixtos)
-cargo run --release --bin forja -- run ejemplos/algoritmos/40_fibonacci.fa --fast-math
+# Assembly nativo (requiere gcc): `destino: ensamblador` en forja.yaml
+cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa
 ```
 
-> **Apps GUI (`importar "gui"`) con `--native`**: generan un proyecto Cargo temporal que
-> depende por ruta de `library/gui-rt`, así que necesitan el **checkout del repo** y
-> Rust instalado (el primer build compila todo Xilem/wgpu en release y tarda varios
-> minutos). La app se abre sola al terminar.
+> **Apps GUI (`importar gui`)**: la VM no dibuja ventanas. Comportamiento:
+> - `destino: maquina` (default): compila al vuelo a un ejecutable con el fuente
+>   incrustado y lo corre con **`forja-rt-gui`** (el runtime que se instala con
+>   Forja). No necesita Rust ni Cargo.
+>   El programa **no se transpila**: el runtime interpreta el `.fa`.
+> - `destino: nativo` (**avanzado, no recomendado**): genera un proyecto Cargo
+>   temporal que depende por ruta de `library/gui-rt` y compila con cargo
+>   (necesita el **checkout del repo** y Rust; el primer build compila Xilem/wgpu,
+>   ~10-15 min, y el programa se transpila a Rust). Sólo para obtener un binario
+>   Rust propio o para Android/web.
+>
+> Si `forja-rt-gui` no está instalado, el mensaje explica cómo obtenerlo.
 
-### `forja build|compilar|construir <archivo> -o <salida>` — Ejecutable autónomo
+### `forja build|compilar|construir <archivo> [salida]` — Ejecutable autónomo
 
-Genera un `.exe` que contiene la VM + bytecode incrustado.
+Genera un `.exe` que contiene el runtime + el programa incrustado:
+
+- apps de consola: runtime `forja-rt` + **bytecode** de la VM.
+- apps GUI (`importar gui`): runtime `forja-rt-gui` + **fuente Forja** (lo evalúa el
+  runtime gráfico, sin compilar Xilem por app). Requiere `forja-rt-gui` junto al
+  `forja` instalado (`cargo build -p forja-rt --features gui` desde el checkout).
 
 ```bash
-cargo run --release --bin forja -- build ejemplos/fundamentos/01_hola.fa -o hola.exe
-# ✅ Ejecutable generado: hola.exe (1234 bytes)
+cargo run --release --bin forja -- compilar ejemplos/fundamentos/01_hola.fa hola.exe
+# ✅ ⚡ Ejecutable generado: hola.exe (1234 bytes de bytecode)
 ./hola.exe
 # → ¡Hola, mundo desde Forja!
 ```
 
-### `forja build-asm|compilar-asm|asm <archivo> [--target <arch>] [-o <salida>]` — Assembly nativo (⚡ más rápido)
+### `forja build-asm|compilar-asm|asm <archivo> [salida]` — Assembly nativo (⚡ más rápido)
 
 Compila directamente a assembly x86-64 o ARM64 + `gcc -O2`. Velocidad nativa.
+La arquitectura destino sale de `arquitectura` en `forja.yaml`.
+
+> **Alcance:** resuelve los `importar` y poda lo inalcanzable igual que `forja aot`,
+> así que los módulos de la stdlib escritos **sólo en Forja** (por ejemplo
+> `matematica.mcd`) funcionan. Las funciones de la stdlib que dependen de una
+> **primitiva nativa** (`_env`, `_json_parsear`, `_socket_*`, …) no tienen
+> equivalente en este backend: la compilación se rechaza con el nombre de la
+> primitiva y la alternativa a usar. Para programas con stdlib completa, usá
+> `forja compilar` (ejecutable autónomo con bytecode).
 
 ```bash
-# Mínimo: detecta plataforma actual automáticamente
-cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa
+# Detecta la plataforma actual automáticamente
+cargo run --release --bin forja -- asm ejemplos/fundamentos/01_hola.fa
 
-# Con nombre de salida
-cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa -o programa.exe
+# Con nombre de salida (segundo argumento posicional)
+cargo run --release --bin forja -- asm ejemplos/fundamentos/01_hola.fa programa.exe
 
-# Especificar arquitectura destino
-cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa --target arm64 -o programa
-
-# Compilar manualmente el .s generado
-cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa --target x86_64-linux -o prog
-gcc -O2 -o prog prog.s
-
-# Target cruzado: el .s queda en disco y lo ensambla el toolchain cruzado
-cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa --target riscv64 -o prog
-riscv64-linux-gnu-gcc -O2 -o prog prog.s
+# Arquitectura destino: `arquitectura: arm64` en forja.yaml
+cargo run --release --bin forja -- asm ejemplos/fundamentos/01_hola.fa programa
 ```
 
-Targets disponibles:
+Targets disponibles (clave `arquitectura`):
 
-| Flag | Arquitectura | Convención |
+| Valor | Arquitectura | Convención |
 |------|-------------|------------|
-| *(ninguno)* | Detección automática | Según SO y CPU |
-| `--target x86_64-windows` | x86-64 | Microsoft x64 (RCX, RDX, R8, R9) |
-| `--target x86_64-linux` | x86-64 | System V (RDI, RSI, RDX, RCX) |
-| `--target arm64` | ARM64 AArch64 | X0..X7, stp/ldp, cbz |
-| `--target riscv64` | RISC-V 64 (RV64GC) | A0..A7, sd/ld, beqz/bnez, ecall |
+| `''` | Detección automática | Según SO y CPU |
+| `x86_64-windows` | x86-64 | Microsoft x64 (RCX, RDX, R8, R9) |
+| `x86_64-linux` | x86-64 | System V (RDI, RSI, RDX, RCX) |
+| `arm64` | ARM64 AArch64 | X0..X7, stp/ldp, cbz |
+| `riscv64` | RISC-V 64 (RV64GC) | A0..A7, sd/ld, beqz/bnez, ecall |
 
-### `forja transpile|t|transpilar|transpilador <archivo> [-o <salida>]` — Transpilar a Rust
+### `forja aot|llvm <archivo>` — LLVM IR + ejecutable nativo
+
+Baja el programa a LLVM IR (`runtime.c` + `llc`) o genera el `.ll`. Mismo alcance
+que `forja asm`: stdlib **sin** primitivas nativas. Si el programa necesita una
+nativa, el error lo dice y sugiere `forja compilar` o `forja run`.
+
+### `forja transpile|t|transpilar|transpilador <archivo> [directorio]` — Transpilar a Rust
 
 ```bash
-cargo run --release --bin forja -- transpile ejemplos/fundamentos/01_hola.fa
-cargo run --release --bin forja -- t ejemplos/clases.fa -o salida.rs
+cargo run --release --bin forja -- transpilar ejemplos/fundamentos/01_hola.fa
+cargo run --release --bin forja -- t ejemplos/clases.fa salida_rs
 ```
 
-> Para apps GUI (`importar "gui"`) no genera un único `.rs`: crea un **proyecto Cargo**
-> (`<nombre>_rs/`) con `src/lib.rs` + `src/programa.json` y las rutas a
-> `forja`/`forja-gui-rt` del checkout, y lo compila con cargo. El AST viaja como datos
-> (`fn programa()`), igual que en la ruta `--native`.
+> Para apps GUI (`importar gui`) no genera un único `.rs`: crea un **proyecto Cargo**
+> (`<nombre>_rs/`) con `src/lib.rs` y las rutas a `forja`/`forja-gui-rt` del
+> checkout, y lo compila con cargo. El AST viaja como datos (`fn programa()`),
+> igual que en la ruta `destino: nativo`.
 
-### `forja repl|interactivo [--vm fast|vm|jit]` — Modo interactivo
+### `forja repl|interactivo [archivo.fa]` — Modo interactivo
 
-Intérprete línea por línea. Las variables persisten entre líneas.
+Intérprete línea por línea. Las variables persisten entre líneas. El motor sale de
+`motor` en `forja.yaml`.
 
 ```bash
 cargo run --release --bin forja -- repl
@@ -141,15 +158,7 @@ cargo run --release --bin forja -- repl
 # > x = x + 10
 # > escribir(x)
 # 15
-# > salir
-# 👋 ¡Hasta luego!
-```
-
-Seleccionar VM para el REPL:
-```bash
-cargo run --release --bin forja -- repl --vm fast  # ForjaFast 🏆 (default)
-cargo run --release --bin forja -- repl --vm vm    # VM Original
-cargo run --release --bin forja -- repl --vm jit   # VM JIT (Direct Threading)
+# > /ayuda      (lista de comandos: /motor, /configurar, /variables, /recargar, /salir)
 ```
 
 ### `forja medir|bench|medicion|benchmark [iteraciones] <archivo.fa>`
@@ -202,7 +211,8 @@ cargo run --release --bin forja -- nuevo mi_programa
 # Estructura generada:
 #   mi_programa/
 #     main.fa
-#     forja.json
+#     forja.json    (manifiesto: nombre, versión, módulos, dependencias)
+#     forja.yaml    (configuración de la CLI)
 #     modulos/
 ```
 
@@ -210,7 +220,7 @@ cargo run --release --bin forja -- nuevo mi_programa
 
 ```bash
 cargo run --release --bin forja -- init
-# Crea main.fa, forja.json y modulos/ en el directorio actual
+# Crea main.fa, forja.json, forja.yaml y modulos/ en el directorio actual
 ```
 
 ### `forja learn|aprender` — Tutorial interactivo
@@ -311,8 +321,8 @@ cargo bench --bench compilar-vm
 Para medir un programa concreto:
 
 ```bash
-cargo run --release --bin forja -- medir ejemplos/fundamentos/06_bucles.fa --iters 100
-cargo run --release --bin forja -- medir ejemplos/algoritmos/40_fibonacci.fa --asm --iters 10
+cargo run --release --bin forja -- medir 100 ejemplos/fundamentos/06_bucles.fa
+cargo run --release --bin forja -- medir 10 ejemplos/algoritmos/40_fibonacci.fa
 ```
 
 ## Proyectos con módulos

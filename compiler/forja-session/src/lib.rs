@@ -193,16 +193,43 @@ pub fn ruta() -> PathBuf {
         .join(NOMBRE_ARCHIVO)
 }
 
+/// `~/.forja/forja.yaml`: configuración del usuario, usada cuando el directorio
+/// de ejecución no se puede escribir.
+pub fn ruta_usuario() -> PathBuf {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join(".forja").join(NOMBRE_ARCHIVO)
+}
+
 /// Crea `forja.yaml` con todas las claves en default si no existe.
 ///
-/// Devuelve la ruta del archivo. Si ya existe no lo toca.
+/// Devuelve la ruta del archivo. Si ya existe no lo toca. Si el directorio
+/// actual es de sólo lectura, escribe el default en [`ruta_usuario`].
 #[cfg(not(target_arch = "wasm32"))]
 pub fn asegurar() -> Result<PathBuf, String> {
+    let default = Config::default();
     let ruta = ruta();
-    if !ruta.exists() {
-        escribir(&ruta, &Config::default())?;
+    if ruta.exists() {
+        return Ok(ruta);
     }
-    Ok(ruta)
+    let error_local = match escribir(&ruta, &default) {
+        Ok(()) => return Ok(ruta),
+        Err(e) => e,
+    };
+    // Sin permiso de escritura en el directorio actual: no molestar al usuario
+    // con un aviso; el default va a su carpeta de configuración.
+    let usuario = ruta_usuario();
+    if usuario.exists() {
+        return Ok(usuario);
+    }
+    if let Some(padre) = usuario.parent() {
+        std::fs::create_dir_all(padre)
+            .map_err(|e| format!("no se pudo crear {}: {e}", padre.display()))?;
+    }
+    escribir(&usuario, &default).map_err(|e| format!("{error_local}; tampoco {e}"))?;
+    Ok(usuario)
 }
 
 /// Serializa `cfg` con un encabezado y lo escribe en `ruta`.
@@ -376,8 +403,10 @@ fn escalar(valor: &str) -> String {
     }
 }
 
-/// Lee el YAML del directorio actual. `None` si no existe, no se puede leer o
-/// no es YAML válido (en ese caso se usan los defaults).
+/// Lee el YAML del directorio actual. Si no existe (p. ej. porque el
+/// directorio es de sólo lectura y [`asegurar`] escribió en
+/// [`ruta_usuario`]), prueba el del usuario. `None` si no hay archivo, no se
+/// puede leer o no es YAML válido (en ese caso se usan los defaults).
 pub fn leer_disco() -> Option<Config> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -385,7 +414,11 @@ pub fn leer_disco() -> Option<Config> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        leer_de(&ruta())
+        let local = ruta();
+        if local.exists() {
+            return leer_de(&local);
+        }
+        leer_de(&ruta_usuario())
     }
 }
 

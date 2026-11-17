@@ -453,9 +453,12 @@ impl Transpiler {
             // compilaba en ninguna versión de Rust.
             let ast_code = self.generar_ast_programa(&programa.declaraciones);
             self.emitir_linea("// ─── Programa Forja como datos para el runtime ───");
+            // `allow(unused_imports)`: según el programa, los tipos del AST
+            // pueden no usarse directamente y el aviso confunde al usuario.
+            self.emitir_linea("#[allow(unused_imports)]");
             self.emitir_linea("use forja::ast::*;");
             self.emitir_linea("");
-            self.emitir_linea("fn programa() -> Programa {span: None, ");
+            self.emitir_linea("fn programa() -> Programa {");
             self.emitir_linea("    Programa {spans: Vec::new(), nombres: Vec::new(), indice_nombres: std::collections::HashMap::new(), span: None, ");
             self.emitir_linea("        declaraciones: vec![");
             self.sangria();
@@ -479,7 +482,7 @@ impl Transpiler {
             self.emitir_linea("        .map(|s| s.to_string());");
             self.emitir_linea("");
             self.emitir_linea(
-                "    forja_gui_rt::build_and_run(&programa(), load_state.as_deref(), None, true)",
+                "    forja_gui_rt::gui_nativa::construir_y_ejecutar(&programa(), load_state.as_deref(), None, true)",
             );
             self.emitir_linea("}");
             self.emitir_linea("");
@@ -491,7 +494,7 @@ impl Transpiler {
                 "fn android_main(app: winit::platform::android::activity::AndroidApp) {",
             );
             self.emitir_linea(
-                "    forja_gui_rt::build_and_run_android(&programa(), None, None, true, app);",
+                "    forja_gui_rt::gui_nativa::construir_y_ejecutar_android(&programa(), None, None, true, app);",
             );
             self.emitir_linea("}");
             return Ok(self.salida.clone());
@@ -3677,15 +3680,16 @@ mod tests {
         let resultado = transpilar_fuente(fuente).unwrap();
         // El programa se emite como función: `vec![…]` no es const, así que la
         // forma `static PROGRAMA` no compilaba en ninguna versión estable de Rust.
-        assert!(resultado.contains("fn programa() -> Programa {span: None, "));
+        assert!(resultado.contains("fn programa() -> Programa {"));
         assert!(resultado.contains("use forja::ast::*;"));
         assert!(
             !resultado.contains("static PROGRAMA"),
             "el AST no debe emitirse en un `static` (no es const):\n{resultado}"
         );
-        // main() usa build_and_run del runtime, tomando el programa de la función
-        assert!(resultado.contains("build_and_run(&programa(),"));
-        assert!(resultado.contains("build_and_run_android(&programa(),"));
+        // main() usa el runtime GUI, tomando el programa de la función.
+        // Nombres reales de `forja-gui-rt` (módulo gui_nativa).
+        assert!(resultado.contains("gui_nativa::construir_y_ejecutar(&programa(),"));
+        assert!(resultado.contains("gui_nativa::construir_y_ejecutar_android(&programa(),"));
     }
 
     #[test]

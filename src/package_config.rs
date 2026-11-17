@@ -15,6 +15,7 @@ pub struct ForjaConfig {
     pub descripcion: String,
     #[serde(default = "predeterminado_entrada")]
     pub entrada: String,
+    /// Módulos del proyecto (los que hay en `modulos/`), declarados a mano.
     #[serde(default)]
     pub modulos: Vec<String>,
     #[serde(default)]
@@ -46,11 +47,13 @@ impl ForjaConfig {
         ForjaConfig {
             nombre: nombre.to_string(),
             version: version.to_string(),
-            forja: "0.1.0".to_string(),
+            forja: env!("CARGO_PKG_VERSION").to_string(),
             autor: String::new(),
             descripcion: String::new(),
             entrada: predeterminado_entrada(),
-            modulos: vec!["std".to_string()],
+            // Un proyecto nuevo no tiene módulos todavía; se declaran acá
+            // (y en `modulos/`) a medida que se agregan.
+            modulos: Vec::new(),
             dependencias: HashMap::new(),
             dev_dependencias: HashMap::new(),
         }

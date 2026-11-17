@@ -8,17 +8,8 @@ pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<
     // stdlib entera se inlinearía y sus módulos sin usar chocan con el backend
     // (`coincidir` sobre funciones nativas sin tipo declarado). Con la poda,
     // sólo se baja lo que el programa realmente llama.
-    let raiz = {
-        let mut r = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        for ancestro in r.clone().ancestors() {
-            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
-                r = ancestro.to_path_buf();
-                break;
-            }
-        }
-        r
-    };
-    let ir = forja::compilar_a_llvm_desde(fuente, &raiz).map_err(|e| format!("{e:?}"))?;
+    let ir =
+        forja::compilar_a_llvm_desde(fuente, &raiz_proyecto()).map_err(|e| format!("{e:?}"))?;
     let directorio = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
     std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
     let ll = directorio.join("main.ll");
@@ -199,6 +190,45 @@ pub(crate) fn cmd_ejecutar(args: &[String]) {
         }
     }
 
+    // Un programa con `importar gui` no corre en la VM (la VM no dibuja
+    // ventanas): lo ejecuta el runtime gráfico `forja-rt-gui`, incrustando el
+    // fuente igual que `forja compilar`. Si ese runtime no está instalado,
+    // `compilar_con` explica cómo obtenerlo o usar `destino: nativo`.
+    if importa_gui(&fuente) {
+        let tallo = Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("app");
+        let dir =
+            std::env::temp_dir().join(format!("forja_gui_run_{:016x}", hash_fnv(path.as_bytes())));
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!("Error creando {}: {e}", dir.display());
+            process::exit(1);
+        }
+        let salida = dir.join(format!(
+            "{tallo}{}",
+            if cfg!(target_os = "windows") {
+                ".exe"
+            } else {
+                ""
+            }
+        ));
+        let salida_texto = salida.display().to_string();
+        if hay_que_recompilar_gui(path, &salida) {
+            if let Err(e) =
+                forja::aot::AOTCompiler::compilar_con(path, &salida_texto, true, cfg.consola)
+            {
+                eprintln!("{e}");
+                process::exit(1);
+            }
+        }
+        let estado = process::Command::new(&salida).status().unwrap_or_else(|e| {
+            eprintln!("Error ejecutando '{}': {e}", salida.display());
+            process::exit(1);
+        });
+        process::exit(estado.code().unwrap_or(0));
+    }
+
     if asm_mode {
         match ejecutar_asm(&fuente, path) {
             Ok(salida) => {
@@ -297,6 +327,48 @@ pub(crate) fn cmd_ejecutar(args: &[String]) {
     }
 }
 
+/// ¿Hace falta rearmar el ejecutable GUI del `forja ejecutar`?
+///
+/// Escribir 23 MB cada corrida hace que el antivirus los escanee (~0,5 s). Si el
+/// `.exe` es más nuevo que el `.fa` y que el runtime, se reusa y el arranque es
+/// inmediato (`forja compilar` sigue rearmando siempre).
+fn hay_que_recompilar_gui(fuente: &str, salida: &std::path::Path) -> bool {
+    let Ok(exe) = std::fs::metadata(salida) else {
+        return true;
+    };
+    let Ok(exe_mod) = exe.modified() else {
+        return true;
+    };
+    if let Ok(src) = std::fs::metadata(fuente).and_then(|m| m.modified()) {
+        if src > exe_mod {
+            return true;
+        }
+    }
+    // Si cambiaron el runtime (stub), hay que volver a incrustar el fuente.
+    let stub = std::env::current_exe()
+        .ok()
+        .and_then(|p| {
+            let nombre = if cfg!(target_os = "windows") {
+                "forja-rt-gui.exe"
+            } else {
+                "forja-rt-gui"
+            };
+            p.with_file_name(nombre).metadata().ok()
+        })
+        .and_then(|m| m.modified().ok());
+    matches!(stub, Some(t) if t > exe_mod)
+}
+
+/// Hash FNV-1a de 64 bits (estable entre corridas; no hay dependencias extra).
+fn hash_fnv(datos: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in datos {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 /// Construye un SandboxRed a partir de los argumentos de línea de comandos.
 ///
 /// - `allow_net`: string con hosts separados por coma, o None (air-gapped).
@@ -341,17 +413,24 @@ pub(crate) fn construir_sandbox(
 pub(crate) fn ejecutar_asm(fuente: &str, entrada_ruta: &str) -> Result<Vec<String>, String> {
     use std::process::Command;
 
-    // 1. Parsear y compilar a ASM
+    // 1. Compilar a ASM con el mismo pipeline que `forja asm`: imports
+    // resueltos y lo inalcanzable podado. Sin eso la stdlib no se inlineaba y
+    // `modulo.funcion(...)` llegaba como acceso a miembro.
     use forja::compiler_asm;
-    use forja::lexer::Lexer;
-    use forja::parser::Parser;
 
-    let mut lexer = Lexer::nuevo(fuente);
-    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = Parser::nuevo(tokens);
-    let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
-    let asm_code = compiler_asm::compilar_a_asm(&programa)
-        .map_err(|e| format!("Error de compilación ASM: {:?}", e))?;
+    let asm_code = forja::compilar_a_asm_desde(
+        fuente,
+        &raiz_proyecto(),
+        compiler_asm::DestinoArch::detect(),
+    )
+    .map_err(|e| {
+        let detalle = e
+            .iter()
+            .map(|err| err.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        format!("Error de compilación ASM: {detalle}")
+    })?;
 
     // 2. Escribir ASM a archivo temporal
     let stem = Path::new(entrada_ruta)
@@ -415,12 +494,8 @@ pub(crate) fn ejecutar_nativo(
     let mut parser = parser::Parser::nuevo(tokens);
     let programa = parser.parsear().map_err(|e| format!("{}", e[0]))?;
 
-    // 2. Detectar si usa GUI
-    let usa_gui = programa
-        .declaraciones
-        .iter()
-        .any(|d| matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui"));
-    if !usa_gui {
+    // 2. Detectar si usa GUI (`importar gui` o `importar std/gui`)
+    if !importa_gui(fuente) {
         return Err("El archivo no importa \"gui\". Poné `backend: vm` en forja.yaml para ejecutar en consola.".to_string());
     }
 
@@ -437,12 +512,13 @@ pub(crate) fn ejecutar_nativo(
         }
     }
 
-    // 4. Crear directorio temporal
-    let directorio_temporal =
-        std::env::temp_dir().join(format!("forja_gui_{}", std::process::id()));
-    if directorio_temporal.exists() {
-        std::fs::remove_dir_all(&directorio_temporal).ok();
-    }
+    // 4. Directorio estable por app: conserva `Cargo.lock` y el caché de cargo
+    //    entre corridas. Antes era `forja_gui_<pid>`, así que cada corrida
+    //    resolvía de cero el `xilem` de la branch `main` y recompilaba todo.
+    let directorio_temporal = std::env::temp_dir().join(format!(
+        "forja_gui_{:016x}",
+        hash_fnv(entrada_ruta.as_bytes())
+    ));
     std::fs::create_dir_all(&directorio_temporal)
         .map_err(|e| format!("Error creando directorio temporal: {}", e))?;
 
@@ -467,6 +543,10 @@ pub(crate) fn ejecutar_nativo(
         "No encuentro la raíz del repo de forja (necesito `library/gui-rt` para compilar apps GUI). Corré `forja` desde la raíz del repo.".to_string()
     })?;
     let forja_gui_rt_path = forja_root.join("library/gui-rt");
+    let forja_crate_path = forja_root.join("compiler/forja");
+    // Fork de `masonry_winit` (FORJA_PRESENT_MODE / FORJA_GUI_PERF): el proyecto
+    // temporal está fuera del workspace, así que necesita su propio `[patch]`.
+    let patch_masonry = forja_root.join("patches/masonry_winit");
 
     // Las rutas van con barras normales: dentro de un string TOML básico las
     // barras invertidas de Windows son escapes (`C:\Users` → `\U` inválido).
@@ -481,6 +561,9 @@ forja-gui-rt = {{ path = "{}" }}
 forja = {{ path = "{}" }}
 serde_json = "1"
 
+[patch."https://github.com/linebender/xilem"]
+masonry_winit = {{ path = "{}" }}
+
 # Perfil de desarrollo optimizado: las dependencias del stack gráfico
 # (xilem, vello, wgpu, parley) son 10-20x más lentas sin optimizar y eso hace
 # que arrastrar un slider o el scrollbar se sienta pegajoso en `cargo run`.
@@ -492,7 +575,8 @@ opt-level = 3
 "#,
         nombre_crate,
         forja::ruta_para_toml(&forja_gui_rt_path),
-        forja::ruta_para_toml(&forja_root)
+        forja::ruta_para_toml(&forja_crate_path),
+        forja::ruta_para_toml(&patch_masonry)
     );
 
     std::fs::write(directorio_temporal.join("Cargo.toml"), &cargo_toml)
@@ -500,16 +584,39 @@ opt-level = 3
 
     // 8. Compilar con cargo (release)
     println!("📦 Compilando GUI nativa...");
-    let salida = std::process::Command::new("cargo")
-        .args(["build", "--release"])
+    let target_dir = std::env::var_os("FORJA_GUI_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+            home.map(|h| {
+                std::path::PathBuf::from(h)
+                    .join(".cache")
+                    .join("forja-gui-target")
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from("target"))
+        });
+    std::fs::create_dir_all(&target_dir).ok();
+
+    // Con lock existente, `--locked` impide que cargo vuelva a resolver la
+    // branch `main` de xilem (y con eso baje un commit nuevo = rebuild total).
+    let mut args_cargo = vec!["build", "--release"];
+    if directorio_temporal.join("Cargo.lock").exists() {
+        args_cargo.push("--locked");
+    }
+    let estado = std::process::Command::new("cargo")
+        .args(&args_cargo)
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .env("RUSTC_WRAPPER", "")
         .current_dir(&directorio_temporal)
-        .output()
+        .status()
         .map_err(|e| format!("Error ejecutando cargo: {}. ¿Está instalado Rust?", e))?;
 
-    if !salida.status.success() {
-        let stderr = String::from_utf8_lossy(&salida.stderr);
-        std::fs::remove_dir_all(&directorio_temporal).ok();
-        return Err(format!("Error de compilación:\n{}", stderr));
+    if !estado.success() {
+        return Err(format!(
+            "Error de compilación de GUI (ver salida de cargo arriba).\n\
+             Si el error es del lock, borrá el proyecto generado y reintentá: {}",
+            directorio_temporal.display()
+        ));
     }
 
     // 9. Ejecutar el binario compilado
@@ -520,10 +627,7 @@ opt-level = 3
     };
     // Cargo respeta `CARGO_TARGET_DIR` del entorno: si está seteado, el binario no
     // queda en `<temp>/target/release` sino ahí.
-    let destino_directorio = std::env::var_os("CARGO_TARGET_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| directorio_temporal.join("target"));
-    let bin_ruta = destino_directorio.join("release").join(&exe_name);
+    let bin_ruta = target_dir.join("release").join(&exe_name);
 
     println!("🚀 Ejecutando GUI nativa...");
     let hijo = std::process::Command::new(&bin_ruta)
