@@ -499,6 +499,33 @@ escribir(cambiado.obtener_primero())
 }
 
 #[test]
+fn generico_especializado_conserva_el_tipo_del_valor() {
+    // La misma clase genérica usada con tipos distintos: cada especialización
+    // lleva el tipo concreto del campo, del parámetro y del `-> T`. Antes el
+    // `constructor(a: T)` y el `-> T` del `Caja<T>` genérico marcaban como
+    // «dinámicos» los de `Caja_Texto`/`Caja_Booleano` (IR inválido: i64 pasado
+    // donde va `ptr`) y `obtener()` se imprimía por bits (`1` vs `verdadero`).
+    let fuente = r#"
+clase Caja<T> {
+    contenido
+    constructor(valor: T) {
+        este.contenido = valor
+    }
+    funcion obtener() -> T {
+        retornar este.contenido
+    }
+}
+variable b = nuevo Caja(verdadero)
+variable t = nuevo Caja("hola")
+escribir("b: " + b.obtener())
+escribir("t: " + t.obtener())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "b: verdadero\nt: hola");
+    }
+}
+
+#[test]
 fn derive_mostrar_formatea_la_clase() {
     // `@derive(Mostrar)`: `escribir(obj)` y la concatenación dan
     // `Clase { campo: valor, … }`, como la VM (antes salía la dirección).

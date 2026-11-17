@@ -790,11 +790,18 @@ impl Lowering {
                             let params =
                                 self.tipos_params(Some(nombre), &clave, &m.parametros, &m.cuerpo);
                             if matches!(m.tipo_retorno, Some(Tipo::Parametro(_))) {
-                                self.metodos_param.insert(m.nombre.clone());
+                                // Con la clase en la clave: el `-> T` de `Caja<T>`
+                                // no vuelve «incierto» el `-> Booleano` de
+                                // `Caja_Booleano`.
+                                self.metodos_param.insert(format!("{nombre}::{}", m.nombre));
                             }
+                            // La clave lleva la clase: `nuevo:0` de `Caja<T>`
+                            // no debe marcar como dinámico el de `Caja_Texto`
+                            // (que sí tiene tipo concreto).
                             for (i, p) in m.parametros.iter().enumerate() {
                                 if matches!(p.tipo, Some(Tipo::Parametro(_))) {
-                                    self.params_dinamicos.insert(format!("{}:{i}", m.nombre));
+                                    self.params_dinamicos
+                                        .insert(format!("{nombre}::{}:{i}", m.nombre));
                                 }
                             }
                             (m.nombre.clone(), params, self.retorno_metodo(nombre, m))
