@@ -1196,8 +1196,15 @@ impl Lowering {
                 return self.llamada_metodo(&receptor, ultimo, argumentos);
             }
         }
+        // Nombres `_x` = primitivas de la stdlib: el backend nativo no las
+        // implementa. El mensaje dice qué hacer en vez de "no declarada".
+        if nombre.starts_with('_') {
+            return Err(format!(
+                "la primitiva nativa `{nombre}` no tiene equivalente en el backend LLVM/ASM: la usa la stdlib. Compilá con `forja compilar` (ejecutable con bytecode) o `forja run`"
+            ));
+        }
         Err(format!(
-            "función `{nombre}` no declarada (ni builtin, ni `funcion`, ni `funcion externa`)"
+            "función `{nombre}` no declarada (ni builtin, ni `funcion`, ni `funcion externa`); si viene de la stdlib, todavía no tiene equivalente nativo: usá `forja compilar` o `forja run`"
         ))
     }
 
@@ -1438,6 +1445,79 @@ impl Lowering {
                 let r = self.r();
                 self.linea(&format!("{} = call ptr @forja_recortar(ptr {})", r, s));
                 V::Texto(r)
+            }
+            // `leer()`: una línea de stdin; al final de la entrada, `nulo`.
+            "leer" => {
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_leer_linea()", r));
+                V::Texto(r)
+            }
+            "escribir_linea" => {
+                let v = self.arg(nombre, args, 0)?;
+                let s = self.como(&v, T::Texto);
+                self.linea(&format!("call void @forja_escribir_linea(ptr {})", s));
+                V::Nulo
+            }
+            // `unir_elementos(arreglo, separador)`: cada casilla por su tag.
+            "unir_elementos" => {
+                let v = self.arg(nombre, args, 0)?;
+                let a = self.como(&v, T::Arreglo);
+                let sep = match args.get(1) {
+                    Some(e) => {
+                        let v = self.expr(e)?;
+                        self.como(&v, T::Texto)
+                    }
+                    None => self.texto_constante(""),
+                };
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_unir_elementos(ptr {}, ptr {})",
+                    r, a, sep
+                ));
+                V::Texto(r)
+            }
+            // `tipo(v)`: con tipo estático conocido es una constante; si no, el
+            // runtime mira el tag del valor.
+            "tipo" => {
+                if let Some(e) = args.first() {
+                    if !self.incierto(e) {
+                        let t = self.tipo_estatico(e);
+                        // Sólo `Booleano` y `Decimal` necesitan la vía estática: son
+                        // escalares con bits (el runtime los vería como "entero").
+                        // Todo lo demás (arreglos, textos, y sobre todo la suposición
+                        // `Entero` sobre un `arr[i]`) lo resuelve el tag del runtime:
+                        // `aplanar` y cía. dependen de esto.
+                        let etiqueta = match t {
+                            T::Bool => Some("booleano"),
+                            T::Dec => Some("flotante"),
+                            _ => None,
+                        };
+                        if let Some(etiqueta) = etiqueta {
+                            let r = self.texto_constante(etiqueta);
+                            return Ok(Some(V::Texto(r)));
+                        }
+                    }
+                }
+                let v = self.arg(nombre, args, 0)?;
+                let dato = self.como_slot(&v);
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, dato));
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_tipo_de(ptr {})", r, p));
+                V::Texto(r)
+            }
+            // Introspección de mapas de `std/colecciones` (claves ordenadas).
+            "_mapa_claves" | "_mapa_valores" | "_mapa_pares" => {
+                let v = self.arg(nombre, args, 0)?;
+                let m = self.como(&v, T::Mapa);
+                let funcion = match nombre {
+                    "_mapa_claves" => "forja_mapa_claves",
+                    "_mapa_valores" => "forja_mapa_valores",
+                    _ => "forja_mapa_pares",
+                };
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @{}(ptr {})", r, funcion, m));
+                V::Arreglo(r)
             }
             "reservar" | "reservar_capacidad" => {
                 let arr = self.arg(nombre, args, 0)?;
@@ -2998,11 +3078,15 @@ impl Lowering {
             }
             // Una closure devuelve un i64 sin tipo declarado: puede ser un
             // número o un puntero a texto/arreglo (ver `crear_closure`).
-            Expresion::LlamadaFuncion { nombre, .. } => self
-                .vars
-                .get(nombre)
-                .map(|v| v.t == T::Closure)
-                .unwrap_or(false),
+            Expresion::LlamadaFuncion { nombre, .. } => {
+                // `leer()` devuelve `nulo` al final de la entrada.
+                nombre == "leer"
+                    || self
+                        .vars
+                        .get(nombre)
+                        .map(|v| v.t == T::Closure)
+                        .unwrap_or(false)
+            }
             _ => false,
         }
     }
@@ -3064,6 +3148,8 @@ fn es_builtin(nombre: &str) -> bool {
             | "empujar"
             | "dividir"
             | "recortar"
+            | "unir_elementos"
+            | "escribir_linea"
             | "esperar"
             | "dormir"
     )

@@ -573,6 +573,35 @@ verdadero"
 }
 
 #[test]
+fn builtins_de_entrada_y_de_introspeccion() {
+    // `leer()` al final de la entrada devuelve nulo (y concatena como "nulo"),
+    // `unir_elementos` une por el tag de cada casilla y `tipo` pregunta al tag
+    // del runtime cuando el tipo estático no alcanza (`arr[i]` de un anidado).
+    let fuente = r#"
+variable a = [1, 2, 3]
+escribir(unir_elementos(a, "-"))
+escribir(tipo(a))
+escribir(tipo(a[0]))
+escribir(tipo("x"))
+escribir(tipo(verdadero))
+variable anidado = [[1, 2], [3], 5]
+variable i = 0
+mientras (i < longitud(anidado)) {
+    escribir(tipo(anidado[i]))
+    i = i + 1
+}
+variable linea = leer()
+escribir("leido: " + linea)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida.trim(),
+            "1-2-3\narreglo\nentero\ntexto\nbooleano\narreglo\narreglo\nentero\nleido: nulo"
+        );
+    }
+}
+
+#[test]
 fn mapas_con_valores_de_texto() {
     // La casilla del mapa guarda un i64 con su tag: `escribir(m[clave])` usa el
     // tag y muestra el texto (antes convertía con `a_entero` y daba 0).
