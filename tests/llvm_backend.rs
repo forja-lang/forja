@@ -1036,3 +1036,115 @@ fn el_lowering_vive_en_el_backend_y_no_hay_legacy() {
         "src/compiler_llvm.rs no debe existir"
     );
 }
+
+#[test]
+fn postcondiciones_abortan_con_el_mensaje_de_la_vm() {
+    // `asegura` se verificaba sólo en la VM: la ruta nativa ignoraba el contrato
+    // y seguía (handoff5 §2, shortcut `sentencias.rs:588`).
+    let fuente = r#"
+funcion doble(x: Entero) -> Entero
+    asegura resultado == x * 3, "tiene que ser el triple"
+{
+    retornar x * 2
+}
+escribir("antes")
+escribir(doble(5))
+escribir("no se llega")
+"#;
+    if let Some((codigo, salida)) = ejecutar_nativo_con_codigo(fuente) {
+        assert!(
+            salida.contains("Error en ejecución: contrato violado: postcondición no se cumple: tiene que ser el triple"),
+            "salida inesperada: {salida}"
+        );
+        assert!(!salida.contains("no se llega"), "siguió tras el contrato");
+        assert_ne!(codigo, 0, "debería abortar");
+    }
+}
+
+#[test]
+fn postcondiciones_con_anterior_y_resultado() {
+    // `anterior(expr)` se captura al entrar; `resultado` es el valor devuelto.
+    // Los tres contratos se cumplen, así que el programa termina bien.
+    let fuente = r#"
+funcion duplicar(x: Entero) -> Entero
+    requiere x > 0
+    asegura resultado == anterior(x) * 2
+{
+    retornar x * 2
+}
+funcion raiz(n: Entero) -> Entero
+    asegura resultado >= 0
+    asegura resultado * resultado <= n
+    asegura (resultado + 1) * (resultado + 1) > n
+{
+    variable i = 0
+    mientras (i * i <= n) {
+        i = i + 1
+    }
+    retornar i - 1
+}
+escribir(duplicar(7))
+escribir(raiz(25))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "14\n5");
+    }
+}
+
+#[test]
+fn postcondicion_de_metodo_usa_anterior_del_campo() {
+    let fuente = r#"
+clase Contador {
+    variable
+    valor: Entero
+
+    constructor() {
+        este.valor = 0
+    }
+
+    funcion incrementar()
+        asegura este.valor == anterior(este.valor) + 1
+    {
+        este.valor = este.valor + 1
+    }
+}
+variable c = nuevo Contador()
+c.incrementar()
+c.incrementar()
+escribir(c.valor)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "2");
+    }
+}
+
+#[test]
+fn postcondicion_de_metodo_que_falla_aborta() {
+    let fuente = r#"
+clase Caja {
+    variable
+    n: Entero
+
+    constructor(n: Entero) {
+        este.n = n
+    }
+
+    funcion romper()
+        asegura este.n == 99, "el campo tiene que quedar en 99"
+    {
+        este.n = este.n + 1
+    }
+}
+variable c = nuevo Caja(1)
+c.romper()
+escribir("no se llega")
+"#;
+    if let Some((codigo, salida)) = ejecutar_nativo_con_codigo(fuente) {
+        assert!(
+            salida.contains("postcondición no se cumple: el campo tiene que quedar en 99"),
+            "salida inesperada: {salida}"
+        );
+        assert!(!salida.contains("no se llega"), "siguió tras el contrato");
+        assert_ne!(codigo, 0, "debería abortar");
+    }
+}

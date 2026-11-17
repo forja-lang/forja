@@ -547,8 +547,17 @@ impl Lowering {
                     Err("`resultado` sólo existe dentro de una postcondición (`asegura`)".into())
                 }
             }
-            Expresion::Anterior(_) => {
-                Err("`anterior()` es de contratos: compilá con la VM (contratos activos)".into())
+            // `anterior(expr)`: el valor que la expresión tenía al entrar al
+            // cuerpo. Los snapshots los toma `tomar_anteriores` al principio;
+            // acá sólo se lee el que corresponde a esta expresión.
+            Expresion::Anterior(inner) => {
+                let clave = format!("{inner:?}");
+                match self.anteriores.get(&clave).cloned() {
+                    Some((slot, t)) => Ok(self.cargar(&slot, &t)),
+                    None => Err(format!(
+                        "`anterior({inner:?})` no se pudo capturar al entrar al cuerpo"
+                    )),
+                }
             }
         }
     }

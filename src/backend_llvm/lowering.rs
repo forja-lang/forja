@@ -228,6 +228,13 @@ pub struct Lowering {
     metodos_param: std::collections::HashSet<String>,
     /// Funciones que devuelven un parámetro de tipo (`funcion f<T>(x: T) -> T`).
     funciones_param: std::collections::HashSet<String>,
+    /// Postcondiciones (`asegura`) del cuerpo en curso: se verifican antes de
+    /// cada `retornar`, con `resultado` ya vinculado.
+    postcondiciones: Vec<crate::ast::Contrato>,
+    /// Snapshots de `anterior(expr)` tomados al entrar, por forma de la
+    /// expresión (`{:?}` de su interior): el mismo `anterior(x)` produce la
+    /// misma clave, así que repetirlo no duplica slots y el orden no importa.
+    anteriores: HashMap<String, (String, T)>,
     /// Parámetros declarados con un parámetro de tipo (`x: T`): la casilla es
     /// i64 y el argumento viaja con sus bits tal cual. Clave `nombre:índice`.
     params_dinamicos: std::collections::HashSet<String>,
@@ -357,6 +364,8 @@ impl Lowering {
             arreglos_arreglo: HashMap::new(),
             metodos_param: std::collections::HashSet::new(),
             funciones_param: std::collections::HashSet::new(),
+            postcondiciones: Vec::new(),
+            anteriores: HashMap::new(),
             params_dinamicos: std::collections::HashSet::new(),
             ret_dinamico: false,
             derive_mostrar: std::collections::HashSet::new(),
@@ -998,9 +1007,13 @@ impl Lowering {
                     .cloned()
                     .unwrap_or((Vec::new(), T::Int));
                 let _ = tipo_retorno;
-                let precondiciones = match d {
-                    Declaracion::Funcion { precondiciones, .. } => precondiciones.as_slice(),
-                    _ => &[],
+                let (precondiciones, postcondiciones) = match d {
+                    Declaracion::Funcion {
+                        precondiciones,
+                        postcondiciones,
+                        ..
+                    } => (precondiciones.as_slice(), postcondiciones.as_slice()),
+                    _ => (&[][..], &[][..]),
                 };
                 self.funcion(
                     nombre,
@@ -1008,6 +1021,7 @@ impl Lowering {
                     &params,
                     ret.clone(),
                     precondiciones,
+                    postcondiciones,
                     cuerpo,
                 )?;
             }

@@ -11,6 +11,7 @@ impl Lowering {
         tipos: &[T],
         ret: T,
         precondiciones: &[crate::ast::Contrato],
+        postcondiciones: &[crate::ast::Contrato],
         cuerpo: &[Declaracion],
     ) -> Result<(), String> {
         let nombre_ir = if nombre == "main" {
@@ -60,6 +61,7 @@ impl Lowering {
 
         self.marcar_params_texto(nombre, parametros);
         self.verificar_contratos(precondiciones, "precondición")?;
+        self.abrir_contratos(postcondiciones, &ret)?;
         for s in cuerpo {
             self.sentencia(s)?;
         }
@@ -67,6 +69,9 @@ impl Lowering {
         // (`main` no ve las locales de la función anterior).
         self.tipos_pre.clear();
         if !self.termina {
+            // Retorno implícito: `asegura` también se verifica (como la VM), con
+            // `resultado` en el cero del tipo.
+            self.cerrar_retorno(&ret, cero(&ret).to_string())?;
             if matches!(ret, T::Nulo) {
                 self.linea("ret void");
             } else {
@@ -170,12 +175,14 @@ impl Lowering {
 
         self.marcar_params_texto(&m.nombre, &m.parametros);
         self.verificar_contratos(&m.precondiciones, "precondición")?;
+        self.abrir_contratos(&m.postcondiciones, &ret)?;
         for s in &m.cuerpo {
             self.sentencia(s)?;
         }
         // Igual que en `funcion`: el pre-escaneo no se filtra al método siguiente.
         self.tipos_pre.clear();
         if !self.termina {
+            self.cerrar_retorno(&ret, cero(&ret).to_string())?;
             if matches!(ret, T::Nulo) {
                 self.linea("ret void");
             } else {
@@ -523,6 +530,9 @@ impl Lowering {
                         } else {
                             self.como(&v, ret.clone())
                         };
+                        // `asegura` se verifica antes de salir, con `resultado`
+                        // ya en la casilla (igual que la VM).
+                        self.cerrar_retorno(ret, r.clone())?;
                         self.linea(&format!("ret {} {}", ret.llvm().to_llvm_ir(), r));
                     }
                 }
@@ -587,6 +597,66 @@ impl Lowering {
     ///
     /// shortcut: sólo precondiciones; las `asegura` habría que inyectarlas antes
     /// de cada `retornar`. Upgrade: cuando algún ejemplo lo necesite.
+    /// Abre el bloque de postcondiciones de un cuerpo: vincula `resultado`,
+    /// captura `anterior(expr)` y las deja activas para los `retornar`.
+    fn abrir_contratos(
+        &mut self,
+        contratos: &[crate::ast::Contrato],
+        ret: &T,
+    ) -> Result<(), String> {
+        self.postcondiciones = contratos.to_vec();
+        self.anteriores.clear();
+        if contratos.is_empty() {
+            return Ok(());
+        }
+        // `resultado` es una local más: `Expresion::Resultado` ya la busca en
+        // `vars`, así que basta con declararla y escribirla antes de cada salida.
+        if !matches!(ret, T::Nulo) {
+            let slot = self.alloca(ret, "resultado");
+            self.guardar(&slot, valor_de(ret, cero(ret).to_string()), ret);
+            self.vars.insert(
+                "resultado".to_string(),
+                Var {
+                    slot,
+                    t: ret.clone(),
+                },
+            );
+        }
+        let contratos = contratos.to_vec();
+        for c in &contratos {
+            let mut pendientes = Vec::new();
+            recoger_anteriores(&c.condicion, &mut pendientes);
+            for inner in pendientes {
+                let clave = format!("{inner:?}");
+                if self.anteriores.contains_key(&clave) {
+                    continue;
+                }
+                let v = self.expr(inner)?;
+                let t = v.t();
+                let slot = self.alloca(&t, "anterior");
+                self.guardar(&slot, v, &t);
+                self.anteriores.insert(clave, (slot, t));
+            }
+        }
+        Ok(())
+    }
+
+    /// Cierra un punto de salida: deja `resultado` con el valor devuelto y
+    /// verifica las postcondiciones. Si alguna falla, imprime el mismo mensaje
+    /// que la VM y aborta.
+    fn cerrar_retorno(&mut self, ret: &T, valor: String) -> Result<(), String> {
+        if self.postcondiciones.is_empty() {
+            return Ok(());
+        }
+        if let Some(var) = self.vars.get("resultado").cloned() {
+            self.guardar(&var.slot, valor_de(ret, valor), ret);
+        }
+        let contratos = std::mem::take(&mut self.postcondiciones);
+        let r = self.verificar_contratos(&contratos, "postcondición");
+        self.postcondiciones = contratos;
+        r
+    }
+
     fn verificar_contratos(
         &mut self,
         contratos: &[crate::ast::Contrato],
@@ -614,20 +684,103 @@ impl Lowering {
 }
 
 fn valor_param(t: &T, i: usize) -> V {
+    valor_de(t, format!("%p{}", i))
+}
+
+/// `V` a partir de un registro de IR y su tipo (el inverso de `valor_param`).
+fn valor_de(t: &T, r: String) -> V {
     match t {
-        T::Bool => V::Bool(format!("%p{}", i)),
-        T::Dec => V::Dec(format!("%p{}", i)),
-        T::Texto => V::Texto(format!("%p{}", i)),
-        T::Arreglo => V::Arreglo(format!("%p{}", i)),
-        T::Mapa => V::Mapa(format!("%p{}", i)),
-        T::Exacto => V::Exacto(format!("%p{}", i)),
-        T::Enum(c) => V::Enum(format!("%p{}", i), c.clone()),
-        T::Canal => V::Canal(format!("%p{}", i)),
-        T::Closure => V::Closure(format!("%p{}", i)),
-        T::Clase(c) => V::Clase(format!("%p{}", i), c.clone()),
-        T::Funcion => V::Funcion(format!("%p{}", i)),
+        T::Bool => V::Bool(r),
+        T::Dec => V::Dec(r),
+        T::Texto => V::Texto(r),
+        T::Arreglo => V::Arreglo(r),
+        T::Mapa => V::Mapa(r),
+        T::Exacto => V::Exacto(r),
+        T::Enum(c) => V::Enum(r, c.clone()),
+        T::Canal => V::Canal(r),
+        T::Closure => V::Closure(r),
+        T::Clase(c) => V::Clase(r, c.clone()),
+        T::Funcion => V::Funcion(r),
         T::Nulo => V::Nulo,
-        T::Int => V::Int(format!("%p{}", i)),
+        T::Int => V::Int(r),
+    }
+}
+
+/// Junta los interiores de todos los `anterior(expr)` de una condición (en
+/// cualquier posición). La clave de cada snapshot es su forma, así que el orden
+/// no importa.
+fn recoger_anteriores<'a>(e: &'a Expresion, out: &mut Vec<&'a Expresion>) {
+    match e {
+        Expresion::Anterior(inner) => out.push(inner),
+        Expresion::Grupo(x) | Expresion::Unaria { expr: x, .. } | Expresion::Referencia { expr: x, .. } => {
+            recoger_anteriores(x, out)
+        }
+        Expresion::Try(x) | Expresion::Ok(x) | Expresion::Error(x) | Expresion::Algo(x) => {
+            recoger_anteriores(x, out)
+        }
+        Expresion::Binaria {
+            izquierda,
+            derecha,
+            ..
+        } => {
+            recoger_anteriores(izquierda, out);
+            recoger_anteriores(derecha, out);
+        }
+        Expresion::Ternario {
+            condicion,
+            si_verdadero,
+            si_falso,
+        } => {
+            recoger_anteriores(condicion, out);
+            recoger_anteriores(si_verdadero, out);
+            recoger_anteriores(si_falso, out);
+        }
+        Expresion::LlamadaFuncion { argumentos, .. }
+        | Expresion::Instanciacion { argumentos, .. } => {
+            for a in argumentos {
+                recoger_anteriores(a, out);
+            }
+        }
+        Expresion::LlamadaMetodo {
+            objeto,
+            argumentos,
+            ..
+        } => {
+            recoger_anteriores(objeto, out);
+            for a in argumentos {
+                recoger_anteriores(a, out);
+            }
+        }
+        Expresion::AccesoMiembro { objeto, .. } => recoger_anteriores(objeto, out),
+        Expresion::Index { objeto, indice } => {
+            recoger_anteriores(objeto, out);
+            recoger_anteriores(indice, out);
+        }
+        Expresion::Arreglo(items) => {
+            for i in items {
+                recoger_anteriores(i, out);
+            }
+        }
+        Expresion::Mapa(pares) => {
+            for (k, v) in pares {
+                recoger_anteriores(k, out);
+                recoger_anteriores(v, out);
+            }
+        }
+        Expresion::Asignacion { valor, .. } => recoger_anteriores(valor, out),
+        Expresion::AsignacionCampo { valor, objeto, .. } => {
+            recoger_anteriores(objeto, out);
+            recoger_anteriores(valor, out);
+        }
+        Expresion::ArregloFijar { array, valor } => {
+            recoger_anteriores(array, out);
+            recoger_anteriores(valor, out);
+        }
+        Expresion::AsignacionCompuesta { objetivo, valor, .. } => {
+            recoger_anteriores(objetivo, out);
+            recoger_anteriores(valor, out);
+        }
+        _ => {}
     }
 }
 
