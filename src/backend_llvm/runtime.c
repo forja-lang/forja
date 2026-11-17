@@ -80,7 +80,7 @@ void *forja_alloc(int64_t bytes) {
  * como la VM, cada objeto de heap se registra con su tag (y los literales de
  * texto se registran al arrancar, ver `forja_registrar_texto`). Lo no
  * registrado es un escalar. */
-enum { FORJA_T_TEXTO = 1, FORJA_T_ARREGLO = 2 };
+enum { FORJA_T_TEXTO = 1, FORJA_T_ARREGLO = 2, FORJA_T_MAPA = 3 };
 
 typedef struct {
     void **claves;
@@ -186,12 +186,14 @@ static char *forja_dup(const char *s) {
 }
 
 char *forja_concat(const char *a, const char *b) {
-    if (!a) return forja_dup(b ? b : "nulo");
-    if (!b) return forja_dup(a);
-    size_t la = strlen(a), lb = strlen(b);
+    /* Un `Texto` nulo (p. ej. `leer()` al final de la entrada) concatena como
+     * "nulo", igual que la VM: "Hola, " + nulo -> "Hola, nulo". */
+    const char *x = a ? a : "nulo";
+    const char *y = b ? b : "nulo";
+    size_t la = strlen(x), lb = strlen(y);
     char *r = forja_texto_alloc((int64_t)(la + lb + 1));
-    memcpy(r, a, la);
-    memcpy(r + la, b, lb + 1);
+    memcpy(r, x, la);
+    memcpy(r + la, y, lb + 1);
     return r;
 }
 
@@ -595,6 +597,7 @@ void *forja_mapa_nuevo(void) {
     m->cap = 16;
     m->len = 0;
     m->tabla = (ForjaPar *)forja_alloc(m->cap * (int64_t)sizeof(ForjaPar));
+    forja_registrar(m, FORJA_T_MAPA);
     return m;
 }
 
@@ -1048,4 +1051,191 @@ void forja_esperar(int64_t ms) {
     ts.tv_nsec = (ms % 1000) * 1000000;
     nanosleep(&ts, NULL);
 #endif
+}
+
+/* ── entrada/salida de línea ──────────────────────────────────────────── */
+/* `leer()`: una línea de stdin sin el `\n`; al final de la entrada, `nulo`
+ * (NULL), como la VM. */
+char *forja_leer_linea(void) {
+    size_t cap = 128, n = 0;
+    char *buf = (char *)malloc(cap);
+    if (!buf) return NULL;
+    int c;
+    while ((c = fgetc(stdin)) != EOF && c != '\n') {
+        if (n + 1 >= cap) {
+            cap *= 2;
+            char *nuevo = (char *)realloc(buf, cap);
+            if (!nuevo) {
+                free(buf);
+                return NULL;
+            }
+            buf = nuevo;
+        }
+        buf[n++] = (char)c;
+    }
+    if (c == EOF && n == 0) {
+        free(buf);
+        return NULL;
+    }
+    if (n > 0 && buf[n - 1] == '\r') n--;
+    buf[n] = '\0';
+    char *r = forja_texto_alloc((int64_t)n + 1);
+    memcpy(r, buf, n + 1);
+    free(buf);
+    return r;
+}
+
+/* `escribir_linea(s)`: como `escribir` pero con salto de línea. */
+void forja_escribir_linea(const char *s) {
+    fputs(s ? s : "nulo", stdout);
+    fputc('\n', stdout);
+}
+
+/* `unir_elementos(arreglo, separador)`: une las casillas como texto, por tag. */
+char *forja_unir_elementos(void *pv, const char *sep) {
+    ForjaArreglo *a = (ForjaArreglo *)pv;
+    const char *s = sep ? sep : "";
+    if (!a) return forja_dup("nulo");
+    int64_t n = 1;
+    for (int64_t i = 0; i < a->len; i++) {
+        void *dato = (void *)(intptr_t)a->datos[i];
+        switch (forja_tag_de(dato)) {
+            case FORJA_T_ARREGLO:
+            case FORJA_T_TEXTO:
+                n += (int64_t)strlen(forja_tag_de(dato) == FORJA_T_ARREGLO
+                                         ? forja_arreglo_a_texto(dato)
+                                         : (const char *)dato);
+                break;
+            default:
+                n += 24;
+        }
+        if (i) n += (int64_t)strlen(s);
+    }
+    char *r = forja_texto_alloc(n + 1);
+    char *p = r;
+    for (int64_t i = 0; i < a->len; i++) {
+        if (i) {
+            size_t l = strlen(s);
+            memcpy(p, s, l);
+            p += l;
+        }
+        void *dato = (void *)(intptr_t)a->datos[i];
+        int64_t tag = forja_tag_de(dato);
+        if (tag == FORJA_T_ARREGLO) {
+            const char *t = forja_arreglo_a_texto(dato);
+            size_t l = strlen(t);
+            memcpy(p, t, l);
+            p += l;
+        } else if (tag == FORJA_T_TEXTO) {
+            const char *t = (const char *)dato;
+            size_t l = strlen(t);
+            memcpy(p, t, l);
+            p += l;
+        } else {
+            p += sprintf(p, "%lld", (long long)a->datos[i]);
+        }
+    }
+    *p = '\0';
+    return r;
+}
+
+/* `tipo(v)` cuando el tipo estático no alcanza: los objetos se distinguen por su
+ * tag; un escalar sin tag es un entero. */
+char *forja_tipo_de(void *v) {
+    if (!v) return forja_dup("nulo");
+    switch (forja_tag_de(v)) {
+        case FORJA_T_TEXTO:
+            return forja_dup("texto");
+        case FORJA_T_ARREGLO:
+            return forja_dup("arreglo");
+        case FORJA_T_MAPA:
+            return forja_dup("mapa");
+        default:
+            return forja_dup("entero");
+    }
+}
+
+/* ── introspección de mapas (claves/valores/pares) ────────────────────── */
+/* Claves en orden estable: primero las de texto (alfabético) y después las
+ * enteras. `_mapa_valores` sigue el mismo orden y `_mapa_pares` devuelve
+ * `[clave, valor]`. */
+/* Índices de las casillas usadas, con las claves de texto primero. */
+static int64_t mapa_indices(ForjaMapa *m, int64_t **out) {
+    int64_t *idx = (int64_t *)forja_alloc(m->len > 0 ? m->len * 8 : 8);
+    int64_t n = 0;
+    for (int64_t i = 0; i < m->cap; i++) {
+        if (m->tabla[i].usado) idx[n++] = i;
+    }
+    /* selección por clave: texto antes que enteras, cada grupo ordenado */
+    for (int64_t i = 0; i < n; i++) {
+        for (int64_t j = i + 1; j < n; j++) {
+            ForjaPar *a = &m->tabla[idx[i]], *b = &m->tabla[idx[j]];
+            int texto_a = a->clave_texto != NULL, texto_b = b->clave_texto != NULL;
+            int intercambiar = 0;
+            if (!texto_a && texto_b) {
+                intercambiar = 1;
+            } else if (texto_a && texto_b) {
+                intercambiar = strcmp(a->clave_texto, b->clave_texto) > 0;
+            } else if (!texto_a && !texto_b) {
+                intercambiar = a->clave > b->clave;
+            }
+            if (intercambiar) {
+                int64_t t = idx[i];
+                idx[i] = idx[j];
+                idx[j] = t;
+            }
+        }
+    }
+    *out = idx;
+    return n;
+}
+
+void *forja_mapa_claves(void *pm) {
+    ForjaMapa *m = (ForjaMapa *)pm;
+    if (!m) return forja_arreglo_nuevo(0, 1);
+    int64_t *idx;
+    int64_t n = mapa_indices(m, &idx);
+    ForjaArreglo *r = (ForjaArreglo *)forja_arreglo_nuevo(n, 1);
+    for (int64_t i = 0; i < n; i++) {
+        ForjaPar *p = &m->tabla[idx[i]];
+        if (p->clave_texto) {
+            r->datos[i] = (int64_t)(intptr_t)forja_dup(p->clave_texto);
+        } else {
+            char *t = forja_a_texto(p->clave);
+            r->datos[i] = (int64_t)(intptr_t)t;
+        }
+    }
+    return r;
+}
+
+void *forja_mapa_valores(void *pm) {
+    ForjaMapa *m = (ForjaMapa *)pm;
+    if (!m) return forja_arreglo_nuevo(0, 0);
+    int64_t *idx;
+    int64_t n = mapa_indices(m, &idx);
+    ForjaArreglo *r = (ForjaArreglo *)forja_arreglo_nuevo(n, 0);
+    for (int64_t i = 0; i < n; i++) {
+        r->datos[i] = m->tabla[idx[i]].valor;
+    }
+    return r;
+}
+
+void *forja_mapa_pares(void *pm) {
+    ForjaMapa *m = (ForjaMapa *)pm;
+    if (!m) return forja_arreglo_nuevo(0, 0);
+    int64_t *idx;
+    int64_t n = mapa_indices(m, &idx);
+    ForjaArreglo *r = (ForjaArreglo *)forja_arreglo_nuevo(n, 0);
+    for (int64_t i = 0; i < n; i++) {
+        ForjaPar *p = &m->tabla[idx[i]];
+        ForjaArreglo *fila = (ForjaArreglo *)forja_arreglo_nuevo(2, 0);
+        if (p->clave_texto) {
+            fila->datos[0] = (int64_t)(intptr_t)forja_dup(p->clave_texto);
+        } else {
+            fila->datos[0] = p->clave;
+        }
+        fila->datos[1] = p->valor;
+        r->datos[i] = (int64_t)(intptr_t)fila;
+    }
+    return r;
 }
