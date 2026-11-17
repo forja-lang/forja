@@ -4,6 +4,20 @@
 // primitivas sin estado global: texto (NUL-terminated, `char*`), arreglos y
 // tiempo. Todo lo que asigna memoria con `forja_alloc` vive hasta el final del
 // proceso (no hay GC en la ruta nativa todavía).
+//
+// Modelo de memoria (una sola regla): **nada se libera**.
+//   - `forja_alloc` reparte desde bloques de 1 MB (arena); los pedidos grandes
+//     van directo a `calloc`. Los bloques se encadenan en `arena_bloques` para
+//     poder decidir si un i64 apunta a memoria del programa sin desreferenciarlo
+//     (`forja_arreglo_validar`).
+//   - los textos nuevos y los arreglos se registran en `registro` (hash
+//     `ptr -> tag` con linear probing, crece por duplicado). Ese registro es la
+//     única forma de distinguir un objeto de un escalar: los dos viajan en un i64.
+//   - `registro` usa `calloc`/`malloc`, no la arena: es infraestructura del
+//     runtime, no memoria del programa Forja.
+//   - los mapas (`forja_mapa_*`) son lineales con linear probing sobre la arena.
+//   - `FORJA_DEBUG_TAGS=1` aborta si al registro entra algo que no sea texto o
+//     arreglo (ver `forja_registrar`).
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,8 +112,31 @@ static size_t forja_hash_p(const void *p) {
     return (size_t)x;
 }
 
+/* Chequeo opt-in (`FORJA_DEBUG_TAGS=1`). El resto del runtime asume que en el
+ * registro **solo** hay objetos de heap (textos y arreglos): un i64 que cae en
+ * el registro se trata como objeto (`forja_indice_dinamico`,
+ * `forja_a_texto_dinamico`, ...). Si alguien empieza a registrar escalares
+ * (decimales, booleanos) esas operaciones mienten en silencio, asi que aca se
+ * aborta con el motivo. */
+static int forja_debug_tags = -1;
+static int forja_debug_tags_activo(void) {
+    if (forja_debug_tags < 0) {
+        const char *v = getenv("FORJA_DEBUG_TAGS");
+        forja_debug_tags = (v && *v && strcmp(v, "0") != 0) ? 1 : 0;
+    }
+    return forja_debug_tags;
+}
+
 static void forja_registrar(void *p, int64_t tag) {
     if (!p) return;
+    if (forja_debug_tags_activo() && tag != FORJA_T_TEXTO && tag != FORJA_T_ARREGLO) {
+        fprintf(stderr,
+                "forja: FORJA_DEBUG_TAGS=1: se registro como objeto un valor con tag %lld "
+                "(ptr %p). El registro solo admite textos (1) y arreglos (2): los escalares "
+                "no se registran.\n",
+                (long long)tag, p);
+        abort();
+    }
     if ((registro.n + 1) * 2 > registro.cap) {
         int64_t cap = registro.cap ? registro.cap * 2 : 256;
         void **claves = (void **)calloc((size_t)cap, sizeof(void *));
@@ -128,6 +165,12 @@ static void forja_registrar(void *p, int64_t tag) {
     if (!registro.claves[j]) {
         registro.claves[j] = p;
         registro.n++;
+    } else if (registro.tags[j] != tag && forja_debug_tags_activo()) {
+        fprintf(stderr,
+                "forja: FORJA_DEBUG_TAGS=1: el ptr %p estaba registrado con tag %lld y se "
+                "registra como %lld\n",
+                p, (long long)registro.tags[j], (long long)tag);
+        abort();
     }
     registro.tags[j] = tag;
 }

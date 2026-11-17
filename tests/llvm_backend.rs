@@ -1065,3 +1065,245 @@ fn el_lowering_vive_en_el_backend_y_no_hay_legacy() {
         "src/compiler_llvm.rs no debe existir"
     );
 }
+
+#[test]
+fn postcondiciones_abortan_con_el_mensaje_de_la_vm() {
+    // `asegura` se verificaba sólo en la VM: la ruta nativa ignoraba el contrato
+    // y seguía (handoff5 §2, shortcut `sentencias.rs:588`).
+    let fuente = r#"
+funcion doble(x: Entero) -> Entero
+    asegura resultado == x * 3, "tiene que ser el triple"
+{
+    retornar x * 2
+}
+escribir("antes")
+escribir(doble(5))
+escribir("no se llega")
+"#;
+    if let Some((codigo, salida)) = ejecutar_nativo_con_codigo(fuente) {
+        assert!(
+            salida.contains("Error en ejecución: contrato violado: postcondición no se cumple: tiene que ser el triple"),
+            "salida inesperada: {salida}"
+        );
+        assert!(!salida.contains("no se llega"), "siguió tras el contrato");
+        assert_ne!(codigo, 0, "debería abortar");
+    }
+}
+
+#[test]
+fn postcondiciones_con_anterior_y_resultado() {
+    // `anterior(expr)` se captura al entrar; `resultado` es el valor devuelto.
+    // Los tres contratos se cumplen, así que el programa termina bien.
+    let fuente = r#"
+funcion duplicar(x: Entero) -> Entero
+    requiere x > 0
+    asegura resultado == anterior(x) * 2
+{
+    retornar x * 2
+}
+funcion raiz(n: Entero) -> Entero
+    asegura resultado >= 0
+    asegura resultado * resultado <= n
+    asegura (resultado + 1) * (resultado + 1) > n
+{
+    variable i = 0
+    mientras (i * i <= n) {
+        i = i + 1
+    }
+    retornar i - 1
+}
+escribir(duplicar(7))
+escribir(raiz(25))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "14\n5");
+    }
+}
+
+#[test]
+fn postcondicion_de_metodo_usa_anterior_del_campo() {
+    let fuente = r#"
+clase Contador {
+    variable
+    valor: Entero
+
+    constructor() {
+        este.valor = 0
+    }
+
+    funcion incrementar()
+        asegura este.valor == anterior(este.valor) + 1
+    {
+        este.valor = este.valor + 1
+    }
+}
+variable c = nuevo Contador()
+c.incrementar()
+c.incrementar()
+escribir(c.valor)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "2");
+    }
+}
+
+#[test]
+fn postcondicion_de_metodo_que_falla_aborta() {
+    let fuente = r#"
+clase Caja {
+    variable
+    n: Entero
+
+    constructor(n: Entero) {
+        este.n = n
+    }
+
+    funcion romper()
+        asegura este.n == 99, "el campo tiene que quedar en 99"
+    {
+        este.n = este.n + 1
+    }
+}
+variable c = nuevo Caja(1)
+c.romper()
+escribir("no se llega")
+"#;
+    if let Some((codigo, salida)) = ejecutar_nativo_con_codigo(fuente) {
+        assert!(
+            salida.contains("postcondición no se cumple: el campo tiene que quedar en 99"),
+            "salida inesperada: {salida}"
+        );
+        assert!(!salida.contains("no se llega"), "siguió tras el contrato");
+        assert_ne!(codigo, 0, "debería abortar");
+    }
+}
+
+#[test]
+fn closure_que_devuelve_texto_se_llama_por_su_firma() {
+    // Antes la llamada asumía `i64(i64, …)`: una closure que devuelve texto
+    // salía por bits y se imprimía un número (handoff5 §2, shortcut 1108).
+    let fuente = r#"
+funcion main() {
+    variable f = func(n: Entero) { retornar "n=" + n }
+    escribir(f(7))
+    variable g = func(a: Entero, b: Entero) { retornar a * b }
+    escribir(g(3, 4))
+    variable h = func(x: Texto) { retornar x + "!" }
+    escribir(h("hola"))
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "n=7\n12\nhola!");
+    }
+}
+
+#[test]
+fn llamada_indirecta_usa_la_firma_de_la_funcion() {
+    // `variable op = restar` + `op(9, 4)`: antes se asumía i64(i64, …) y el
+    // retorno se tomaba como entero aunque devolviera texto (handoff5 §2, 1134).
+    let fuente = r#"
+funcion restar(a: Entero, b: Entero) -> Entero {
+    retornar a - b
+}
+funcion nombrar(x: Texto) -> Texto {
+    retornar "Hola " + x
+}
+funcion main() {
+    variable op = restar
+    escribir(op(9, 4))
+    variable saludo = nombrar
+    escribir(saludo("Ana"))
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "5\nHola Ana");
+    }
+}
+
+#[test]
+fn nulo_vs_cero_en_texto_queda_documentado() {
+    // handoff5 §1.4. Lo que **sí** anda: un `Texto` nulo concatena "nulo"
+    // (igual que la VM). Lo que no: `variable n = nulo` sin anotación se tipa
+    // `Entero`, así que la casilla es el 0 y se imprime "0" donde la VM dice
+    // "nulo". Es el mismo agujero que `nulo`/`0` (handoff4 §3.1): se cierra
+    // cuando haya valores con tag. Si esto empieza a fallar, es que se arregló:
+    // actualizar también el `shortcut:` y este comentario.
+    let fuente = r#"
+funcion main() {
+    variable t: Texto
+    variable n = nulo
+    escribir("x" + n)
+    escribir(t + "y")
+    escribir("a" + t)
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim().replace("\r\n", "\n"), "x0\nnuloy\nanulo");
+    }
+}
+
+#[test]
+fn debug_tags_no_aborta_en_un_programa_normal() {
+    // `FORJA_DEBUG_TAGS=1` (handoff5 §1.5) aborta si al registro de objetos
+    // entra algo que no sea texto o arreglo. Un programa con textos, arreglos y
+    // escalares mezclados tiene que correr igual: los escalares no se registran.
+    let fuente = r#"
+funcion main() {
+    variable nombres = ["ana", "beto"]
+    variable i = 0
+    mientras (i < longitud(nombres)) {
+        escribir(nombres[i] + " " + i)
+        i = i + 1
+    }
+    variable frase = "hola" + 2.5
+    escribir(frase)
+    escribir(longitud(frase))
+}
+main()
+"#;
+    if !hay_clang() {
+        return;
+    }
+    let directorio: PathBuf = std::env::temp_dir().join(format!(
+        "forja_llvm_dbg_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&directorio).expect("dir temporal");
+    let ll = directorio.join("main.ll");
+    let rt = directorio.join("forja_rt.c");
+    let exe = directorio.join(if cfg!(windows) { "main.exe" } else { "main" });
+    std::fs::write(&ll, ir(fuente)).expect("escribir .ll");
+    std::fs::write(&rt, forja::backend_llvm::RUNTIME_C).expect("escribir runtime");
+    let compilado = Command::new("clang")
+        .args(["-O1", "-w"])
+        .arg("-o")
+        .arg(&exe)
+        .arg(&ll)
+        .arg(&rt)
+        .output()
+        .expect("clang");
+    assert!(
+        compilado.status.success(),
+        "clang falló:\n{}",
+        String::from_utf8_lossy(&compilado.stderr)
+    );
+    let corrida = Command::new(&exe)
+        .env("FORJA_DEBUG_TAGS", "1")
+        .output()
+        .expect("ejecutar");
+    let _ = std::fs::remove_dir_all(&directorio);
+    let salida = String::from_utf8_lossy(&corrida.stdout).replace("\r\n", "\n");
+    assert_eq!(corrida.status.code(), Some(0), "abortó: {salida}");
+    assert!(
+        !salida.contains("FORJA_DEBUG_TAGS"),
+        "el chequeo se disparó: {salida}"
+    );
+    assert!(salida.starts_with("ana 0"), "salida inesperada: {salida}");
+}

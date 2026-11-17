@@ -228,6 +228,17 @@ pub struct Lowering {
     metodos_param: std::collections::HashSet<String>,
     /// Funciones que devuelven un parámetro de tipo (`funcion f<T>(x: T) -> T`).
     funciones_param: std::collections::HashSet<String>,
+    /// Firma `(parámetros, retorno)` del closure creado en cada registro
+    /// (`%vN`) y de la variable que lo guarda. Sin esto la llamada asumía
+    /// `i64(i64, …)` y una closure que devuelve texto daba un entero.
+    firmas_closure: HashMap<String, (Vec<T>, T)>,
+    /// Postcondiciones (`asegura`) del cuerpo en curso: se verifican antes de
+    /// cada `retornar`, con `resultado` ya vinculado.
+    postcondiciones: Vec<crate::ast::Contrato>,
+    /// Snapshots de `anterior(expr)` tomados al entrar, por forma de la
+    /// expresión (`{:?}` de su interior): el mismo `anterior(x)` produce la
+    /// misma clave, así que repetirlo no duplica slots y el orden no importa.
+    anteriores: HashMap<String, (String, T)>,
     /// Parámetros declarados con un parámetro de tipo (`x: T`): la casilla es
     /// i64 y el argumento viaja con sus bits tal cual. Clave `nombre:índice`.
     params_dinamicos: std::collections::HashSet<String>,
@@ -366,6 +377,9 @@ impl Lowering {
             arreglos_arreglo: HashMap::new(),
             metodos_param: std::collections::HashSet::new(),
             funciones_param: std::collections::HashSet::new(),
+            firmas_closure: HashMap::new(),
+            postcondiciones: Vec::new(),
+            anteriores: HashMap::new(),
             params_dinamicos: std::collections::HashSet::new(),
             ret_dinamico: false,
             derive_mostrar: std::collections::HashSet::new(),
@@ -712,7 +726,7 @@ impl Lowering {
                     enlace_nombre,
                     ..
                 } => {
-                    let params = self.tipos_params(nombre, parametros, cuerpo);
+                    let params = self.tipos_params(None, nombre, parametros, cuerpo);
                     for (i, p) in parametros.iter().enumerate() {
                         if matches!(p.tipo, Some(Tipo::Parametro(_))) {
                             self.params_dinamicos.insert(format!("{nombre}:{i}"));
@@ -796,7 +810,8 @@ impl Lowering {
                             } else {
                                 m.nombre.clone()
                             };
-                            let params = self.tipos_params(&clave, &m.parametros, &m.cuerpo);
+                            let params =
+                                self.tipos_params(Some(nombre), &clave, &m.parametros, &m.cuerpo);
                             if matches!(m.tipo_retorno, Some(Tipo::Parametro(_))) {
                                 // Con la clase en la clave: el `-> T` de `Caja<T>`
                                 // no vuelve «incierto» el `-> Booleano` de
@@ -812,7 +827,7 @@ impl Lowering {
                                         .insert(format!("{nombre}::{}:{i}", m.nombre));
                                 }
                             }
-                            (m.nombre.clone(), params, self.retorno_metodo(m))
+                            (m.nombre.clone(), params, self.retorno_metodo(nombre, m))
                         })
                         .collect();
                     let c = self.clases.entry(nombre.clone()).or_default();
@@ -830,8 +845,17 @@ impl Lowering {
                     let ms: Vec<(String, Vec<T>, T)> = metodos
                         .iter()
                         .map(|m| {
-                            let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
-                            (m.nombre.clone(), params, self.retorno_metodo(m))
+                            let params = self.tipos_params(
+                                Some(clase_nombre),
+                                &m.nombre,
+                                &m.parametros,
+                                &m.cuerpo,
+                            );
+                            (
+                                m.nombre.clone(),
+                                params,
+                                self.retorno_metodo(clase_nombre, m),
+                            )
                         })
                         .collect();
                     self.clases
@@ -1001,9 +1025,13 @@ impl Lowering {
                     .cloned()
                     .unwrap_or((Vec::new(), T::Int));
                 let _ = tipo_retorno;
-                let precondiciones = match d {
-                    Declaracion::Funcion { precondiciones, .. } => precondiciones.as_slice(),
-                    _ => &[],
+                let (precondiciones, postcondiciones) = match d {
+                    Declaracion::Funcion {
+                        precondiciones,
+                        postcondiciones,
+                        ..
+                    } => (precondiciones.as_slice(), postcondiciones.as_slice()),
+                    _ => (&[][..], &[][..]),
                 };
                 self.funcion(
                     nombre,
@@ -1011,6 +1039,7 @@ impl Lowering {
                     &params,
                     ret.clone(),
                     precondiciones,
+                    postcondiciones,
                     cuerpo,
                 )?;
             }
@@ -1165,7 +1194,7 @@ impl Lowering {
 
     /// Retorno de un método: anotado o, si no, el del primer `retornar` (los
     /// métodos de `implementa` suelen devolver el propio arreglo sin anotar).
-    fn retorno_metodo(&self, m: &Metodo) -> T {
+    fn retorno_metodo(&self, clase: &str, m: &Metodo) -> T {
         if m.nombre == "constructor" || m.nombre == "nuevo" {
             return T::Nulo;
         }
@@ -1174,7 +1203,7 @@ impl Lowering {
         if matches!(m.tipo_retorno, Some(Tipo::Parametro(_))) {
             return T::Int;
         }
-        let params = self.tipos_params(&m.nombre, &m.parametros, &m.cuerpo);
+        let params = self.tipos_params(Some(clase), &m.nombre, &m.parametros, &m.cuerpo);
         self.tipo_declarado(&m.tipo_retorno)
             .or_else(|| self.inferir_retorno(&m.cuerpo, &m.parametros, &params))
             .unwrap_or(T::Nulo)
@@ -1184,13 +1213,14 @@ impl Lowering {
     /// hace falta para saber de qué tipo es lo que se le asigna a un campo).
     fn pistas_de(
         &self,
+        clase: &str,
         nombre: &str,
         parametros: &[Parametro],
         cuerpo: &[Declaracion],
     ) -> HashMap<String, T> {
         let mut pistas: HashMap<String, T> = HashMap::new();
         self.preescanear_tipos(cuerpo, &mut pistas);
-        let tipos = self.tipos_params(nombre, parametros, cuerpo);
+        let tipos = self.tipos_params(Some(clase), nombre, parametros, cuerpo);
         for (i, p) in parametros.iter().enumerate() {
             if let Some(t) = tipos.get(i) {
                 pistas.insert(p.nombre.clone(), t.clone());
@@ -1331,7 +1361,7 @@ impl Lowering {
                         } else {
                             m.nombre.clone()
                         };
-                        let pistas = self.pistas_de(&clave, &m.parametros, &m.cuerpo);
+                        let pistas = self.pistas_de(nombre, &clave, &m.parametros, &m.cuerpo);
                         en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
                     }
                 }
@@ -1346,7 +1376,7 @@ impl Lowering {
                         } else {
                             m.nombre.clone()
                         };
-                        let pistas = self.pistas_de(&clave, &m.parametros, &m.cuerpo);
+                        let pistas = self.pistas_de(clase_nombre, &clave, &m.parametros, &m.cuerpo);
                         en_sentencias(&m.cuerpo, campo, &pistas, &mut tipos);
                     }
                 }
@@ -1378,11 +1408,17 @@ impl Lowering {
     /// era la dirección del arreglo.
     fn tipos_params(
         &self,
+        clase: Option<&str>,
         nombre: &str,
         parametros: &[Parametro],
         cuerpo: &[Declaracion],
     ) -> Vec<T> {
-        let por_llamada = self.evidencia.get(nombre).cloned().unwrap_or_default();
+        let por_llamada = self
+            .evidencia
+            .get(&clave_de_evidencia(clase, nombre))
+            .or_else(|| self.evidencia.get(nombre))
+            .cloned()
+            .unwrap_or_default();
         parametros
             .iter()
             .enumerate()
@@ -1746,6 +1782,25 @@ impl Lowering {
     }
 }
 
+/// `V` a partir de un registro de IR y su tipo (el inverso de `valor_param`).
+fn valor_de(t: &T, r: String) -> V {
+    match t {
+        T::Bool => V::Bool(r),
+        T::Dec => V::Dec(r),
+        T::Texto => V::Texto(r),
+        T::Arreglo => V::Arreglo(r),
+        T::Mapa => V::Mapa(r),
+        T::Exacto => V::Exacto(r),
+        T::Enum(c) => V::Enum(r, c.clone()),
+        T::Canal => V::Canal(r),
+        T::Closure => V::Closure(r),
+        T::Clase(c) => V::Clase(r, c.clone()),
+        T::Funcion => V::Funcion(r),
+        T::Nulo => V::Nulo,
+        T::Int => V::Int(r),
+    }
+}
+
 fn cero(t: &T) -> &'static str {
     match t {
         T::Dec => "0.000000e+00",
@@ -2009,12 +2064,17 @@ fn es_arreglo_de_textos(e: &Expresion, vars_texto: &std::collections::HashSet<St
 }
 
 /// Tipos **no-Entero** que llegan a cada parámetro en las llamadas del programa,
-/// por nombre de función/método (las llamadas a métodos se buscan por nombre,
-/// punteadas incluidas: `x.metodo(...)`). Sólo cuenta lo que se ve por la forma
-/// del argumento y exige que todas las llamadas coincidan.
+/// por nombre de función/método. Sólo cuenta lo que se ve por la forma del
+/// argumento (o por la variable de la que sale) y exige que todas las llamadas
+/// coincidan.
 ///
-/// shortcut: no distingue la clase del método (dos clases con el mismo nombre de
-/// método comparten evidencia) ni mira argumentos que son variables.
+/// Las llamadas a métodos se anotan dos veces: por el nombre pelado (`insertar`)
+/// y, si el receptor tiene tipo estático, por `Clase::metodo` (`Cola::insertar`).
+/// El segundo es el que manda: dos clases con el mismo nombre de método no se
+/// contaminan entre sí (antes sí, y el método quedaba sin evidencia).
+///
+/// shortcut: sólo se mira la forma del argumento, no el tipo del receptor que
+/// llega a un parámetro libre. Upgrade: junto con los valores con tag.
 #[allow(clippy::type_complexity)]
 fn evidencia_de_llamadas(
     decls: &[Declaracion],
@@ -2088,7 +2148,29 @@ fn evidencia_de_llamadas(
         retornos: &HashMap<String, T>,
     ) {
         // Las llamadas punteadas (`x.metodo`) se registran sin el receptor.
-        let clave = nombre.rsplit('.').next().unwrap_or(nombre).to_string();
+        anotar_clave(
+            mapa,
+            en_conflicto,
+            vars,
+            args_por_llamada,
+            vars_texto,
+            nombre.rsplit('.').next().unwrap_or(nombre),
+            args,
+            retornos,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn anotar_clave(
+        mapa: &mut HashMap<String, Vec<Option<T>>>,
+        en_conflicto: &mut std::collections::HashSet<(String, usize)>,
+        vars: &HashMap<String, T>,
+        args_por_llamada: &mut HashMap<String, Vec<Expresion>>,
+        vars_texto: &std::collections::HashSet<String>,
+        clave: &str,
+        args: &[Expresion],
+        retornos: &HashMap<String, T>,
+    ) {
+        let clave = clave.to_string();
         args_por_llamada.insert(clave.clone(), args.to_vec());
         let _ = &vars_texto;
         let entrada = mapa.entry(clave.clone()).or_default();
@@ -2165,6 +2247,21 @@ fn evidencia_de_llamadas(
                     argumentos,
                     retornos,
                 );
+                // Y con la clase del receptor, que es la clave que se consulta
+                // al compilar el método (`Cola::insertar`). Sin tipo estático
+                // del receptor queda sólo la clave pelada.
+                if let Some(T::Clase(c)) = tipo_arg(objeto, vars, retornos) {
+                    anotar_clave(
+                        mapa,
+                        en_conflicto,
+                        vars,
+                        args_por_llamada,
+                        cadenas_texto,
+                        &format!("{c}::{metodo}"),
+                        argumentos,
+                        retornos,
+                    );
+                }
                 en_expr(
                     objeto,
                     mapa,
@@ -2695,6 +2792,17 @@ fn evidencia_de_llamadas(
         }
     }
     (mapa, texto)
+}
+
+/// Clave con la que se busca la evidencia de un parámetro: `Clase::metodo`
+/// cuando se conoce la clase (`tipos_params` prueba primero ésa y después la
+/// pelada), o el nombre tal cual si no.
+fn clave_de_evidencia(clase: Option<&str>, nombre: &str) -> String {
+    match clase {
+        // Los constructores ya llevan la clase (`constructor@Clase`).
+        Some(c) if !nombre.contains('@') => format!("{c}::{nombre}"),
+        _ => nombre.to_string(),
+    }
 }
 
 /// Unifica los tipos de retorno de varias implementaciones de un mismo método.
