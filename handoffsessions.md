@@ -617,3 +617,24 @@ Commits: `1f46e623` (+ los anteriores)
   **`baseline.json` sigue sin regenerar**: los `rust_ms` de una corrida a otra bailan
   (ffi 45 → 104, erroresanidados 1265 → 1506), así que hornear este momento deja ratios
   irreales; los tiempos de Forja sí son estables.
+
+### 2026-11-18 18:40 — `Resultado.valor`/`.error` y destructuring acotado
+Commits: `18bde9d1` (+ su corrección)
+
+- Medido (release del worktree, `ejemplos` en `bf02c32`): paridad →
+  **180 coinciden · 0 difieren · 54 no bajan · 6 no terminan · 4 error · 0 revientan**.
+  `llvm_backend` 56, `llvm_runtime` 3, `lib` 129, `corpus` 299, `runtime` 102, clippy limpio.
+- Cambió:
+  - `r.valor` / `r.error` sobre un `Resultado` en una variable: payload de la variante
+    cuando corresponde y `nulo` si no, con el tipo de la firma de la función (así
+    `dec_err.error.mensaje` se resuelve como campo de clase). **`214_codificacion` baja a
+    nativo y coincide con la VM.**
+  - `variable x, y = f()` reparte casillas del arreglo cuando su tipo se conoce; si el
+    arreglo viene de un `-> auto` (mixto) se sigue rechazando: imprimir bien `falso` y
+    `3.14` desde una casilla sin tipo es el **encajado de escalares (§9)**, no un bug de
+    una línea. `102_generico_intercambiar` queda en "no baja" por eso, medido: con el
+    reparto "incierto" imprime `(0, Activo)` y `(100, 3)` donde la VM imprime
+    `(falso, Activo)` y `(100, 3.14)`.
+- Abierto: `109` (campo sin tipo con texto) y `102` (casilla de arreglo mixto) son el mismo
+  §9 bloqueado por producto; grupo B (red/JSON/SQLite/hash) y F (`seleccionar`), GUI y apps
+  siguen fuera de alcance del plan.
