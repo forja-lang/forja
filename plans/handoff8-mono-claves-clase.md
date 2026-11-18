@@ -16,11 +16,12 @@ Mergeado con `--no-ff` en `0b2cc95c`. Único conflicto: `scripts/paridad-exclusi
 (ambos lados agregaron entradas) → se conservaron las dos. El WIP de las otras
 sesiones se guardó en stash y se devolvió con `pop --index` después del merge.
 
-`native/atajos` (worktree `C:/Users/gaucho/forja-shortcuts`) **sigue sin mergear**:
-5 commits de backend nativo más (`a502dcfb` evidencia por clase+método,
+`native/atajos` (worktree `C:/Users/gaucho/forja-shortcuts`) también mergeado
+después, en `bcb671f4` (sin conflictos): `a502dcfb` evidencia por clase+método,
 `80a3cbde` `asegura` antes de cada retorno, `13798a3c` firma de closures,
-`135cc66a` test `nulo` vs `0`, `d6824c56` `FORJA_DEBUG_TAGS`). Decisión de quien
-lleve esa sesión: mergear o no.
+`135cc66a` test `nulo` vs `0`, `d6824c56` `FORJA_DEBUG_TAGS`. Verificado con la
+misma batería: paridad igual (154 · 0 · 116 · 0 revientan), `llvm_backend` 48/48,
+`lib` 129, `corpus` 299.
 
 ## Arreglos de esta sesión (`fef2883d`)
 
@@ -62,5 +63,4 @@ texto envuelto: `...español.nulo`) y `153_ahorcado` (elige palabra con
 - `nulo` vs `0`: `r[b]` da `0` donde la VM da `nulo` (handoff4 §3.1, sigue
   pendiente el modelo de valores con tag).
 - `212`-style dobles índices siguen dependiendo del tag en runtime.
-- `native/atajos` sin mergear (ver arriba).
-- `origin/main` está 26 commits atrás: nadie pusheó.
+- `main` está pusheado (`460fe98f`). Las ramas `native/*` quedaron ya dentro.
