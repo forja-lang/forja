@@ -582,3 +582,38 @@ Commits: `940feba3` (+ los de la entrada anterior)
   requiere registrar el nombre por clase y decidir qué es "objeto" sin una tabla por
   instancia (que reintroduciría el costo de `parseo`). Queda como el próximo proyecto del
   backend nativo, con estos dos ejemplos como criterio de aceptación.
+
+### 2026-11-18 18:20 — modelos de objetos, canales y pines de submódulos
+Commits: `1f46e623` (+ los anteriores)
+
+- Medido (release del worktree, `ejemplos` en `bf02c32`): paridad →
+  **180 coinciden · 0 difieren · 55 no bajan · 6 no terminan · 4 error · 0 revientan**.
+  `llvm_backend` 56, `llvm_runtime` 3, `lib` 129, `corpus` 299, `runtime` 102, clippy limpio.
+- Cambió:
+  - `tipo(v)` por el modelo de la VM: clase/enum → `"objeto"`, canal → `"arreglo"`, y el
+    valor se evalúa **una sola vez** (antes `tipo_estatico(Ok(1))` se quedaba en Entero y el
+    runtime contestaba "texto"). `-> Resultado`/`-> Opcion` sin genéricos se tipan como los
+    enums del preludio (era por qué `variable r = con_timeout_async(...)` se imprimía como
+    puntero). Los canales llevan cabecera con magia `0xFF…` (imposible en un texto UTF-8) y
+    `forja_tag_de` los distingue sin tabla por instancia: `tipo(canal)` → "objeto" y repr
+    `[<CanalEmisor>,<CanalReceptor>]`. **`216_concurrencia` sale de las exclusiones y coincide.**
+  - `tests/llvm_runtime.rs`: el directorio temporal usa contador (en Windows dos tests en
+    paralelo compartían directorio y se pisaban el `main.c`).
+  - **Pines de submódulo**: `compiler/forja-syntax` (`d8a2fcd`), `library/std` (`fa305bf`),
+    `library/wasm` (`e46b72c`) y `library/android` (`2cb0127`) no estaban en `origin`; se
+    trajeron de los clones locales y se pushearon (FF sobre `origin/main`). **Un clon limpio
+    ya resuelve los 14 gitlinks.**
+- Abierto (los dos últimos ejemplos con causa propia):
+  - `214_codificacion`: `dec1.valor` / `dec_err.error.mensaje` sobre un `Resultado`. Es acceso
+    a miembro dinámico sobre un enum: `valor` = payload del `Ok`, `error` = payload del
+    `Error` (nulo si no corresponde), con los tipos que ya guarda `resultado_fn`. Contenido,
+    ~30 líneas en `AccesoMiembro`.
+  - `102_generico_intercambiar`: `variable a, b = ...` sólo se soporta para `canal()`.
+  - `109`: campo sin tipo con texto (§9, bloqueado). Grupo B (red/JSON/SQLite/hash) y F
+    (`seleccionar`), GUI y apps: fuera de alcance por plan.
+- Bench (máquina quieta): `parseo` 576 ms · 1.06x (baseline 546 · 1.03); `dispatch` 1.02,
+  `memcache` 0.97, `vectores` 1.33, `overflowpanic` 0.63, `hash` 1.40, `erroresanidados` 0.22,
+  `concurrencia` 1.05, `stress` 0.51. El script dice "✅ ratios dentro de la baseline".
+  **`baseline.json` sigue sin regenerar**: los `rust_ms` de una corrida a otra bailan
+  (ffi 45 → 104, erroresanidados 1265 → 1506), así que hornear este momento deja ratios
+  irreales; los tiempos de Forja sí son estables.
