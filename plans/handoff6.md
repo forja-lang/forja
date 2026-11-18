@@ -100,17 +100,29 @@ Números medidos (Windows x64, `RUSTC_WRAPPER=`):
    111 s, TLS 43 s, `qr`): **decisión tomada = no** por ahora (requiere
    `#[cfg(feature)]` en nativos y widgets, con stubs). Reabrir sólo si molesta;
    orden de corte en `plans/COMPILACION-GUI.md`.
-7. **`patches/xilem`, `patches/masonry`, `patches/copypasta`**: sincronizados a
-   `66c8893`; el runtime usa `main` (`9f504ae`). No se aplican (romperían tipos).
-   Si se quieren, hay que resincronizar el fork.
+7. **`patches`** — **hecho** (2026-11-17): `masonry_winit` resincronizado a xilem
+   `9f504ae` + los dos cambios de Forja (verificado con `diff -r` contra el
+   checkout de cargo: no sobra nada) y **pusheado** a
+   `github.com/forja-lang/patches` (`564658e`). `patches` pasó a ser **submódulo**:
+   el `[patch]` de la raíz apunta a `patches/masonry_winit`, que estaba en
+   `.gitignore`, así que un clon limpio y el CI no compilaban la GUI.
+   `patches/xilem`, `masonry` y `copypasta` siguen viejos y sin cablear (no se
+   aplican).
 8. **`library/wasm-gui` y `library/gui-dom`** verificados el 2026-11-17:
    `cargo check --target wasm32-unknown-unknown` en verde (antes no compilaban por
    `Valor::Nulo()` en `salir_app`). Falta probarlos en un navegador.
-9. **Evaluador vs VM** (`forja-interprete` + `tests/paridad_vm.rs`): dos dialectos
-   que hay que mantener en paridad. Es el mayor obstáculo para "Forja en Forja";
-   el siguiente paso lógico es que la VM y el evaluador compartan el núcleo.
-10. **`gui_nativa.rs` (~7,8k líneas)**: candidato a dividir por dominio
-    (layouts, widgets, callbacks, view wrappers).
+9. **Evaluador vs VM** — **Fases 0-3 de B16 hechas**: hay **un** intérprete
+   (`forja-interprete`) para las dos GUIs; `gui-rt` y `wasm-gui` sólo dibujan y
+   traducen eventos, y los nativos salen de `forja-native` (registro compartido
+   con la VM). La paridad VM ↔ evaluador la fija `tests/paridad_vm.rs`
+   (12 programas, sin divergencias conocidas). Queda la **Fase 4** (widgets como
+   valores, B12/B15), que es otro plan; y la VM sigue aparte por diseño (D1).
+10. **`gui_nativa.rs` (8,5k líneas)** — **hecho** (2026-11-17): partido por dominio
+    en `gui_nativa.rs` (estado, probes de ancho, arranque, Android y tests,
+    1,7k líneas), `gui_nativa/layout_nativo.rs` (enum `Layout` + `expr_a_layout` +
+    `extraer_layout` + helpers, 4,1k) y `gui_nativa/vista_nativa.rs`
+    (`layout_a_vista`, 2,8k). Movimiento mecánico con `pub use` en el padre: las
+    rutas públicas no cambian.
 11. **Android**: `construir_y_ejecutar_android` compila pero no se probó en
     dispositivo. `cargo check --target aarch64-linux-android` falla en este
     entorno por `libsqlite3-sys`/`ring` (necesitan NDK/cc configurado), no por el
@@ -118,8 +130,11 @@ Números medidos (Windows x64, `RUSTC_WRAPPER=`):
 12. **CI**: ya está: `workspace-tests` instala las cabeceras de winit/wayland e
     incluye `forja-gui-rt` con `--workspace` a propósito (así corre
     `tests/estado_y_layout.rs`).
-13. **`target/debug` pesa 38 GB** (dejó 46 GB libres en C:). No se borró: es el
-    caché del build.
+13. **`target/debug` pesaba 43 GB** — **borrado** (2026-11-17): el disco pasó de
+    22 GB a 76 GB libres. Se reconstruyeron `target/debug/forja.exe` y
+    `forja-rt-gui.exe` (los que usa la CLI). `target/rt` (1,5 GB) y el caché de
+    cargo para GUI (`~/.cache/forja-gui-target`) siguen intactos para que
+    `destino: nativo` no tarde 10 minutos.
 
 ---
 
