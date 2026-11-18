@@ -140,7 +140,7 @@ escribir("r = " + b)
 {ir_local}"
     );
     assert!(
-        ir_local.contains("%a.0 = alloca i64"),
+        ir_local.contains("= alloca i64") && ir_local.contains("%a."),
         "falta alloca de a:
 {ir_local}"
     );
@@ -1306,4 +1306,83 @@ main()
         "el chequeo se disparó: {salida}"
     );
     assert!(salida.starts_with("ana 0"), "salida inesperada: {salida}");
+}
+
+#[test]
+fn retorno_con_nulo_en_una_rama_no_declara_void() {
+    // `retornar nulo` en una rama dejaba el `define` en `void` mientras el
+    // cuerpo devolvía un valor (`i64`/`ptr`), y clang rechazaba el módulo
+    // (`193_json_basico`, `165_numeros_complejos`, `166_matrices`).
+    let fuente = r#"
+funcion f(cond) {
+    si (cond) { retornar nulo }
+    retornar "hola"
+}
+escribir("v=" + f(falso))
+"#;
+    let ir = ir(fuente);
+    assert!(
+        !ir.contains("define void @f("),
+        "f quedó `void` con ramas que devuelven valor:\n{ir}"
+    );
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "v=hola");
+    }
+}
+
+#[test]
+fn global_que_arranca_en_nulo_se_tipa_por_la_asignacion() {
+    // `variable g = nulo` seguido de `g = nuevo C()` dentro de una función: el
+    // global era `i64` y el `store` de un puntero no compilaba (`171_singleton`).
+    let fuente = r#"
+clase C {
+    x
+    constructor() { este.x = 7 }
+    funcion v() -> Entero { retornar este.x }
+}
+variable g = nulo
+funcion usar() {
+    si (g == nulo) { g = nuevo C() }
+}
+usar()
+escribir(g.v())
+"#;
+    let ir = ir(fuente);
+    assert!(
+        ir.contains("@g_g = internal global ptr null"),
+        "el global @g_g no se tipó como puntero:\n{ir}"
+    );
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "7");
+    }
+}
+
+#[test]
+fn slots_locales_con_el_mismo_nombre_no_colisionan() {
+    // Dos `variable _ = …` en bloques distintos compartían etiqueta y el
+    // módulo definía `%_.N` dos veces (`201_login_gui`).
+    let fuente = r#"
+funcion dame() { retornar 1 }
+funcion main() {
+    si (verdadero) { variable _ = dame() }
+    si (falso) { variable _ = dame() }
+    escribir("fin")
+}
+main()
+"#;
+    let ir = ir(fuente);
+    let mut vistos = std::collections::HashSet::new();
+    for l in ir.lines() {
+        let t = l.trim();
+        if let Some(resto) = t.strip_prefix('%') {
+            if let Some(nombre) = resto.split_whitespace().next() {
+                if t.contains("= alloca") && !vistos.insert(nombre.to_string()) {
+                    panic!("slot `%{nombre}` definido dos veces:\n{ir}");
+                }
+            }
+        }
+    }
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "fin");
+    }
 }

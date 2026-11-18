@@ -476,6 +476,10 @@ impl Lowering {
     }
 
     fn alloca(&mut self, t: &T, nombre: &str) -> String {
+        // El contador se incrementa acá: dos slots del mismo nombre (`_` de un
+        // descarte) en la misma etiqueta colisionaban (`201_login_gui`: `%_.98`
+        // definido dos veces).
+        self.lc += 1;
         let slot = format!("%{}.{}", nombre, self.lc);
         let _ = writeln!(
             self.prologo,
@@ -980,6 +984,11 @@ impl Lowering {
                 ultima_declaracion.insert(nombre.as_str(), i);
             }
         }
+        // Tipos que se le asignan a cada nombre en todo el programa (dentro y
+        // fuera de funciones): un global que arranca en `nulo` se tipa con el
+        // primer valor concreto que recibe.
+        let mut pistas_top: HashMap<String, T> = HashMap::new();
+        self.preescanear_tipos(decls, &mut pistas_top);
         // Se guardan en orden de fuente: un `variable a = 1` seguido de
         // `variable b = a + 1` necesita inicializarse en ese orden, sea global o
         // local (`@forja_init` los emite así).
@@ -995,12 +1004,25 @@ impl Lowering {
                 if ultima_declaracion.get(nombre.as_str()).copied() != Some(idx) {
                     continue; // redeclarado más adelante (programa del usuario)
                 }
-                let t = self.tipo_declarado(tipo).unwrap_or_else(|| {
+                let mut t = self.tipo_declarado(tipo).unwrap_or_else(|| {
                     valor
                         .as_ref()
                         .map(|v| self.tipo_estatico(v))
                         .unwrap_or(T::Int)
                 });
+                // `variable x = nulo` y después `x = nuevo C()`: el global se
+                // tipa con el primer valor concreto que se le asigna (la misma
+                // regla que los locales). Sin esto el global era `i64` y se
+                // guardaba un puntero en él (`171`).
+                if t == T::Nulo {
+                    if let Some(concreto) = pistas_top
+                        .get(nombre)
+                        .cloned()
+                        .or_else(|| self.tipo_asignado_en_funciones(decls, nombre))
+                    {
+                        t = concreto;
+                    }
+                }
                 self.tipos_top.insert(nombre.clone(), t.clone());
                 if usados_en_funciones.contains(nombre) {
                     let _ = writeln!(
@@ -1588,6 +1610,26 @@ impl Lowering {
         self.preescanear_tipos(cuerpo, &mut locales);
         let mut retornos = Vec::new();
         recoger(self, cuerpo, params, tipos, &locales, &mut retornos);
+        // `retornar nulo` en una rama no vuelve `void` a la función: el nulo es
+        // el 0 del slot y las demás ramas ya tienen su tipo (`193`/`parsear`
+        // declaraba `void` y devolvía `i64`).
+        let con_valor: Vec<T> = retornos
+            .iter()
+            .filter(|t| **t != T::Nulo)
+            .cloned()
+            .collect();
+        if !con_valor.is_empty() {
+            if let Some(t) = unificar_retorno(&con_valor) {
+                return Some(t);
+            }
+            // Ramas que devuelven cosas distintas pero todas punteros (`Texto`
+            // en una, `Arreglo` en otra): el nativo pasa el puntero tal cual y
+            // el runtime decide por el tag. Antes ganaba el primer `retornar
+            // nulo` y la función quedaba `void` devolviendo `i64` (`193`).
+            if con_valor.iter().all(|t| t.llvm().to_llvm_ir() == "ptr") {
+                return con_valor.first().cloned();
+            }
+        }
         // Todas las ramas tienen que caber en el tipo: una que devuelve el
         // arreglo manda sobre otra que devuelve un entero.
         unificar_retorno(&retornos).or_else(|| retornos.first().cloned())
@@ -1645,6 +1687,59 @@ impl Lowering {
             }
             other => self.tipo_estatico(other),
         }
+    }
+
+    /// Primer tipo concreto que se le asigna a un global desde dentro de una
+    /// función o método (`171`: `variable g = nulo` … `g = nuevo C()`).
+    fn tipo_asignado_en_funciones(&self, decls: &[Declaracion], nombre: &str) -> Option<T> {
+        fn en_cuerpo(self_: &Lowering, cuerpo: &[Declaracion], nombre: &str, out: &mut Option<T>) {
+            for d in cuerpo {
+                if out.is_some() {
+                    return;
+                }
+                match d {
+                    Declaracion::Asignacion {
+                        nombre: n, valor, ..
+                    } if n == nombre => {
+                        let t = self_.tipo_estatico(valor);
+                        if t != T::Nulo && t != T::Int {
+                            *out = Some(t);
+                        }
+                    }
+                    Declaracion::Si {
+                        bloque_verdadero,
+                        bloque_falso,
+                        ..
+                    } => {
+                        en_cuerpo(self_, bloque_verdadero, nombre, out);
+                        if let Some(b) = bloque_falso {
+                            en_cuerpo(self_, b, nombre, out);
+                        }
+                    }
+                    Declaracion::Mientras { bloque, .. }
+                    | Declaracion::Repetir { bloque, .. }
+                    | Declaracion::Para { bloque, .. } => en_cuerpo(self_, bloque, nombre, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut out = None;
+        for d in decls {
+            match d {
+                Declaracion::Funcion { cuerpo, .. } => en_cuerpo(self, cuerpo, nombre, &mut out),
+                Declaracion::Clase { metodos, .. }
+                | Declaracion::Implementacion { metodos, .. } => {
+                    for m in metodos {
+                        en_cuerpo(self, &m.cuerpo, nombre, &mut out);
+                    }
+                }
+                _ => {}
+            }
+            if out.is_some() {
+                break;
+            }
+        }
+        out
     }
 
     fn preescanear_tipos(&self, cuerpo: &[Declaracion], out: &mut HashMap<String, T>) {
