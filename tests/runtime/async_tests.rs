@@ -258,7 +258,9 @@ fn test_async_hilo_sin_retorno() {
             hilo {
                 escribir("desde hilo")
             }
-            esperar(100)
+            // Margen amplio: el test comprueba que el hilo corre, no su latencia
+            // (con 100 ms fallaba en maquinas cargadas).
+            esperar(500)
             escribir("fin")
         }
         main()
