@@ -5,6 +5,7 @@ impl NativoRegistro {
         // ─── Archivos ────────────────────────────────────────────────────
         self.registrar("_archivo_leer", nativo_archivo_leer);
         self.registrar("_archivo_escribir", nativo_archivo_escribir);
+        self.registrar("_archivo_agregar", nativo_archivo_agregar);
         self.registrar("_archivo_existe", nativo_archivo_existe);
         self.registrar("_archivo_eliminar", nativo_archivo_eliminar);
         self.registrar("_archivo_copiar", nativo_archivo_copiar);
@@ -52,6 +53,45 @@ pub fn nativo_archivo_leer(
             eprintln!("[archivo] {}: {}", codigo_error_archivo(&e), e);
             Ok(ValorFast::entero(-1))
         }
+    }
+}
+
+/// `_archivo_agregar(ruta, contenido)` → 0 si agregó, -1 si falló.
+///
+/// Crea el archivo si no existe. Es lo que hace falta para logs: escribir
+/// siempre trunca, así que sin esto no había forma de apilar líneas.
+pub fn nativo_archivo_agregar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_archivo_agregar requiere 2 argumentos: ruta (texto), contenido (texto)".into(),
+        ));
+    }
+    let ruta = obtener_texto(vm, args[0])?;
+    let contenido = obtener_texto(vm, args[1])?;
+    if ruta.trim().is_empty() {
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
+    }
+    if let Err(e) = vm.sandbox_fs().verificar_escritura(&ruta) {
+        return Err(ErrFast::TipoInv(format!("Sandbox: {}", e)));
+    }
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&ruta)
+    {
+        Ok(mut archivo) => {
+            use std::io::Write;
+            match archivo.write_all(contenido.as_bytes()) {
+                Ok(_) => Ok(ValorFast::entero(0)),
+                Err(_) => Ok(ValorFast::entero(-1)),
+            }
+        }
+        Err(_) => Ok(ValorFast::entero(-1)),
     }
 }
 

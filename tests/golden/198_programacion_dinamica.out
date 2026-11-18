@@ -10,12 +10,12 @@
 
 --- Problema de la Mochila (0/1 Knapsack) ---
   Items: (peso, valor)
-    01: (2, 3)
-    11: (3, 4)
-    21: (4, 5)
-    31: (5, 6)
+    1: (2, 3)
+    2: (3, 4)
+    3: (4, 5)
+    4: (5, 6)
   Capacidad: 8
-  Valor máximo: 0
+  Valor máximo: 10
 
 La programación dinámica es útil para:
   • Problemas con subestructura óptima

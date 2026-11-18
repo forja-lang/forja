@@ -404,6 +404,18 @@ escribir(suma(10, 5))   // 15
 escribir(resta(10, 5))  // 5
 ```
 
+Los imports se **inlinan** en un mismo espacio de nombres. Para que no haya
+sorpresas silenciosas:
+
+- Si dos módulos importados exportan el mismo nombre, llamalo con el módulo
+  adelante (`toml.parsear(...)`, no `parsear(...)`): la llamada sin calificar es
+  un error de compilación.
+- Cada módulo conserva su propia versión de ese nombre, así que la llamada
+  calificada siempre va al módulo que nombrás.
+- Dos módulos importados no pueden declarar la misma **clase** distinta, ni la
+  misma **constante** con valores distintos (las que tienen el mismo valor sí
+  conviven).
+
 ---
 
 ## 16. `verdadero` / `falso`

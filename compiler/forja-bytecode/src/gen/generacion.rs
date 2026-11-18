@@ -261,6 +261,19 @@ impl GeneradorBytecode {
             .any(|ambito| ambito.contains(nombre))
     }
 
+    /// Declara `nombre` en el ámbito local actual.
+    ///
+    /// El bytecode de un binding de `coincidir` usa `Guardar(nombre)` y reserva
+    /// su slot en `var_indices`, pero sin esto `es_variable_visible` no lo veía:
+    /// si el nombre coincidía con una función, `Identificador` se compilaba como
+    /// *valor de función* y `caso Ok(tablas)` + `a_texto(tablas)` imprimía la
+    /// palabra "tablas" en vez de la lista.
+    pub(crate) fn declarar_local(&mut self, nombre: &str) {
+        if let Some(ambito) = self.pila_locales.last_mut() {
+            ambito.insert(nombre.to_string());
+        }
+    }
+
     /// variables libres del cuerpo de un closure que son **locales** del
     /// ámbito envolvente. Los globales no se capturan: se leen en tiempo de
     /// llamada.
@@ -412,6 +425,7 @@ impl GeneradorBytecode {
                         self.var_counter += 1;
                         idx
                     });
+                    self.declarar_local(nombre);
                     self.emitir(Opcode::Guardar(Arc::from(nombre.as_str())));
                 }
                 Patron::Ignorar => {

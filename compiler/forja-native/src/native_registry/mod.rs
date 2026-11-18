@@ -99,6 +99,84 @@ pub type FuncionNativa = fn(&mut dyn Anfitrion, &[ValorFast]) -> Result<ValorFas
 // NativoRegistro
 // ═════════════════════════════════════════════════════════════════════════
 
+/// Crea un objeto de clase `clase` con campos con nombre, en el mismo orden
+/// que `valores`.
+///
+/// Los campos tienen que quedar registrados en la forma: un objeto nativo con
+/// `campos_vec` pero sin nombres en su forma hace que `obj.campo` devuelva
+/// nulo (bug de `SalidaProceso.stdout`, `ReportePerfilado.iteraciones`, etc.).
+pub fn objeto_con_campos(
+    vm: &mut dyn Anfitrion,
+    clase: &str,
+    nombres: &[&str],
+    valores: Vec<ValorFast>,
+) -> ValorFast {
+    use crate::descriptor_clase::{DescriptorClase, FormaCampos};
+
+    let sym = vm.tabla_simbolos().internar(clase);
+    let mut campos = Vec::with_capacity(nombres.len());
+    for nombre in nombres {
+        campos.push(vm.tabla_simbolos().internar(nombre));
+    }
+
+    // `ObtenerCampo` consulta el descriptor de clase; los campos tienen que
+    // estar ahí o `obj.campo` devuelve nulo.
+    let mut indices = Vec::with_capacity(campos.len());
+    {
+        let desc = vm
+            .clase_descriptors()
+            .entry(sym)
+            .or_insert_with(|| DescriptorClase {
+                nombre: sym,
+                forma: FormaCampos::nuevo(),
+                mro: vec![sym],
+                metodos: HashMap::new(),
+                rasgos: Vec::new(),
+            });
+        for campo in &campos {
+            match desc.forma.obtener_indice(*campo) {
+                Some(pos) => indices.push(pos),
+                None => indices.push(desc.forma.agregar_campo(*campo)),
+            }
+        }
+    }
+
+    // Forma (shape) para los caminos que usan `registro_formas`.
+    let mut id_forma = vm.registro_formas().obtener_o_crear(sym);
+    for campo in &campos {
+        let (nueva, _) = vm
+            .registro_formas()
+            .agregar_campo_dinamico(id_forma, *campo);
+        id_forma = nueva;
+    }
+
+    // Ubicar cada valor en la posición que le dio el descriptor.
+    let mut por_indice: Vec<Option<ValorFast>> =
+        vec![None; indices.iter().max().map_or(0, |m| m + 1)];
+    for (i, valor) in valores.into_iter().enumerate() {
+        if let Some(pos) = indices.get(i) {
+            if *pos >= por_indice.len() {
+                por_indice.resize(*pos + 1, None);
+            }
+            por_indice[*pos] = Some(valor);
+        }
+    }
+    let campos_vec = por_indice
+        .into_iter()
+        .map(|v| v.unwrap_or(ValorFast::nulo()))
+        .collect();
+
+    let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
+    obj.campos_vec = campos_vec;
+    let obj_idx = vm.reservar_objeto(obj);
+    let idx = obj_idx as usize;
+    let formas = vm.formas_objeto_mut();
+    if idx < formas.len() {
+        formas[idx] = id_forma;
+    }
+    ValorFast::objeto(obj_idx)
+}
+
 pub struct NativoRegistro {
     /// TablaSimbolos local para internar nombres → IdSimbolo (lookup O(1))
     tabla_simbolos: TablaSimbolos,
@@ -261,6 +339,12 @@ impl NativoRegistro {
         self.registrar("_ffi_llamar_texto", crate::ffi::nativo_ffi_llamar_texto);
         self.registrar("_ffi_buscar_funcion", crate::ffi::nativo_ffi_buscar_funcion);
         self.registrar("_ffi_llamar", crate::ffi::nativo_ffi_llamar);
+        self.registrar(
+            "_ffi_cargar_libreria",
+            crate::ffi::nativo_ffi_cargar_libreria,
+        );
+        self.registrar("_ffi_liberar", crate::ffi::nativo_ffi_liberar);
+        self.registrar("_ffi_esta_cargada", crate::ffi::nativo_ffi_esta_cargada);
     }
 }
 

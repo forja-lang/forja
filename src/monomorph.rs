@@ -101,6 +101,11 @@ pub struct Monomorphizer {
     pub specialized_functions: Vec<Declaracion>,
     /// Clases especializadas generadas
     pub specialized_classes: Vec<Declaracion>,
+    /// `cuerpo::variable` → nombre de la clase especializada que la construye
+    /// (`variable cola = nuevo Cola()` + `cola.encolar("x")` → `Cola_Texto`).
+    var_especializada: HashMap<String, String>,
+    /// Cuerpo en el que se está renombrando (`funcion`, `Clase::metodo`).
+    scope: String,
 }
 
 /// Función genérica extraída
@@ -145,6 +150,8 @@ impl Monomorphizer {
             instantiations: Vec::new(),
             specialized_functions: Vec::new(),
             specialized_classes: Vec::new(),
+            var_especializada: HashMap::new(),
+            scope: String::new(),
         }
     }
 
@@ -410,8 +417,361 @@ impl Monomorphizer {
                     None
                 }
             }
+            Expresion::Grupo(inner) => self.infer_concrete_from_expr(inner),
+            Expresion::Unaria { expr, .. } => self.infer_concrete_from_expr(expr),
+            // `"Cliente " + i` es Texto y `1.0 + x` es Decimal: sin esto no se
+            // puede inferir el tipo de un método genérico por su uso.
+            Expresion::Binaria {
+                izquierda,
+                derecha,
+                operador,
+            } => {
+                use crate::ast::Operador;
+                let a = self.infer_concrete_from_expr(izquierda);
+                let b = self.infer_concrete_from_expr(derecha);
+                if a == Some(ConcreteTipo::Decimal) || b == Some(ConcreteTipo::Decimal) {
+                    return Some(ConcreteTipo::Decimal);
+                }
+                if matches!(operador, Operador::Suma)
+                    && (a == Some(ConcreteTipo::Texto) || b == Some(ConcreteTipo::Texto))
+                {
+                    return Some(ConcreteTipo::Texto);
+                }
+                match (a, b) {
+                    (Some(ConcreteTipo::Entero), Some(ConcreteTipo::Entero)) => {
+                        Some(ConcreteTipo::Entero)
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
+    }
+
+    /// Infiere los tipos de una clase genérica por **cómo se la usa**:
+    /// `variable cola = nuevo Cola()` no dice nada, pero `cola.encolar("x")`
+    /// sí (el parámetro es `T` y llega un `Texto`). Sin esto la clase queda
+    /// genérica, `T` se resuelve como `Entero` y `frente() -> T` devuelve un
+    /// número donde la VM devuelve el texto (`144`).
+    ///
+    /// La inferencia es **por variable**: la misma clase usada con textos en una
+    /// función y con enteros en otra da dos especializaciones (`Cola_Texto` y
+    /// `Cola_Entero`), igual que la VM, que decide por el valor.
+    pub fn recolectar_por_uso(&mut self, programa: &Programa) {
+        for d in &programa.declaraciones {
+            match d {
+                Declaracion::Funcion { nombre, cuerpo, .. } => {
+                    self.por_uso_cuerpo(nombre, cuerpo);
+                }
+                Declaracion::Clase {
+                    nombre, metodos, ..
+                } => {
+                    for m in metodos {
+                        let scope = format!("{nombre}::{}", m.nombre);
+                        self.por_uso_cuerpo(&scope, &m.cuerpo);
+                    }
+                }
+                Declaracion::Implementacion {
+                    clase_nombre,
+                    metodos,
+                    ..
+                } => {
+                    for m in metodos {
+                        let scope = format!("{clase_nombre}::{}", m.nombre);
+                        self.por_uso_cuerpo(&scope, &m.cuerpo);
+                    }
+                }
+                Declaracion::Variable { .. } => {
+                    self.por_uso_cuerpo("", std::slice::from_ref(d));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn por_uso_cuerpo(&mut self, scope: &str, cuerpo: &[Declaracion]) {
+        // 1. Variables que construyen una clase genérica.
+        let mut vars: HashMap<String, String> = HashMap::new();
+        for d in cuerpo {
+            Self::buscar_bindings(d, &mut vars);
+        }
+        if vars.is_empty() {
+            return;
+        }
+        vars.retain(|_, clase| {
+            self.generic_classes
+                .get(clase)
+                .map(|g| !g.parametros_tipo.is_empty())
+                .unwrap_or(false)
+        });
+        if vars.is_empty() {
+            return;
+        }
+        // 2. Llamadas a métodos de esas variables: infieren sus parámetros de tipo.
+        let mut inferidos: HashMap<String, Vec<(String, ConcreteTipo)>> = HashMap::new();
+        for d in cuerpo {
+            Self::buscar_usos(d, &mut |objeto, metodo, argumentos| {
+                if !vars.contains_key(objeto) {
+                    return;
+                }
+                let clase = vars[objeto].clone();
+                let Some(generic) = self.generic_classes.get(&clase) else {
+                    return;
+                };
+                let Some(m) = generic.metodos.iter().find(|m| m.nombre == metodo) else {
+                    return;
+                };
+                for (i, p) in m.parametros.iter().enumerate() {
+                    let Some(tipo) = &p.tipo else { continue };
+                    let Some(arg) = argumentos.get(i) else {
+                        continue;
+                    };
+                    let Some(ct) = self.infer_concrete_from_expr(arg) else {
+                        continue;
+                    };
+                    let entrada = inferidos.entry(objeto.to_string()).or_default();
+                    for pt in &generic.parametros_tipo {
+                        if tipo_usa_parametro(tipo, &pt.nombre)
+                            && !entrada.iter().any(|(n, _)| n == &pt.nombre)
+                        {
+                            entrada.push((pt.nombre.clone(), ct.clone()));
+                        }
+                    }
+                }
+            });
+        }
+        // 3. Instanciación por variable + renombrado del `nuevo`.
+        for (var, argumentos_tipo) in inferidos {
+            if argumentos_tipo.is_empty() {
+                continue;
+            }
+            let clase = vars[&var].clone();
+            let specialized_name = format!(
+                "{}_{}",
+                clase,
+                argumentos_tipo
+                    .iter()
+                    .map(|(_, ct)| ct.name())
+                    .collect::<Vec<_>>()
+                    .join("_")
+            );
+            self.var_especializada
+                .insert(format!("{scope}::{var}"), specialized_name.clone());
+            if !self
+                .instantiations
+                .iter()
+                .any(|i| i.specialized_name == specialized_name)
+            {
+                self.instantiations.push(GenericInstantiation {
+                    original_name: clase,
+                    argumentos_tipo,
+                    specialized_name,
+                });
+            }
+        }
+    }
+
+    /// `variable x = nuevo Clase(...)` con `Clase` genérica.
+    fn buscar_bindings(d: &Declaracion, vars: &mut HashMap<String, String>) {
+        match d {
+            Declaracion::Variable {
+                nombre,
+                valor: Some(Expresion::Instanciacion { clase, .. }),
+                ..
+            } => {
+                vars.insert(nombre.clone(), clase.clone());
+            }
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
+                for s in bloque_verdadero {
+                    Self::buscar_bindings(s, vars);
+                }
+                if let Some(b) = bloque_falso {
+                    for s in b {
+                        Self::buscar_bindings(s, vars);
+                    }
+                }
+            }
+            Declaracion::Mientras { bloque, .. }
+            | Declaracion::Repetir { bloque, .. }
+            | Declaracion::Para { bloque, .. } => {
+                for s in bloque {
+                    Self::buscar_bindings(s, vars);
+                }
+            }
+            Declaracion::Cuando { cuerpo, .. } => {
+                for s in cuerpo {
+                    Self::buscar_bindings(s, vars);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Recorre un cuerpo y avisa de cada `objeto.metodo(args)`.
+    fn buscar_usos(d: &Declaracion, f: &mut impl FnMut(&str, &str, &[Expresion])) {
+        fn en_expr(e: &Expresion, f: &mut impl FnMut(&str, &str, &[Expresion])) {
+            match e {
+                Expresion::LlamadaMetodo {
+                    objeto,
+                    metodo,
+                    argumentos,
+                } => {
+                    if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
+                        f(nombre, metodo, argumentos);
+                    }
+                    en_expr(objeto, f);
+                    for a in argumentos {
+                        en_expr(a, f);
+                    }
+                }
+                Expresion::LlamadaFuncion { argumentos, .. } => {
+                    for a in argumentos {
+                        en_expr(a, f);
+                    }
+                }
+                Expresion::Binaria {
+                    izquierda, derecha, ..
+                } => {
+                    en_expr(izquierda, f);
+                    en_expr(derecha, f);
+                }
+                Expresion::Unaria { expr, .. }
+                | Expresion::Grupo(expr)
+                | Expresion::AccesoMiembro { objeto: expr, .. }
+                | Expresion::Try(expr)
+                | Expresion::Ok(expr)
+                | Expresion::Error(expr)
+                | Expresion::Algo(expr) => en_expr(expr, f),
+                Expresion::Ternario {
+                    condicion,
+                    si_verdadero,
+                    si_falso,
+                } => {
+                    en_expr(condicion, f);
+                    en_expr(si_verdadero, f);
+                    en_expr(si_falso, f);
+                }
+                Expresion::Index { objeto, indice } => {
+                    en_expr(objeto, f);
+                    en_expr(indice, f);
+                }
+                Expresion::Arreglo(items) => {
+                    for i in items {
+                        en_expr(i, f);
+                    }
+                }
+                Expresion::Mapa(pares) => {
+                    for (k, v) in pares {
+                        en_expr(k, f);
+                        en_expr(v, f);
+                    }
+                }
+                Expresion::Asignacion { valor, .. }
+                | Expresion::AsignacionCampo { valor, .. }
+                | Expresion::AsignacionCompuesta { valor, .. }
+                | Expresion::ArregloFijar { valor, .. } => en_expr(valor, f),
+                Expresion::Instanciacion { argumentos, .. } => {
+                    for a in argumentos {
+                        en_expr(a, f);
+                    }
+                }
+                Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
+                    for s in cuerpo {
+                        en_decl(s, f);
+                    }
+                }
+                Expresion::Coincidir { expr, brazos } => {
+                    en_expr(expr, f);
+                    for b in brazos {
+                        for s in &b.cuerpo {
+                            en_decl(s, f);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn en_decl(d: &Declaracion, f: &mut impl FnMut(&str, &str, &[Expresion])) {
+            match d {
+                Declaracion::Variable { valor: Some(v), .. } => en_expr(v, f),
+                Declaracion::Expresion(e) => en_expr(e, f),
+                Declaracion::Asignacion { valor, .. }
+                | Declaracion::AsignacionMiembro { valor, .. }
+                | Declaracion::AsignacionIndex { valor, .. } => en_expr(valor, f),
+                Declaracion::Retornar { valor: Some(v) } => en_expr(v, f),
+                // `cola.encolar(x)` como sentencia llega con el nombre punteado
+                // (`LlamadaFuncion { nombre: "cola.encolar" }`), no como
+                // `LlamadaMetodo`: sin esto la inferencia por uso no ve nada.
+                Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                    if let Some((objeto, metodo)) = nombre.split_once('.') {
+                        f(objeto, metodo, argumentos);
+                    }
+                    for a in argumentos {
+                        en_expr(a, f);
+                    }
+                }
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
+                    en_expr(condicion, f);
+                    for s in bloque_verdadero {
+                        en_decl(s, f);
+                    }
+                    if let Some(b) = bloque_falso {
+                        for s in b {
+                            en_decl(s, f);
+                        }
+                    }
+                }
+                Declaracion::Mientras { condicion, bloque } => {
+                    en_expr(condicion, f);
+                    for s in bloque {
+                        en_decl(s, f);
+                    }
+                }
+                Declaracion::Para {
+                    inicializacion,
+                    condicion,
+                    incremento,
+                    bloque,
+                } => {
+                    if let Some(i) = inicializacion {
+                        en_decl(i, f);
+                    }
+                    if let Some(c) = condicion {
+                        en_expr(c, f);
+                    }
+                    if let Some(i) = incremento {
+                        en_decl(i, f);
+                    }
+                    for s in bloque {
+                        en_decl(s, f);
+                    }
+                }
+                Declaracion::Repetir { cantidad, bloque } => {
+                    en_expr(cantidad, f);
+                    for s in bloque {
+                        en_decl(s, f);
+                    }
+                }
+                Declaracion::Cuando {
+                    condicion, cuerpo, ..
+                } => {
+                    en_expr(condicion, f);
+                    for s in cuerpo {
+                        en_decl(s, f);
+                    }
+                }
+                _ => {}
+            }
+        }
+        en_decl(d, f);
     }
 
     /// Fase 3: Generar versiones especializadas
@@ -931,7 +1291,7 @@ impl Monomorphizer {
     /// Renombra los usos a las versiones especializadas (`identidad` →
     /// `identidad_Texto`). Sin esto las especializaciones quedaban sin usar y la
     /// llamada iba a la función genérica (todo `i64`).
-    pub fn aplicar_instantiations(&self, programa: &mut Programa) {
+    pub fn aplicar_instantiations(&mut self, programa: &mut Programa) {
         for d in &mut programa.declaraciones {
             self.renombrar_decl(d);
         }
@@ -958,28 +1318,46 @@ impl Monomorphizer {
             .map(|i| i.specialized_name.clone())
     }
 
-    fn renombrar_decl(&self, d: &mut Declaracion) {
+    fn renombrar_decl(&mut self, d: &mut Declaracion) {
         match d {
-            Declaracion::Funcion { cuerpo, .. } => {
+            Declaracion::Funcion { nombre, cuerpo, .. } => {
+                let previo = std::mem::replace(&mut self.scope, nombre.clone());
                 for s in cuerpo {
                     self.renombrar_decl(s);
                 }
+                self.scope = previo;
             }
-            Declaracion::Clase { metodos, .. } => {
+            Declaracion::Clase {
+                nombre, metodos, ..
+            }
+            | Declaracion::Implementacion {
+                clase_nombre: nombre,
+                metodos,
+                ..
+            } => {
+                let nombre = nombre.clone();
                 for m in metodos {
+                    let previo =
+                        std::mem::replace(&mut self.scope, format!("{nombre}::{}", m.nombre));
                     for s in &mut m.cuerpo {
                         self.renombrar_decl(s);
                     }
+                    self.scope = previo;
                 }
             }
-            Declaracion::Implementacion { metodos, .. } => {
-                for m in metodos {
-                    for s in &mut m.cuerpo {
-                        self.renombrar_decl(s);
+            Declaracion::Variable {
+                nombre,
+                valor: Some(v),
+                ..
+            } => {
+                self.renombrar_expr(v);
+                if let Expresion::Instanciacion { clase, .. } = v {
+                    let clave = format!("{}::{}", self.scope, nombre);
+                    if let Some(nueva) = self.var_especializada.get(&clave) {
+                        *clase = nueva.clone();
                     }
                 }
             }
-            Declaracion::Variable { valor: Some(v), .. } => self.renombrar_expr(v),
             Declaracion::Expresion(valor) => self.renombrar_expr(valor),
             Declaracion::Asignacion { valor, .. }
             | Declaracion::AsignacionMiembro { valor, .. }
@@ -1072,7 +1450,7 @@ impl Monomorphizer {
             .map(|i| i.specialized_name.clone())
     }
 
-    fn renombrar_expr(&self, e: &mut Expresion) {
+    fn renombrar_expr(&mut self, e: &mut Expresion) {
         match e {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 for a in argumentos.iter_mut() {

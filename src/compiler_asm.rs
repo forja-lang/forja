@@ -3666,6 +3666,34 @@ impl CompilerAsm {
             // Si no se pudo resolver, seguir con el nombre original (puede fallar en link)
         }
 
+        // Una llamada a un nombre que no está declarado en el programa y que
+        // este backend no emite terminaba en un `call` a un símbolo
+        // inexistente: gcc fallaba con «undefined reference to `X`», sin decir
+        // qué función de la stdlib lo causaba. Se rechaza en compilación.
+        if !self.funciones_declaraciones.contains_key(nombre) && !self.clases.contains_key(nombre) {
+            let detalle = if nombre.contains('.') {
+                format!(
+                    "no se pudo resolver la llamada a '{}' (¿método de un objeto de tipo desconocido?)",
+                    nombre
+                )
+            } else if nombre.starts_with('_') {
+                format!(
+                    "la primitiva nativa '{}' no tiene equivalente en el backend ASM",
+                    nombre
+                )
+            } else {
+                format!(
+                    "la función '{}' no está declarada en el programa (¿builtin o función de la stdlib sin equivalente en ASM?)",
+                    nombre
+                )
+            };
+            self.emitir_fault(&format!(
+                "{}: compilá con `forja compilar` (ejecutable con bytecode) o `forja run`",
+                detalle
+            ));
+            return;
+        }
+
         // Verificar si la función es candidata a inline
         if self.es_candidata_en_linea_por_nombre(nombre) {
             self.emitir_linea(format!("    // inline {}", nombre));

@@ -129,3 +129,61 @@ fn expresion_gigante_no_crashea() {
         "Expresión grande (100 términos) no debería crashear"
     );
 }
+
+// ──────────────────────────────────────────────
+// Hilos: captura de variables declaradas en múltiple asignación
+// ──────────────────────────────────────────────
+// `variable tx, rx = canal()` declaraba en bytecode pero no en el ámbito del
+// generador, así que `hilo { tx.enviar(..) }` capturaba `tx` como nulo y el
+// receptor del hilo principal se quedaba esperando para siempre.
+#[test]
+fn hilo_captura_variables_de_declaracion_multiple() {
+    let fuente = r#"
+importar "std/io"
+funcion main() {
+    variable tx, rx = canal()
+    variable h = hilo {
+        tx.enviar(21)
+        retornar 0
+    }
+    variable v = rx.recibir()
+    h.unir()
+    escribir(v * 2)
+}
+main()
+"#;
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_desde(fuente, raiz).expect("el programa debe ejecutar");
+    assert_eq!(salida.join("\n"), "42");
+}
+
+// ──────────────────────────────────────────────
+// Asignación a miembro anidado (`a.b.c = valor`)
+// ──────────────────────────────────────────────
+// El parser consumía la cadena `a.b.c` como expresión y dejaba el `=` sin
+// consumir: la asignación se descartaba en silencio.
+#[test]
+fn asignacion_a_miembro_anidado() {
+    let fuente = r#"
+importar "std/io"
+clase Nodo {
+    valor
+    anterior
+}
+clase Lista {
+    cabeza
+    constructor() {
+        este.cabeza = nuevo Nodo()
+    }
+    funcion probar() {
+        este.cabeza.anterior = 7
+        escribir(este.cabeza.anterior)
+    }
+}
+variable l = nuevo Lista()
+l.probar()
+"#;
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let salida = forja::ejecutar_desde(fuente, raiz).expect("el programa debe ejecutar");
+    assert_eq!(salida.join("\n"), "7");
+}

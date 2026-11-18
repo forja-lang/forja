@@ -8,7 +8,25 @@ impl NativoRegistro {
         self.registrar("_env_expandir", nativo_env_expandir);
         self.registrar("_env_parsear_entero", nativo_env_parsear_entero);
         self.registrar("_env_parsear_booleano", nativo_env_parsear_booleano);
+        self.registrar("_env_existe", nativo_env_existe);
+        self.registrar("_env_eliminar", nativo_env_eliminar);
     }
+}
+
+/// `_env_existe(nombre)` → Booleano. Distingue "no definida" de "definida vacía".
+pub fn nativo_env_existe(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nombre = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
+    Ok(ValorFast::booleano(std::env::var_os(&nombre).is_some()))
+}
+
+/// `_env_eliminar(nombre)` → nulo. Borra la variable del proceso.
+pub fn nativo_env_eliminar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let nombre = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
+    std::env::remove_var(&nombre);
+    Ok(ValorFast::nulo())
 }
 pub fn nativo_env_establecer(
     _vm: &mut dyn Anfitrion,

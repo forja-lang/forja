@@ -30,7 +30,64 @@ impl NativoRegistro {
             "_sistema_tiempo_actual_ms",
             crate::native_registry::temporizador::nativo_sistema_tiempo_ms,
         );
+        self.registrar("_sistema_hostname", nativo_sistema_hostname);
+        self.registrar("_sistema_usuario", nativo_sistema_usuario);
+        self.registrar("_sistema_cpus", nativo_sistema_cpus);
+        self.registrar(
+            "_sistema_directorio_temporal",
+            nativo_sistema_directorio_temporal,
+        );
     }
+}
+
+/// `_sistema_hostname()` → nombre de la máquina.
+///
+/// Rust no expone el hostname en std: se usan las variables que ponen el
+/// sistema (`COMPUTERNAME` en Windows, `HOSTNAME` en Unix).
+pub fn nativo_sistema_hostname(
+    vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let nombre = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "desconocido".to_string());
+    let indice = vm.reservar_texto(Arc::from(nombre.as_str()));
+    Ok(ValorFast::texto(indice))
+}
+
+/// `_sistema_usuario()` → usuario que ejecuta el proceso.
+pub fn nativo_sistema_usuario(
+    vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let usuario = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_default();
+    let indice = vm.reservar_texto(Arc::from(usuario.as_str()));
+    Ok(ValorFast::texto(indice))
+}
+
+/// `_sistema_cpus()` → hilos de CPU disponibles.
+pub fn nativo_sistema_cpus(
+    _vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get() as i64)
+        .unwrap_or(1);
+    Ok(ValorFast::entero(cpus))
+}
+
+/// `_sistema_directorio_temporal()` → directorio temporal sin separador final.
+pub fn nativo_sistema_directorio_temporal(
+    vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let ruta = std::env::temp_dir();
+    let texto = ruta.to_string_lossy();
+    let limpio = texto.trim_end_matches(['/', '\\']);
+    let indice = vm.reservar_texto(Arc::from(limpio));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Nombre del sistema operativo (`_sistema_so()`), como lo reporta Rust.

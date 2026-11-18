@@ -51,24 +51,29 @@ pub fn nativo_perfilado_detener(
     let entrada = mapa.entry(etiqueta.clone()).or_insert((0, 0));
     entrada.0 += total_ms as u128;
     entrada.1 += 1;
-    // build ReportePerfilado object
-    let sym = vm.tabla_simbolos().internar("ReportePerfilado");
-    let id_forma = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
-    obj.campos_vec = vec![
-        {
-            let indice = vm.reservar_texto(Arc::from(etiqueta.as_str()));
-            ValorFast::texto(indice)
-        },
-        ValorFast::entero(total_ms),
-        ValorFast::entero(entrada.1 as i64),
-        ValorFast::entero(if entrada.1 > 0 {
-            (entrada.0 / entrada.1 as u128) as i64
-        } else {
-            0
-        }),
-    ];
-    Ok(ValorFast::objeto(vm.reservar_objeto(obj)))
+    // ReportePerfilado con campos accesibles por nombre.
+    let idx_etiqueta = vm.reservar_texto(Arc::from(etiqueta.as_str()));
+    let medio_us = if entrada.1 > 0 {
+        (entrada.0 / entrada.1 as u128) as i64
+    } else {
+        0
+    };
+    Ok(super::objeto_con_campos(
+        vm,
+        "ReportePerfilado",
+        &[
+            "etiqueta",
+            "tiempo_total_ms",
+            "iteraciones",
+            "tiempo_medio_us",
+        ],
+        vec![
+            ValorFast::texto(idx_etiqueta),
+            ValorFast::entero(total_ms),
+            ValorFast::entero(entrada.1 as i64),
+            ValorFast::entero(medio_us),
+        ],
+    ))
 }
 
 pub fn nativo_perfilado_reportes(
@@ -78,23 +83,28 @@ pub fn nativo_perfilado_reportes(
     let mapa = perfil_mapa().lock().unwrap();
     let mut reportes: Vec<ValorFast> = Vec::new();
     for (etiqueta, (tiempo_total, iteraciones)) in mapa.iter() {
-        let sym = vm.tabla_simbolos().internar("ReportePerfilado");
-        let id_forma = vm.registro_formas().obtener_o_crear(sym);
-        let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
-        obj.campos_vec = vec![
-            {
-                let indice = vm.reservar_texto(Arc::from(etiqueta.as_str()));
-                ValorFast::texto(indice)
-            },
-            ValorFast::entero(*tiempo_total as i64),
-            ValorFast::entero(*iteraciones as i64),
-            ValorFast::entero(if *iteraciones > 0 {
-                (*tiempo_total / *iteraciones as u128) as i64
-            } else {
-                0
-            }),
-        ];
-        reportes.push(ValorFast::objeto(vm.reservar_objeto(obj)));
+        let idx_etiqueta = vm.reservar_texto(Arc::from(etiqueta.as_str()));
+        let medio_us = if *iteraciones > 0 {
+            (*tiempo_total / *iteraciones as u128) as i64
+        } else {
+            0
+        };
+        reportes.push(super::objeto_con_campos(
+            vm,
+            "ReportePerfilado",
+            &[
+                "etiqueta",
+                "tiempo_total_ms",
+                "iteraciones",
+                "tiempo_medio_us",
+            ],
+            vec![
+                ValorFast::texto(idx_etiqueta),
+                ValorFast::entero(*tiempo_total as i64),
+                ValorFast::entero(*iteraciones as i64),
+                ValorFast::entero(medio_us),
+            ],
+        ));
     }
     Ok(ValorFast::arreglo(vm.reservar_arr(reportes)))
 }

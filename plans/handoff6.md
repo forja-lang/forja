@@ -182,6 +182,13 @@ compilarlo.
 
 1. ¿Se mantiene `destino: nativo` (transpilar a Rust) o se elimina del todo?
    Hoy está documentado como avanzado y sólo lo usa `forja transpilar`.
+   **Dato nuevo (2026-11-17)**: se verificó de punta a punta con una app que
+   importa un módulo propio — `destino: nativo` en `forja.yaml` compila
+   (`Finished release` ~25 s con caché) y abre la ventana. Para eso hubo que
+   arreglar tres bugs del transpilador (constructor de clases vacío, tipo de
+   campo ignorado, escapes `\n`/`\r`) y resolver los `importar`. Sin esos
+   arreglos la ruta estaba muerta con cualquier programa que usara clases o la
+   stdlib.
 2. ¿`forja ejecutar` de una app GUI debe compilar al vuelo (como ahora) o ser un
    alias explícito de `forja compilar` + ejecutar?
 3. ¿La distribución del runtime debe incluir SQLite/imágenes (hoy sí, encendido

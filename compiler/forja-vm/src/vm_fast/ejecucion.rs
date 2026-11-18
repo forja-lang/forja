@@ -713,6 +713,11 @@ impl ForjaFast {
                         self.empujar_valor(ValorFast::flotante(
                             a.a_flotante() - b.a_entero() as f64,
                         ));
+                    } else if a.es_entero() && b.es_entero() {
+                        // Promoción Entero → Decimal (ver `SumarDecimal`).
+                        self.empujar_valor(ValorFast::flotante(
+                            a.a_entero() as f64 - b.a_entero() as f64,
+                        ));
                     } else {
                         // Des-especializar si tipos no coinciden
                         patch_op = Some(Opcode::Restar);
@@ -745,6 +750,11 @@ impl ForjaFast {
                     } else if a.es_flotante() && b.es_entero() {
                         self.empujar_valor(ValorFast::flotante(
                             a.a_flotante() * b.a_entero() as f64,
+                        ));
+                    } else if a.es_entero() && b.es_entero() {
+                        // Promoción Entero → Decimal (ver `SumarDecimal`).
+                        self.empujar_valor(ValorFast::flotante(
+                            a.a_entero() as f64 * b.a_entero() as f64,
                         ));
                     } else {
                         patch_op = Some(Opcode::Multiplicar);
@@ -825,6 +835,20 @@ impl ForjaFast {
                         }
                         self.empujar_valor(ValorFast::flotante(
                             a.a_flotante() / b.a_entero() as f64,
+                        ));
+                    } else if a.es_entero() && b.es_entero() {
+                        // Promoción Entero → Decimal: `dividir(1, 2700)` con
+                        // parámetros `Decimal` divide en punto flotante, no entera.
+                        if b.a_entero() == 0 {
+                            if self.errores_estrictos {
+                                return Err(ErrFast::DivCero);
+                            }
+                            self.empujar_valor(ValorFast::nulo());
+                            self.ip += 1;
+                            continue;
+                        }
+                        self.empujar_valor(ValorFast::flotante(
+                            a.a_entero() as f64 / b.a_entero() as f64,
                         ));
                     } else {
                         patch_op = Some(Opcode::Dividir);

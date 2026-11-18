@@ -241,6 +241,28 @@ soporta toda la stdlib). Para que la ruta nativa soporte stdlib hay dos caminos:
 Antes de elegir, medir cuántos ejemplos de `ejemplos/` bajan a nativo y cuántos fallan
 sólo por nativas (`bash scripts/paridad-native-vm.sh` de `plans/handoff2.md`).
 
+**Hecho (2026-11-17, camino b, primer tramo).** `runtime.c` implementa las primitivas
+de archivo, entorno y sistema, y el lowering las emite desde una tabla
+(`NATIVAS_STDLIB` en `lowering/expresiones.rs`) con el contrato de `forja-native`
+(`-1`/`nulo` en vez de abortar):
+
+- `_archivo_leer/escribir/agregar/existe/eliminar/tamano` (`std/archivo` completo salvo
+  directorios, binario e `info`).
+- `_env` (obtener), `_env_existe`, `_env_establecer`, `_env_eliminar`.
+- `_sistema_so`, `_sistema_directorio_actual/temporal`, `_sistema_hostname`,
+  `_sistema_usuario`, `_sistema_cpus`, `_sistema_tiempo_actual_ms`, `_sistema_salir`,
+  `_sistema_variable_entorno`.
+- Verificado con `forja run` vs `forja aot` sobre un programa que usa los tres módulos:
+  salida idéntica. Test de compilación:
+  `tests/backends_nativos.rs::llvm_compila_las_nativas_de_archivo_env_y_sistema`.
+- `library/std/archivo.fa`: `existe_archivo` ahora declara `-> Booleano` (sin anotación
+  el nativo la tipaba `Entero` e imprimía `1` en vez de `verdadero`).
+
+Falta del catálogo: directorios (`_directorio_*`), binario, `_archivo_info/copiar/mover`,
+`_env_todos/parsear_*/expandir/cargar_desde_texto`, `_sistema_argumentos`, `_proceso_*`,
+`_json_*`, red/sockets, hilos. `shortcut:` si el catálogo crece, conviene migrar al camino
+(a) en vez de seguir duplicando semántica a mano.
+
 ### 4.3 WASM: compilado pero no ejecutado
 
 `resolver_imports_embebida` (donde también vive el manglado y los chequeos de módulos)

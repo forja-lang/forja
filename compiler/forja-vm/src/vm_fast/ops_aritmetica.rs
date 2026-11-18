@@ -41,6 +41,12 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::flotante(a.a_entero() as f64 + b.a_flotante()));
                 } else if a.es_flotante() && b.es_entero() {
                     self.empujar_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
+                } else if a.es_entero() && b.es_entero() {
+                    // Promoción Entero → Decimal: `Decimal` acepta enteros, así que
+                    // `var d: Decimal = 1; d + 1` tiene que sumar en punto flotante.
+                    self.empujar_valor(ValorFast::flotante(
+                        a.a_entero() as f64 + b.a_entero() as f64,
+                    ));
                 } else {
                     self.empujar_valor(ValorFast::nulo());
                 }

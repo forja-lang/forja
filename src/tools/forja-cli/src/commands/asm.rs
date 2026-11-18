@@ -57,25 +57,11 @@ pub(crate) fn cmd_construir_asm(args: &[String]) {
         format!("{}.{}", entrada_stem, ext)
     });
 
-    let mut lexer = lexer::Lexer::nuevo(&fuente);
-    let tokens = match lexer.tokenize() {
-        Ok(t) => t,
-        Err(errores) => {
-            mostrar_errores(&fuente, &errores, error::json_mode());
-            process::exit(1);
-        }
-    };
-
-    let mut parser = parser::Parser::nuevo(tokens);
-    let programa = match parser.parsear() {
-        Ok(p) => p,
-        Err(errores) => {
-            mostrar_errores(&fuente, &errores, error::json_mode());
-            process::exit(1);
-        }
-    };
-
-    let asm_code = match compiler_asm::compilar_a_asm_con_destino(&programa, destino) {
+    // Mismo punto de entrada que el backend LLVM: imports resueltos y lo
+    // inalcanzable podado. Antes compilaba el AST crudo, así que
+    // `modulo.funcion(...)` llegaba como acceso a miembro (error) y las
+    // funciones de la stdlib no se inlineaban (símbolos indefinidos al enlazar).
+    let asm_code = match forja::compilar_a_asm_desde(&fuente, &raiz_proyecto(), destino) {
         Ok(codigo) => codigo,
         Err(errores) => {
             for err in errores {

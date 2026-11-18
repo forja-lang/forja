@@ -152,3 +152,23 @@ bash scripts/paridad-native-vm.sh   # comparar contra el 148/0 de handoff8 §2
 Pendiente de `handoff5` tras esto: §5 partir `lowering.rs` en módulos (refactor
 grande, toca el archivo que las otras sesiones están moviendo: hacerlo después
 del merge) y §4.2 versionar `plans/` (decisión, ahora hecho: ver commit).
+
+
+## Cierre de la sesión GUI (`01a1eadf`, 2026-11-17, 2da tanda)
+
+- Payload GUI = **AST resuelto en JSON** (`FBA`): módulos propios y stdlib
+  (`importar std/json`, …) viajan inlineados; `resolver_imports` reescribe los
+  alias (`json.parsear` → `parsear`). `FBG`/`FBC` siguen soportados.
+- `forja ejecutar` GUI: `estado:` (snapshot del store vía `--load-state=`) y
+  `recarga:` (reinicia el `.exe` al cambiar cualquier `.fa`).
+- Transpilador: constructor de clases (`este.campo = valor` llega como
+  `Expresion::AsignacionCampo`), tipo declarado de los campos y escapes
+  `
+`/``/`	`; `forja transpilar` y `destino: nativo` resuelven los `importar`.
+- `patches` pasó a **submódulo** (`github.com/forja-lang/patches`): el `[patch]`
+  de la raíz apunta a `patches/masonry_winit`, que estaba en `.gitignore`. El
+  resync a xilem `9f504ae` está commiteado **local**: falta `git push` en
+  `patches/` para que el CI lo pueda clonar.
+- Tests: gui-rt click (2) + `--load-state` (1), aot std/alias (1), ejecucion
+  mtime (1). Verde: forja 129, gui-rt 36+3+12, cli 25+1, driver 8, session 3,
+  interprete 3+4.

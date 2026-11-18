@@ -298,6 +298,9 @@ impl GeneradorBytecode {
                     // Llamar a "Clase.nuevo" con nargs+1 (incluyendo self)
                     let constructor = Arc::from(format!("{}.{}", clase, "nuevo"));
                     self.emitir(Opcode::Llamar(constructor, argumentos.len() + 1));
+                    // El constructor deja su valor de retorno (nulo si no
+                    // retorna nada); se descarta para que quede el objeto.
+                    self.emitir(Opcode::Descartar);
                 }
                 // El objeto queda en el stack para ser asignado a una variable
             }
@@ -374,6 +377,7 @@ impl GeneradorBytecode {
                                 self.var_counter += 1;
                                 idx
                             });
+                            self.declarar_local(nombre);
                             self.emitir(Opcode::Guardar(Arc::from(nombre.as_str())));
                             self.generar_cuerpo_match(&brazo.cuerpo);
                             self.emitir(Opcode::Salto(etiqueta_final));
@@ -432,6 +436,7 @@ impl GeneradorBytecode {
                                                 idx
                                             },
                                         );
+                                        self.declarar_local(var_nombre);
                                         self.emitir(Opcode::Guardar(Arc::from(
                                             var_nombre.as_str(),
                                         )));

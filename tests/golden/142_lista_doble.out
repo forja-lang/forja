@@ -1,8 +1,8 @@
 === Lista Doblemente Enlazada ===
 
 Contenido:
-  Adelante: [1,5,10]
-  Atrás:    [30,20,10]
+  Adelante: [1,5,10,20,30]
+  Atrás:    [30,20,10,5,1]
 
 Tamaño: 5
 La lista doble permite recorrer en ambas direcciones.

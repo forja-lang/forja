@@ -27,6 +27,10 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <direct.h>
+#define getcwd _getcwd
+#else
+#include <unistd.h>
 #endif
 
 /* ── memoria ──────────────────────────────────────────────────────────── */
@@ -1301,4 +1305,176 @@ void *forja_mapa_pares(void *pm) {
         r->datos[i] = (int64_t)(intptr_t)fila;
     }
     return r;
+}
+
+/* ── primitivas de la stdlib (mismas que `forja-native`) ──────────────── */
+/* Los módulos `std/archivo`, `std/env` y `std/sistema` llaman a estas
+ * primitivas y esperan el **centinela -1** en vez de un aborto: un archivo
+ * inexistente es un `Error(...)` manejable, como en la VM. */
+
+/* `_archivo_leer(ruta)`: contenido, o -1. Devuelve el texto como i64 (los bits
+ * del puntero) porque el resultado puede ser `texto` o el entero -1. */
+int64_t forja_archivo_leer(const char *ruta) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "rb");
+    if (!f) return -1;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return -1;
+    }
+    long n = ftell(f);
+    if (n < 0) {
+        fclose(f);
+        return -1;
+    }
+    rewind(f);
+    char *buf = forja_texto_alloc((int64_t)n + 1);
+    size_t leido = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[leido] = '\0';
+    return (int64_t)(intptr_t)buf;
+}
+
+/* `_archivo_escribir(ruta, contenido)` → 0, o -1. */
+int64_t forja_archivo_escribir(const char *ruta, const char *contenido) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "wb");
+    if (!f) return -1;
+    size_t n = contenido ? strlen(contenido) : 0;
+    size_t escrito = n ? fwrite(contenido, 1, n, f) : 0;
+    fclose(f);
+    return escrito == n ? 0 : -1;
+}
+
+/* `_archivo_agregar(ruta, contenido)` → 0, o -1. Crea el archivo si no existe. */
+int64_t forja_archivo_agregar(const char *ruta, const char *contenido) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "ab");
+    if (!f) return -1;
+    size_t n = contenido ? strlen(contenido) : 0;
+    size_t escrito = n ? fwrite(contenido, 1, n, f) : 0;
+    fclose(f);
+    return escrito == n ? 0 : -1;
+}
+
+int64_t forja_archivo_existe(const char *ruta) {
+    FILE *f = ruta && *ruta ? fopen(ruta, "rb") : NULL;
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+/* `_archivo_eliminar(ruta)` → 0, o -1. */
+int64_t forja_archivo_eliminar(const char *ruta) {
+    if (!ruta || !*ruta) return -1;
+    return remove(ruta) == 0 ? 0 : -1;
+}
+
+/* `_archivo_tamano(ruta)` → bytes, o -1. */
+int64_t forja_archivo_tamano(const char *ruta) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "rb");
+    if (!f) return -1;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return -1;
+    }
+    long n = ftell(f);
+    fclose(f);
+    return n < 0 ? -1 : (int64_t)n;
+}
+
+/* `_sistema_variable_entorno(nombre)` → texto, o `nulo` (NULL). */
+char *forja_env_obtener(const char *nombre) {
+    if (!nombre) return NULL;
+    const char *v = getenv(nombre);
+    return v ? forja_dup(v) : NULL;
+}
+
+int64_t forja_env_existe(const char *nombre) {
+    return nombre && getenv(nombre) ? 1 : 0;
+}
+
+void forja_env_establecer(const char *nombre, const char *valor) {
+    if (!nombre) return;
+#ifdef _WIN32
+    _putenv_s(nombre, valor ? valor : "");
+#else
+    setenv(nombre, valor ? valor : "", 1);
+#endif
+}
+
+/* En Windows `_putenv_s(nombre, "")` deja la variable *vacía* (definida), no
+ * ausente: `shortcut:` a diferencia de la VM, `existe_variable` da verdadero
+ * después de `eliminar`; alinear cuando Windows exponga `unsetenv`. */
+void forja_env_eliminar(const char *nombre) {
+    if (!nombre) return;
+#ifdef _WIN32
+    _putenv_s(nombre, "");
+#else
+    unsetenv(nombre);
+#endif
+}
+
+/* `_sistema_so()`: el mismo nombre que `std::env::consts::OS`. */
+char *forja_sistema_so(void) {
+#ifdef _WIN32
+    return forja_dup("windows");
+#elif defined(__APPLE__)
+    return forja_dup("macos");
+#else
+    return forja_dup("linux");
+#endif
+}
+
+char *forja_sistema_directorio_actual(void) {
+    char buf[4096];
+    if (!getcwd(buf, sizeof buf)) return forja_dup("");
+    return forja_dup(buf);
+}
+
+/* Directorio temporal sin separador final (la VM lo recorta igual). */
+char *forja_sistema_directorio_temporal(void) {
+    const char *t = getenv("TEMP");
+    if (!t || !*t) t = getenv("TMP");
+    if (!t || !*t) t = getenv("TMPDIR");
+#ifndef _WIN32
+    if (!t || !*t) t = "/tmp";
+#endif
+    if (!t || !*t) t = ".";
+    size_t n = strlen(t);
+        while (n > 1 && (t[n - 1] == '/' || t[n - 1] == (char)92)) n--;
+    char *r = forja_texto_alloc((int64_t)n + 1);
+    memcpy(r, t, n);
+    r[n] = '\0';
+    return r;
+}
+
+char *forja_sistema_hostname(void) {
+    const char *h = getenv("COMPUTERNAME");
+    if (!h || !*h) h = getenv("HOSTNAME");
+    return forja_dup(h && *h ? h : "desconocido");
+}
+
+char *forja_sistema_usuario(void) {
+    const char *u = getenv("USERNAME");
+    if (!u || !*u) u = getenv("USER");
+    return forja_dup(u ? u : "");
+}
+
+int64_t forja_sistema_cpus(void) {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int64_t)si.dwNumberOfProcessors;
+#else
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? (int64_t)n : 1;
+#endif
+}
+
+/* `_sistema_salir(codigo)`: volcar la salida antes de salir, como la VM. */
+void forja_sistema_salir(int64_t codigo) {
+    fflush(NULL);
+    exit((int)codigo);
 }

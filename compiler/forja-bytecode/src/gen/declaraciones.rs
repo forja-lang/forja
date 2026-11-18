@@ -269,7 +269,13 @@ impl GeneradorBytecode {
 
                 // Retorno implícito: los checks (postcondiciones + invariantes)
                 // van antes del `Retornar`, igual que en un `retornar` explícito.
+                // Se empuja `nulo` para que TODA llamada deje exactamente un
+                // valor en la pila: si una función sin `retornar` no dejaba
+                // nada, un `Descartar` en el llamador (o una llamada en medio
+                // de una expresión) se comía el valor pendiente de arriba
+                // (`${objeto.metodo_void()}` imprimía "nulo" en vez del prefijo).
                 self.emitir_postcondiciones();
+                self.emitir(Opcode::EmpujarNulo);
                 self.emitir(Opcode::Retornar);
                 self.postcondiciones_activas = post_previas;
                 self.anteriores = anteriores_previas;
@@ -487,8 +493,13 @@ impl GeneradorBytecode {
                         self.generar_expresion(arg);
                     }
                     self.emitir(Opcode::Llamar(Arc::from("BD"), argumentos.len()));
+                    // La conexión no se usa como sentencia: sin esto queda un
+                    // valor en la pila y desalinea la de quien llama.
+                    self.emitir(Opcode::Descartar);
                 } else if self.generar_builtin(nombre, argumentos) {
-                    // Built-in function handled
+                    // Los builtins dejan su resultado en la pila; como sentencia
+                    // ese valor no se usa y hay que descartarlo.
+                    self.emitir(Opcode::Descartar);
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → load objeto, push args, CallMethod
                     // Usamos rsplitn para encontrar el ÚLTIMO '.' que separa
@@ -516,6 +527,11 @@ impl GeneradorBytecode {
                         self.generar_expresion(arg);
                     }
                     self.emitir(Opcode::LlamarMetodo(nombre_metodo, argumentos.len()));
+                    // `objeto.metodo(...)` como sentencia deja el valor de retorno
+                    // en la pila; si no se descarta, cada iteración de un bucle
+                    // acumula basura y la llamada siguiente lee argumentos
+                    // corridos (bug: `r.empujar(f(i))` con `f` con bucle).
+                    self.emitir(Opcode::Descartar);
                 } else {
                     let indirecta = self.emitir_callee_si_variable(nombre);
                     // Misma coerción que en `Expresion::LlamadaFuncion`: una
@@ -639,6 +655,14 @@ impl GeneradorBytecode {
                     for varname in variables.iter().rev() {
                         self.emitir(Opcode::Declarar(Arc::from(varname.as_str()), *mutable));
                     }
+                    // Registrar en el ámbito del generador: sin esto, un
+                    // `hilo { tx.enviar(...) }` no veía `tx` (quedaba nulo)
+                    // porque la captura filtra por `pila_locales`.
+                    for varname in variables {
+                        if let Some(ambito) = self.pila_locales.last_mut() {
+                            ambito.insert(varname.clone());
+                        }
+                    }
                 } else {
                     // Caso general: el valor es una tupla/arreglo; desempaquetar
                     // sus elementos en las variables declaradas.
@@ -656,6 +680,11 @@ impl GeneradorBytecode {
                         self.emitir(Opcode::EmpujarEntero(i as i64));
                         self.emitir(Opcode::ObtenerElemento);
                         self.emitir(Opcode::Declarar(Arc::from(var.as_str()), *mutable));
+                    }
+                    for varname in variables {
+                        if let Some(ambito) = self.pila_locales.last_mut() {
+                            ambito.insert(varname.clone());
+                        }
                     }
                 }
             }

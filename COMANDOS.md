@@ -132,9 +132,18 @@ Targets disponibles (clave `arquitectura`):
 
 ### `forja aot|llvm <archivo>` — LLVM IR + ejecutable nativo
 
-Baja el programa a LLVM IR (`runtime.c` + `llc`) o genera el `.ll`. Mismo alcance
-que `forja asm`: stdlib **sin** primitivas nativas. Si el programa necesita una
-nativa, el error lo dice y sugiere `forja compilar` o `forja run`.
+Baja el programa a LLVM IR (`runtime.c` + `llc`) o genera el `.ll`. Alcance:
+Forja puro **más** las primitivas de archivo, entorno y sistema que implementa
+`runtime.c` (mismo contrato que la VM: `-1`/`nulo` en vez de abortar):
+
+- `std/archivo`: leer, escribir, agregar, existe, eliminar, tamaño.
+- `std/env`: `existe_variable`, `establecer`, `eliminar`, `obtener_variable`;
+  las que parsean (`obtener_entero`, `obtener_booleano`) todavía no.
+- `std/sistema`: SO, directorio actual y temporal, hostname, usuario, cpus,
+  `tiempo_ms`, `salir`, `variable_entorno`.
+
+Cualquier otra primitiva (red, hilos, GUI, JSON nativo) se rechaza en
+compilación con un mensaje que sugiere `forja compilar` o `forja run`.
 
 ### `forja transpile|t|transpilar|transpilador <archivo> [directorio]` — Transpilar a Rust
 

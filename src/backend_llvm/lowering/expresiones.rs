@@ -20,6 +20,46 @@ fn lit_double(d: f64) -> String {
     }
 }
 
+/// Primitivas de la stdlib que implementa `runtime.c` con el mismo contrato que
+/// `forja-native` (`_archivo_*` devuelven -1 al fallar, `_env_obtener` devuelve
+/// `nulo`). nombre nativo → (función C, tipos de los argumentos, tipo del valor).
+const NATIVAS_STDLIB: &[(&str, &str, &[T], T)] = &[
+    ("_archivo_leer", "forja_archivo_leer", &[T::Texto], T::Int),
+    (
+        "_archivo_escribir",
+        "forja_archivo_escribir",
+        &[T::Texto, T::Texto],
+        T::Int,
+    ),
+    (
+        "_archivo_agregar",
+        "forja_archivo_agregar",
+        &[T::Texto, T::Texto],
+        T::Int,
+    ),
+    ("_archivo_existe", "forja_archivo_existe", &[T::Texto], T::Bool),
+    (
+        "_archivo_eliminar",
+        "forja_archivo_eliminar",
+        &[T::Texto],
+        T::Int,
+    ),
+    ("_archivo_tamano", "forja_archivo_tamano", &[T::Texto], T::Int),
+    ("_env_existe", "forja_env_existe", &[T::Texto], T::Bool),
+    ("_env_establecer", "forja_env_establecer", &[T::Texto, T::Texto], T::Nulo),
+    ("_env_eliminar", "forja_env_eliminar", &[T::Texto], T::Nulo),
+    ("_env", "forja_env_obtener", &[T::Texto], T::Texto),
+    ("_sistema_variable_entorno", "forja_env_obtener", &[T::Texto], T::Texto),
+    ("_sistema_so", "forja_sistema_so", &[], T::Texto),
+    ("_sistema_directorio_actual", "forja_sistema_directorio_actual", &[], T::Texto),
+    ("_sistema_directorio_temporal", "forja_sistema_directorio_temporal", &[], T::Texto),
+    ("_sistema_hostname", "forja_sistema_hostname", &[], T::Texto),
+    ("_sistema_usuario", "forja_sistema_usuario", &[], T::Texto),
+    ("_sistema_cpus", "forja_sistema_cpus", &[], T::Int),
+    ("_sistema_tiempo_actual_ms", "forja_tiempo_ms", &[], T::Int),
+    ("_sistema_salir", "forja_sistema_salir", &[T::Int], T::Nulo),
+];
+
 impl Lowering {
     pub(super) fn identificador(&mut self, nombre: &str) -> Result<V, String> {
         if let Some(v) = self.vars.get(nombre) {
@@ -1646,6 +1686,38 @@ impl Lowering {
                 self.linea(&format!("br label %{}", fin));
                 self.etiqueta(&fin);
                 V::Nulo
+            }
+            // Primitivas de la stdlib (`_archivo_*`, `_env_*`, `_sistema_*`)
+            // con equivalente en `runtime.c`. Se emite la llamada con los
+            // argumentos coercionados al tipo que declara la tabla.
+            _ if NATIVAS_STDLIB.iter().any(|(n, ..)| *n == nombre) => {
+                let (_, funcion, params, ret) = NATIVAS_STDLIB
+                    .iter()
+                    .find(|(n, ..)| *n == nombre)
+                    .expect("nativa en la tabla");
+                let mut lista = Vec::with_capacity(params.len());
+                for (i, t) in params.iter().enumerate() {
+                    let v = self.arg(nombre, args, i)?;
+                    lista.push(format!(
+                        "{} {}",
+                        t.llvm().to_llvm_ir(),
+                        self.como(&v, t.clone())
+                    ));
+                }
+                let lista = lista.join(", ");
+                if *ret == T::Nulo {
+                    self.linea(&format!("call void @{funcion}({lista})"));
+                    V::Nulo
+                } else {
+                    let r = self.r();
+                    let tipo = ret.llvm().to_llvm_ir();
+                    self.linea(&format!("{r} = call {tipo} @{funcion}({lista})"));
+                    match ret {
+                        T::Texto => V::Texto(r),
+                        T::Bool => V::Bool(r),
+                        _ => V::Int(r),
+                    }
+                }
             }
             _ => return Ok(None),
         };

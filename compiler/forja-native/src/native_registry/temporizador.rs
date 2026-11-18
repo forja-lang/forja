@@ -23,18 +23,18 @@ pub fn nativo_temporizador_nuevo(
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let ms = obtener_entero(args[0])?;
-    let sym = vm.tabla_simbolos().internar("Timer");
-    let id_forma = vm.registro_formas().obtener_o_crear(sym);
-    let mut obj = forja_runtime::ObjVal::nuevo(sym, id_forma);
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    obj.campos_vec = vec![
-        ValorFast::entero(id as i64),
-        ValorFast::entero(ms),
-        ValorFast::booleano(true),
-    ];
-    let indice = vm.reservar_objeto(obj);
-    Ok(ValorFast::objeto(indice))
+    Ok(super::objeto_con_campos(
+        vm,
+        "Timer",
+        &["id", "duracion_ms", "activo"],
+        vec![
+            ValorFast::entero(id as i64),
+            ValorFast::entero(ms),
+            ValorFast::booleano(true),
+        ],
+    ))
 }
 
 pub fn nativo_temporizador_dormir(

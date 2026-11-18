@@ -3,12 +3,12 @@
 Apilando: 10, 20, 30, 40
   Pila: [10,20,30,40]  (tope: 40)
 Desapilando: 40
-Desapilando: 40
-  Pila: [10,20,30,40]  (tope: 40)
-Tope actual: 40
-Tamaño: 4
+Desapilando: 30
+  Pila: [10,20]  (tope: 20)
+Tope actual: 20
+Tamaño: 2
 
 Evaluación postfija (3 4 + 5 *):
-  (3 + 4) * 5 = 25
+  (3 + 4) * 5 = 35
 
 La pila sigue el principio LIFO (Last In, First Out).

@@ -194,7 +194,7 @@ impl ModuloResolver {
                 for decl in programa.declaraciones {
                     if let Declaracion::Importar(ref sub_ruta) = decl {
                         let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
-                        registrar_alias(&mut alias_modulos, sub_ruta, &sub);
+                        registrar_alias(&self.nombres_propios, &mut alias_modulos, sub_ruta, &sub);
                         final_decls.extend(sub.declaraciones);
                     } else if let Declaracion::ImportarExterna(ref ruta) = decl {
                         // Cargar la librería externa en el registro FFI
@@ -213,6 +213,7 @@ impl ModuloResolver {
                         final_decls.push(decl);
                     }
                 }
+                verificar_ambiguedad_modulo(&fuente, &alias_modulos, ruta)?;
                 for decl in &mut final_decls {
                     forja_hir::imports::reescribir_llamadas_de_modulo(decl, &alias_modulos);
                 }
@@ -306,7 +307,7 @@ impl ModuloResolver {
                 for decl in programa.declaraciones {
                     if let Declaracion::Importar(ref sub_ruta) = decl {
                         let (sub, _) = self.resolver_con_id(sub_ruta)?;
-                        registrar_alias(&mut alias_modulos, sub_ruta, &sub);
+                        registrar_alias(&self.nombres_propios, &mut alias_modulos, sub_ruta, &sub);
                         final_decls.extend(sub.declaraciones);
                     } else if let Declaracion::ImportarExterna(ref ruta) = decl {
                         // Cargar la librería externa en el registro FFI
@@ -325,6 +326,7 @@ impl ModuloResolver {
                         final_decls.push(decl);
                     }
                 }
+                verificar_ambiguedad_modulo(&fuente, &alias_modulos, ruta)?;
                 for decl in &mut final_decls {
                     forja_hir::imports::reescribir_llamadas_de_modulo(decl, &alias_modulos);
                 }
@@ -521,7 +523,7 @@ impl ModuloResolver {
             if let crate::ast::Declaracion::Importar(ref sub_ruta) = decl {
                 // Los módulos embebidos se resuelven recursivamente
                 let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
-                registrar_alias(&mut alias_modulos, sub_ruta, &sub);
+                registrar_alias(&self.nombres_propios, &mut alias_modulos, sub_ruta, &sub);
                 final_decls.extend(sub.declaraciones);
             } else if let crate::ast::Declaracion::ImportarExterna(ref ruta) = decl {
                 // Cargar la librería externa en el registro FFI (módulos embebidos)
@@ -531,6 +533,7 @@ impl ModuloResolver {
                 final_decls.push(decl);
             }
         }
+        verificar_ambiguedad_modulo(&fuente, &alias_modulos, nombre_modulo)?;
         for decl in &mut final_decls {
             forja_hir::imports::reescribir_llamadas_de_modulo(decl, &alias_modulos);
         }
@@ -550,6 +553,45 @@ impl ModuloResolver {
 pub use crate::dedup::dedup_declaraciones;
 
 /// Nombres de nivel superior declarados en el programa (sin contar imports).
+/// Rechaza las llamadas **sin calificar** a nombres que exportan dos de los
+/// imports de un módulo.
+///
+/// Al inlinear los imports todo comparte un espacio de nombres y gana la
+/// primera definición, así que `tres` (que importa `uno` y `dos`, los dos con
+/// `comun`) llamaría a `uno.comun` sin avisar. Se detecta con el mismo criterio
+/// que en el programa principal (`llamadas_ambiguas`, que ignora textos y
+/// comentarios).
+fn verificar_ambiguedad_modulo(
+    fuente: &str,
+    alias_modulos: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+    ruta: &str,
+) -> Result<(), Vec<ErrorForja>> {
+    let ambiguos = forja_hir::imports::nombres_ambiguos(alias_modulos);
+    if ambiguos.is_empty() {
+        return Ok(());
+    }
+    let Some((nombre, duenos)) = forja_hir::imports::llamadas_ambiguas(fuente, &ambiguos)
+        .first()
+        .cloned()
+    else {
+        return Ok(());
+    };
+    Err(vec![ErrorForja::nuevo(
+        crate::error::ErrorTipo::ErrorSemantico,
+        0,
+        0,
+        &format!(
+            "el módulo '{}' llama '{}' sin calificar y lo exportan {}: usá el módulo adelante (ej: '{}.{}')",
+            ruta,
+            nombre,
+            duenos.join(", "),
+            duenos[0],
+            nombre
+        ),
+        "Cada módulo importado conserva su propio nombre: calificá la llamada.",
+    )])
+}
+
 fn nombres_declarados(programa: &Programa) -> Vec<String> {
     let mut nombres = Vec::new();
     for decl in &programa.declaraciones {
@@ -567,15 +609,28 @@ fn nombres_declarados(programa: &Programa) -> Vec<String> {
 /// Registra qué nombres exporta un módulo importado, para poder reescribir
 /// `modulo.funcion(...)` dentro del propio módulo (no sólo en el archivo
 /// principal). Ver N14 en plans/PLAN_WEB_Y_GUI.md.
+/// Registra qué nombres exporta `ruta` para el alias del módulo.
+///
+/// Usa los nombres **propios** del módulo (los que declara), no los que trajo
+/// de sus propios imports: si no, `log` "exportaría" `claves` (de
+/// `colecciones`) y cualquier programa que importe los dos vería una ambigüedad
+/// falsa.
 fn registrar_alias(
+    nombres_propios: &std::collections::HashMap<String, Vec<String>>,
     alias_modulos: &mut std::collections::HashMap<String, std::collections::HashSet<String>>,
     ruta: &str,
     sub: &Programa,
 ) {
     let alias = ruta.rsplit('/').next().unwrap_or(ruta).to_string();
+    let destino = alias_modulos.entry(alias).or_default();
+    if let Some(propios) = nombres_propios.get(ruta) {
+        for nombre in propios {
+            destino.insert(nombre.clone());
+        }
+        return;
+    }
     let mut hir = forja_hir::Hir::nuevo();
     let id = hir.agregar_modulo(ruta, sub);
-    let destino = alias_modulos.entry(alias).or_default();
     for nombre in hir.nombres(id) {
         destino.insert(nombre.to_string());
     }

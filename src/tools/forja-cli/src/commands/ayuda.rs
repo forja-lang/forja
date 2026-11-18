@@ -31,7 +31,7 @@ pub(crate) fn mostrar_ayuda() {
     println!("  repl [archivo.fa]          Modo interactivo (historial por archivo)");
     println!("  diagrama <archivo> [salida]  Generar diagrama Mermaid");
     println!(
-        "  compilar <archivo> [salida]  Generar .exe nativo (fallback bytecode)
+        "  compilar <archivo> [salida]  Generar .exe autónomo (GUI: forja-rt-gui)
   aot <archivo> [salida]       Forzar AOT nativo LLVM"
     );
     println!("  asm <archivo> [salida]       Compilar a assembly nativo");
@@ -104,6 +104,11 @@ pub(crate) fn mostrar_ayuda() {
     println!("  forja test ejemplos/mis_pruebas.fa");
     println!("  forja test                  (ejecuta todos los .fa en ejemplos/)");
     println!("  forja palabras");
+    println!();
+    println!("GUI (importar gui) — la VM no dibuja ventanas:");
+    println!("  forja ejecutar app.fa           usa forja-rt-gui al vuelo (sin Rust ni Cargo)");
+    println!("  forja compilar app.fa app.exe   ejecutable autónomo con forja-rt-gui");
+    println!("  destino: nativo                 transpila a Rust y compila con cargo");
     println!(
         "  forja explicar variable
 "

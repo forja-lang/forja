@@ -92,7 +92,19 @@ pub fn nativo_csv_generar_con_cabeceras(
     _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let headers = obtener_texto(_vm, args[0])?;
+    // `std/csv` declara `cabeceras: Arreglo<Texto>`, pero el nativo también
+    // acepta un texto ya unido ("a,b") por compatibilidad.
+    let headers = if args[0].es_texto() {
+        obtener_texto(_vm, args[0])?
+    } else {
+        let idx = args[0].indice_arreglo() as usize;
+        let campos = _vm.obtener_arr(idx as u32).clone();
+        campos
+            .iter()
+            .map(|c| _vm.obtener_texto(c.indice_texto()).to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
     let arr_idx = args[1].indice_arreglo() as usize;
     let filas = _vm.obtener_arr(arr_idx as u32).clone();
     let mut salida = String::new();

@@ -529,3 +529,59 @@ fn builtins_nombres_coinciden() {
         );
     }
 }
+
+/// Regresión: `objeto.metodo(...)` como sentencia dejaba el valor de retorno
+/// en la pila. Si el método se llamaba dentro de un bucle, la basura acumulada
+/// desalineaba la pila de quien llamaba y una llamada posterior leía
+/// argumentos corridos (`r.empujar(f(i))` con `f` que itera).
+#[test]
+fn llamada_a_metodo_como_sentencia_no_desalinea_la_pila() {
+    let src = r#"
+funcion seg(a, b) {
+    variable res = []
+    variable i = a
+    mientras (i < b) {
+        res.empujar(i)
+        i = i + 1
+    }
+    retornar res
+}
+funcion duplicar(n) {
+    variable res = []
+    variable i = 0
+    mientras (i < n) {
+        res.empujar(n)
+        i = i + 1
+    }
+    retornar res
+}
+variable r = []
+r.empujar(seg(0, 3))
+escribir(a_texto(r))
+variable q = []
+q.empujar(duplicar(2))
+escribir(a_texto(q))
+escribir(a_texto(longitud(duplicar(4))))
+"#;
+    let (out, _) = ejecutar_con_fast_math(src, None);
+    assert_eq!(out, vec!["[[0,1,2]]", "[[2,2]]", "4"]);
+}
+
+/// Regresión: una llamada a builtin o a método como sentencia tampoco debe
+/// dejar su resultado en la pila del frame que la contiene.
+#[test]
+fn builtin_como_sentencia_no_deja_basura_en_la_pila() {
+    let src = r#"
+funcion f() {
+    variable a = [1, 2, 3]
+    longitud(a)
+    a.empujar(4)
+    a.empujar(5)
+    retornar a
+}
+variable r = f()
+escribir(a_texto(r))
+"#;
+    let (out, _) = ejecutar_con_fast_math(src, None);
+    assert_eq!(out, vec!["[1,2,3,4,5]"]);
+}
