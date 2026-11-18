@@ -45,15 +45,23 @@ static char *arena_actual = NULL;
 static int64_t arena_restante = 0;
 
 /* Bloques repartidos por la arena: sirven para saber si un i64 es un puntero a
- * memoria del programa sin desreferenciarlo (ver `forja_arreglo_validar`). */
+ * memoria del programa sin desreferenciarlo (`forja_en_arena`). `es_arena`
+ * distingue los bloques de 1 MB (textos y arreglos chicos) de los pedidos
+ * grandes, que van directos a `calloc`. */
 typedef struct ForjaBloque {
     char *inicio;
     char *fin;
+    int es_arena;
     struct ForjaBloque *sig;
 } ForjaBloque;
 static ForjaBloque *arena_bloques = NULL;
+/* Rango de los bloques de arena, y último bloque acertado: los textos se
+ * reparten en orden, así que el bloque anterior casi siempre sirve. */
+static uintptr_t arena_min = 0;
+static uintptr_t arena_max = 0;
+static const ForjaBloque *arena_ultimo = NULL;
 
-static void registrar_bloque(char *inicio, int64_t bytes) {
+static void registrar_bloque(char *inicio, int64_t bytes, int es_arena) {
     ForjaBloque *b = (ForjaBloque *)malloc(sizeof(ForjaBloque));
     if (!b) {
         fputs("forja: sin memoria\n", stderr);
@@ -61,8 +69,33 @@ static void registrar_bloque(char *inicio, int64_t bytes) {
     }
     b->inicio = inicio;
     b->fin = inicio + bytes;
+    b->es_arena = es_arena;
     b->sig = arena_bloques;
     arena_bloques = b;
+    if (es_arena) {
+        uintptr_t ini = (uintptr_t)inicio, fin = (uintptr_t)(inicio + bytes);
+        if (!arena_min || ini < arena_min) arena_min = ini;
+        if (fin > arena_max) arena_max = fin;
+    }
+}
+
+/* ¿Es memoria de la arena? Es el test que distingue un texto de un escalar: los
+ * textos chicos no se registran uno por uno (eran 12 M de altas en `parseo`). */
+static int forja_en_arena(const void *p) {
+    uintptr_t x = (uintptr_t)p;
+    if (!arena_min || x < arena_min || x >= arena_max) return 0;
+    if (arena_ultimo && x >= (uintptr_t)arena_ultimo->inicio &&
+        x < (uintptr_t)arena_ultimo->fin) {
+        return 1;
+    }
+    for (const ForjaBloque *b = arena_bloques; b; b = b->sig) {
+        if (!b->es_arena) continue;
+        if (x >= (uintptr_t)b->inicio && x < (uintptr_t)b->fin) {
+            arena_ultimo = b;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void *forja_alloc(int64_t bytes) {
@@ -74,7 +107,7 @@ void *forja_alloc(int64_t bytes) {
             fputs("forja: sin memoria\n", stderr);
             exit(1);
         }
-        registrar_bloque((char *)p, n);
+        registrar_bloque((char *)p, n, 0);
         return p;
     }
     if (n > arena_restante) {
@@ -83,7 +116,7 @@ void *forja_alloc(int64_t bytes) {
             fputs("forja: sin memoria\n", stderr);
             exit(1);
         }
-        registrar_bloque(arena_actual, FORJA_ARENA_BLOQUE);
+        registrar_bloque(arena_actual, FORJA_ARENA_BLOQUE, 1);
         arena_restante = FORJA_ARENA_BLOQUE;
     }
     void *p = arena_actual;
@@ -181,7 +214,7 @@ static void forja_registrar(void *p, int64_t tag) {
 }
 
 /* Tag de un valor: 0 si es un escalar (entero, decimal, booleano o nulo). */
-static int64_t forja_tag_de(const void *p) {
+static int64_t forja_tag_registrado(const void *p) {
     if (!p || !registro.cap) return 0;
     size_t mask = (size_t)(registro.cap - 1);
     for (size_t j = forja_hash_p(p) & mask; registro.claves[j]; j = (j + 1) & mask) {
@@ -190,17 +223,26 @@ static int64_t forja_tag_de(const void *p) {
     return 0;
 }
 
+static int64_t forja_tag_de(const void *p) {
+    int64_t tag = forja_tag_registrado(p);
+    if (tag) return tag;
+    /* Un texto de la arena no está en el registro (serían millones de altas):
+     * se reconoce por rango. Lo no registrado y fuera de la arena es escalar. */
+    return forja_en_arena(p) ? FORJA_T_TEXTO : 0;
+}
+
 int64_t forja_tag(void *p) { return forja_tag_de(p); }
 
 /* Los literales de texto viven en el segmento de datos; el programa los
  * registra en `forja_init`. */
 void forja_registrar_texto(void *p) { forja_registrar(p, FORJA_T_TEXTO); }
 
-/* Texto nuevo en el heap: se registra como texto para que `longitud`/`[i]`
- * sepan qué es aunque lleguen por un slot tipado de otra cosa. */
+/* Texto nuevo en el heap: los de la arena se reconocen por rango (ver
+ * `forja_en_arena`) y no se registran; sólo los grandes van al registro, como
+ * los literales (`forja_registrar_texto`). */
 static char *forja_texto_alloc(int64_t bytes) {
     char *r = (char *)forja_alloc(bytes);
-    forja_registrar(r, FORJA_T_TEXTO);
+    if (bytes > FORJA_ARENA_BLOQUE / 4) forja_registrar(r, FORJA_T_TEXTO);
     return r;
 }
 

@@ -82,3 +82,39 @@ fn unir_devuelve_el_valor_del_cuerpo() {
     };
     assert_eq!(salida.trim(), "10 20 99 0");
 }
+
+/* El registro de tags ya no guarda un alta por texto: los de la arena se
+ * reconocen por rango. Los dos caminos (arena y pedido grande) y el escalar. */
+const DRIVER_TAGS: &str = r#"
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+char *forja_concat(const char *a, const char *b);
+int64_t forja_longitud_dinamica(void *v);
+int64_t forja_tag(void *p);
+
+int main(void) {
+    char *t = forja_concat("hola", " mundo");
+    /* 300 KB + 300 KB: por encima del umbral de arena, va al registro. */
+    char *grande = (char *)calloc(300001, 1);
+    memset(grande, 'x', 300000);
+    char *g = forja_concat(grande, grande);
+    printf("%lld %lld %lld %lld %lld\n",
+           (long long)forja_longitud_dinamica(t),
+           (long long)forja_longitud_dinamica(g),
+           (long long)forja_longitud_dinamica((void *)(intptr_t)6),
+           (long long)forja_tag(t),
+           (long long)forja_tag((void *)(intptr_t)6));
+    return 0;
+}
+"#;
+
+#[test]
+fn el_tag_distingue_textos_de_escalares() {
+    let Some(salida) = compilar_y_ejecutar(DRIVER_TAGS) else {
+        return;
+    };
+    // longitud 10 (arena) · 600000 (registro) · 0 (escalar) · tag 1 · tag 0
+    assert_eq!(salida.trim(), "10 600000 0 1 0");
+}
