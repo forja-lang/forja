@@ -87,6 +87,48 @@ Merges ya dentro de `main`: `native/cajas` (`0b2cc95c`) y `native/atajos`
 
 ## Registro
 
+### 2026-11-18 — carril L3: corpus dorado y ejemplos (worktree `forja-corpus`, rama `corpus/dorado`)
+Commits: `f9f174c2` (superproyecto) + 12 en `ejemplos` (`ae78db1` … `1d37f72`, rama
+`corpus/dorado` del submódulo).
+
+- **Medido** (2026-11-18 00:26, `2a6f63fc` + estos cambios, árbol con los 2
+  archivos del carril, `ejemplos` en el puntero nuevo, release de 00:26):
+  `150 coinciden · 0 difieren · 95 no bajan · 4 no terminan · 4 error · 0 revientan`
+  — igual que la referencia de `00614f6b`, o sea los ejemplos reparados no
+  mueven la paridad. `golden_runner` **verde** (2/2) sin `FORJA_UPDATE_GOLDEN`.
+  `llvm_backend` 48, `lib` 129, `corpus` 299 en verde.
+- **L3:T1 no era lo que decía el plan**: los 11 goldens «viejos» no estaban
+  viejos, eran **ejemplos corruptos**. El formateador (`587f05c` y los
+  «normalizados» posteriores) partió asignaciones y retornos:
+  `resultado = resultado * 2` → tres sentencias sueltas; `retornar resultado` →
+  `retornar` + `resultado`; `este.cola.siguiente = nuevo` → dos líneas; el rango
+  `[0..n-2]` quedó en `2`; y en `79` borró un `escribir` entero.
+  **No se regeneró ningún golden** salvo añadir el de `162` (no estaba
+  commiteado). Se arreglaron 11 ejemplos y **los goldens viejos volvieron a
+  pasar tal cual**: `66`, `79`, `139`, `142`, `143`, `150`, `162`, `166`, `190`,
+  `193`, `198`.
+- **L3:T2**: `juegos/158_contador_palabras.fa` llamaba a `mayuscula()`, que no
+  existe: ahora usa `letras[k].a_mayusculas()` y corre.
+- **Bugs de VM/parser encontrados** (van a L2/L1, con repro mínimo):
+  1. **Mutación anidada perdida**: `este.cola.siguiente = nuevo` no persiste
+     (con `variable c = este.cola; c.siguiente = nuevo; este.cola = c` sí).
+     Repro: dos clases `N{v,sig}`/`L{cola,cabeza}` y `l.add(1..3)`; el recorrido
+     se corta en el primero. Rompía `142` (por eso ese ejemplo usa la local).
+  2. **No hay rangos**: `a[0..=2]` compila pero devuelve vacío (`longitud` = 0) y
+     `a[0..2]` no parsea; el lexer no tiene token de rango. Rompía `143`/`150`
+     (recorte de pila y la línea `Heap:`), hoy hechos con bucles.
+  3. **Interpolación → concatenación con precedencia rota** (ya consumado en los
+     ejemplos): `"${i + 1}"` se volvió `"" + i + 1`, que imprime `01`.
+- **`cargo fmt --check -p forja` falla por archivos ajenos** a este carril
+  (`src/transpiler.rs`, `tests/codegen/ir_cobertura_corpus.rs`): ya estaba así en
+  `main`; no lo toqué.
+- **Abierto**: los tres bugs de arriba siguen en `main` (los ejemplos los
+  esquivan); `142`/`143`/`150` se pueden devolver a su forma original cuando se
+  arreglen. Los otros ejemplos con `self.` (`145`, `146`, `147`, `108`) funcionan
+  tal cual (`self` es alias válido).
+- **Zona tomada**: ninguna al cerrar. `ejemplos/**` queda en la rama
+  `corpus/dorado` del submódulo; `tests/golden/**` sólo suma `162_aprox_e.out`.
+
 ### 2026-11-18 — merge de ramas nativas + bugs destapados (rama `main`)
 Commits: `0b2cc95c` (merge `native/cajas`), `bcb671f4` (merge `native/atajos`),
 `fef2883d`, `557a9981`, `20d3b120`.
