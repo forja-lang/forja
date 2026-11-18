@@ -54,11 +54,20 @@ fi
 echo "árbol:   $(git rev-parse --short HEAD 2>/dev/null || echo '?') $(git log --oneline -1 2>/dev/null | cut -d' ' -f2- | cut -c1-60)"
 sucios="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
 echo "sucio:   $sucios archivo(s) sin commitear"
-echo "binario: $FORJA ($(date -r "$FORJA" '+%Y-%m-%d %H:%M' 2>/dev/null || echo '?'))"
 echo "ejemplos: $(find ejemplos -name '*.fa' | wc -l | tr -d ' ')"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
+
+# Copia del binario: si otra sesión corre `cargo build` mientras se mide, cargo
+# reemplaza `target/release/forja.exe` y la mitad de los ejemplos fallan con
+# "No such file or directory" (pasó: 122 de 175 "no bajan" eran esto). Se mide
+# siempre contra esta copia, que además es la que dice la cabecera.
+BIN="$OUT/forja"
+cp "$FORJA" "$BIN"
+chmod +x "$BIN" 2>/dev/null
+echo "binario: $FORJA ($(date -r "$FORJA" '+%Y-%m-%d %H:%M' 2>/dev/null || echo '?')) -> copia en $BIN"
+FORJA="$BIN"
 
 norm() { sed -e 's/\r$//' "$1"; }
 
