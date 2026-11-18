@@ -638,3 +638,41 @@ Commits: `18bde9d1` (+ su corrección)
 - Abierto: `109` (campo sin tipo con texto) y `102` (casilla de arreglo mixto) son el mismo
   §9 bloqueado por producto; grupo B (red/JSON/SQLite/hash) y F (`seleccionar`), GUI y apps
   siguen fuera de alcance del plan.
+
+### 2026-11-18 19:15 — triaje completo de los 54 / 6 / 4
+Commits: `e27677eb`
+
+- Medido (release del worktree): **181 coinciden · 0 difieren · 53 no bajan · 6 no terminan ·
+  4 error · 0 revientan**. `llvm_backend` 56, `llvm_runtime` 3, `lib` 129, `corpus` 299,
+  `runtime` 102, clippy limpio.
+- Cuatro ejemplos más bajan a nativo (y uno de ellos coincide): `208_archivos`,
+  `210_sistema`, `213_fecha_aleatorio`, `215_hash`. Primitivas nuevas en `runtime.c`, con el
+  mismo contrato que `forja-native`: `_archivo_copiar` (0/-1), `_fecha_desde_timestamp`
+  (mismo algoritmo civil y nombres en español), `_sha256` (FIPS 180-4, hex minúsculas) y
+  `_sistema_argumentos` (`main` ahora recibe `argc`/`argv`). Exclusiones nuevas con motivo
+  medido: reloj (208/210/213), arnés (210: la VM corre como `forja ejecutar archivo` = 3
+  args, el binario suelto = 1) y bug de la VM en `escribir_linea` (215: suma un salto sobre
+  `Imprimir`, que ya lo trae; afecta también `test_basico` y `test_sobrecarga`).
+- **Los 53 que no bajan, por causa** (lista completa medida con `forja llvm`):
+  - **GUI / apps (28)**: `201_gui_ventana`, `201_login_gui`, `202_login`, `203_boton_gui`,
+    `204_login_final`, `205_gui_completo`, `205_gui_hola`, `206_gui_contador`,
+    `207_gui_widgets`, `208_gui_galeria`, `210_forja_dashboard`, `211_login`,
+    `301_layout_responsive`, `303_inputs_material`, `304_tarjetas_listas`,
+    `305_feedback`, `306_navegacion`, `307_indicadores_avatares`, `308_graficos_avanzados`,
+    `309_expressive`, `402_iconos`, `403_login_funcional`, `404_login_test`, `900_storybook`,
+    `901_storybook_theme`, `902_storybook_responsive`, `302_botones_material` (`espacio`),
+    `212_alarma`. `aot` las rechaza por diseño.
+  - **`seleccionar` (7)**: 116, 117, 118, 119, 120, 73_seleccionar, 160_cronometro.
+  - **Encajado de escalares §9 (3)**: 143_pila, 194_enums_tuplas (arreglo heterogéneo) y
+    102_generico_intercambiar (casilla de arreglo mixto).
+  - **Red/otros proyectos (10)**: sockets (200, 202, 203, 204, 218, 221), `_compartido_nuevo`
+    (217), `_xhb_parsear` (3 ejemplos de `otros/`), `_json_parsear` (209), `219_websocket` y
+    `220_servidor_h2` (llamadas con nombre de módulo).
+- **Los 6 que no terminan**: 189_benchmark_manual y 194_expresiones_regulares (el nativo tarda
+  35-37 s y sale con error; la VM tarda >60 s en 189 y 1 s en 194: hay que mirar el matcher de
+  `std/regex` en nativo); 151_adivina_numero, 152_piedra_papel_tijera y
+  159_generador_contraseñas se cuelgan con stdin vacío porque `leer()` da `nulo`, el nativo lo
+  convierte a 0 y el bucle no acierta nunca; la VM compara `nulo < n` → falso y sale. Es §9.
+- **Los 4 errores**: 146_arbol_avl y 186_gestion_memoria abortan con "acceso a `valor` sobre un
+  objeto nulo" (sin investigar), 501_contratos_error es esperado (el contrato falla en las dos
+  rutas y el arnés sólo compara salidas con rc 0), y el cuarto es la VM de 189.
