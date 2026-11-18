@@ -1411,6 +1411,168 @@ char *forja_hex_decodificar(const char *s) {
     return r;
 }
 
+/* ── argumentos del proceso ───────────────────────────────────────────── */
+/* `main` recibe `argc`/`argv` y los guarda acá; `_sistema_argumentos()` los
+ * devuelve como arreglo de textos (el primero es la ruta del ejecutable). */
+static int32_t forja_argc = 0;
+static char **forja_argv = NULL;
+
+void forja_guardar_args(int32_t argc, void *argv) {
+    forja_argc = argc;
+    forja_argv = (char **)argv;
+}
+
+void *forja_argumentos(void) {
+    int64_t n = forja_argc > 0 ? forja_argc : 0;
+    ForjaArreglo *a = (ForjaArreglo *)forja_arreglo_nuevo(n, 1);
+    for (int64_t i = 0; i < n; i++) {
+        const char *arg = forja_argv ? forja_argv[i] : "";
+        a->datos[i] = (int64_t)(intptr_t)forja_dup(arg ? arg : "");
+    }
+    return a;
+}
+
+/* ── archivos: copiar ─────────────────────────────────────────────────── */
+/* `_archivo_copiar(origen, destino)`: 0 si copió, -1 si no (como la VM). */
+int64_t forja_archivo_copiar(const char *origen, const char *destino) {
+    if (!origen || !destino || !*origen || !*destino) return -1;
+    FILE *in = fopen(origen, "rb");
+    if (!in) return -1;
+    FILE *out = fopen(destino, "wb");
+    if (!out) {
+        fclose(in);
+        return -1;
+    }
+    char buf[65536];
+    size_t n;
+    int64_t rc = 0;
+    while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            rc = -1;
+            break;
+        }
+    }
+    if (ferror(in)) rc = -1;
+    fclose(in);
+    if (fclose(out) != 0) rc = -1;
+    return rc;
+}
+
+/* ── fechas ───────────────────────────────────────────────────────────── */
+static const char *const FORJA_DIAS[] = {"domingo", "lunes", "martes", "miercoles",
+                                         "jueves", "viernes", "sabado"};
+static const char *const FORJA_MESES[] = {"enero",     "febrero", "marzo",     "abril",
+                                          "mayo",      "junio",   "julio",     "agosto",
+                                          "septiembre", "octubre", "noviembre", "diciembre"};
+
+/* `_fecha_desde_timestamp(ts)`: "año|mes|dia|hora|minuto|segundo|dia_semana|mes_nombre",
+ * con el algoritmo civil (el mismo de `forja-native`). */
+char *forja_fecha_desde_timestamp(int64_t ts) {
+    int64_t dias = ts / 86400;
+    if (ts % 86400 < 0) dias -= 1; /* división euclidiana */
+    int64_t resto = ts - dias * 86400;
+    int64_t hora = resto / 3600, minuto = (resto % 3600) / 60, segundo = resto % 60;
+
+    int64_t z = dias + 719468;
+    int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    int64_t doe = z - era * 146097;
+    int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t y = yoe + era * 400;
+    int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    int64_t mp = (5 * doy + 2) / 153;
+    int64_t d = doy - (153 * mp + 2) / 5 + 1;
+    int64_t m = mp < 10 ? mp + 3 : mp - 9;
+    if (m <= 2) y += 1;
+
+    static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    int64_t ya = m < 3 ? y - 1 : y;
+    int64_t dow = (ya + ya / 4 - ya / 100 + ya / 400 + t[m - 1] + d) % 7;
+
+    char *r = forja_texto_alloc(160);
+    snprintf(r, 160, "%lld|%lld|%lld|%lld|%lld|%lld|%s|%s", (long long)y, (long long)m,
+             (long long)d, (long long)hora, (long long)minuto, (long long)segundo,
+             FORJA_DIAS[dow], FORJA_MESES[m - 1]);
+    return r;
+}
+
+/* ── sha256 (FIPS 180-4) ──────────────────────────────────────────────── */
+static uint32_t forja_rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+
+static void forja_sha256_bloque(uint32_t h[8], const unsigned char *p) {
+    static const uint32_t K[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2};
+    uint32_t w[64];
+    for (int i = 0; i < 16; i++) {
+        w[i] = ((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) |
+               ((uint32_t)p[i * 4 + 2] << 8) | (uint32_t)p[i * 4 + 3];
+    }
+    for (int i = 16; i < 64; i++) {
+        uint32_t s0 = forja_rotr(w[i - 15], 7) ^ forja_rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+        uint32_t s1 = forja_rotr(w[i - 2], 17) ^ forja_rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+    for (int i = 0; i < 64; i++) {
+        uint32_t S1 = forja_rotr(e, 6) ^ forja_rotr(e, 11) ^ forja_rotr(e, 25);
+        uint32_t ch = (e & f) ^ (~e & g);
+        uint32_t t1 = hh + S1 + ch + K[i] + w[i];
+        uint32_t S0 = forja_rotr(a, 2) ^ forja_rotr(a, 13) ^ forja_rotr(a, 22);
+        uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+        uint32_t t2 = S0 + maj;
+        hh = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+    h[0] += a;
+    h[1] += b;
+    h[2] += c;
+    h[3] += d;
+    h[4] += e;
+    h[5] += f;
+    h[6] += g;
+    h[7] += hh;
+}
+
+/* `_sha256(texto)`: el hash en hexadecimal minúsculas (64 caracteres). */
+char *forja_sha256(const char *s) {
+    const unsigned char *datos = (const unsigned char *)(s ? s : "");
+    size_t n = s ? strlen(s) : 0;
+    uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    size_t bloques = n / 64;
+    for (size_t i = 0; i < bloques; i++) forja_sha256_bloque(h, datos + i * 64);
+    /* Relleno: 0x80, ceros y la longitud en bits (big endian), en 1 o 2 bloques. */
+    unsigned char resto[128];
+    size_t sobra = n - bloques * 64;
+    memcpy(resto, datos + bloques * 64, sobra);
+    resto[sobra] = 0x80;
+    size_t total = sobra + 1 + 8 <= 64 ? 64 : 128;
+    memset(resto + sobra + 1, 0, total - sobra - 1);
+    uint64_t bits = (uint64_t)n * 8;
+    for (int i = 0; i < 8; i++) resto[total - 1 - i] = (unsigned char)(bits >> (8 * i));
+    forja_sha256_bloque(h, resto);
+    if (total == 128) forja_sha256_bloque(h, resto + 64);
+
+    char *r = forja_texto_alloc(65);
+    for (int i = 0; i < 8; i++) sprintf(r + i * 8, "%08x", h[i]);
+    r[64] = ' ';
+    return r;
+}
+
 /* ── base64 (RFC 4648, igual que `forja-native/src/base64.rs`) ────────── */
 static const char FORJA_B64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

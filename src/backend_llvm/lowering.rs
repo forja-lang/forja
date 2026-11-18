@@ -352,7 +352,12 @@ const RUNTIME: &[(&str, &str)] = &[
     // contrato que `forja-native` (centinela -1 / `nulo` en vez de abortar).
     ("forja_archivo_leer", "i64 (ptr)"),
     ("forja_base64_codificar", "ptr (ptr)"),
+    ("forja_guardar_args", "void (i32, ptr)"),
+    ("forja_argumentos", "ptr ()"),
     ("forja_hex_decodificar", "ptr (ptr)"),
+    ("forja_archivo_copiar", "i64 (ptr, ptr)"),
+    ("forja_fecha_desde_timestamp", "ptr (i64)"),
+    ("forja_sha256", "ptr (ptr)"),
     ("forja_base64_decodificar", "ptr (ptr)"),
     ("forja_archivo_escribir", "i64 (ptr, ptr)"),
     ("forja_archivo_agregar", "i64 (ptr, ptr)"),
@@ -1237,8 +1242,10 @@ impl Lowering {
         salida.push_str(&cuerpo_inicializar_fn);
         let _ = writeln!(salida, "  ret void");
         let _ = writeln!(salida, "}}");
-        let _ = writeln!(salida, "define i32 @main() {{");
+        let _ = writeln!(salida, "define i32 @main(i32 %argc, ptr %argv) {{");
         let _ = writeln!(salida, "entry:");
+        // `_sistema_argumentos()` en la ruta nativa: el runtime guarda argc/argv
+        let _ = writeln!(salida, "  call void @forja_guardar_args(i32 %argc, ptr %argv)");
         let _ = writeln!(salida, "  call void @forja_init()");
         // `main()` sólo corre si el programa lo llama: así se comporta la VM
         // (antes el nativo lo invocaba solo y un ejemplo imprimía de más).

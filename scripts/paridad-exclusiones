@@ -49,3 +49,14 @@ ejemplos/juegos/159_generador_contraseñas.fa     la contraseña se arma con `ti
                                                 definición (como 153_ahorcado)
 ejemplos/concurrencia/128_hilo_multiple.fa       idem 129: el orden en que el main recibe los mensajes de los
                                                 hilos cambia entre corridas (el contenido coincide)
+ejemplos/sistema/208_archivos.fa                 `Informacion` trae `modificado` (reloj) y el orden de claves
+                                                difiere: la VM ordena el mapa alfabeticamente y el nativo usa
+                                                el de insercion (el contenido es el mismo)
+ejemplos/sistema/210_sistema.fa                  `Tiempo (ms)` lee el reloj y `Argumentos del programa`: el
+                                                arnes corre la VM como `forja ejecutar archivo` (3 args) y el
+                                                binario AOT va suelto (1)
+ejemplos/sistema/213_fecha_aleatorio.fa          `ahora()`/`hora_actual()` leen el reloj: difieren por 1
+                                                segundo entre corridas
+ejemplos/sistema/215_hash.fa                     los hashes coinciden; la VM imprime lineas vacias de mas
+                                                porque su `escribir_linea` agrega un salto sobre `Imprimir`,
+                                                que ya lo trae (bug de la VM, no del nativo)

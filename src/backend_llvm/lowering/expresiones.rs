@@ -29,6 +29,10 @@ const NATIVAS_STDLIB: &[(&str, &str, &[T], T)] = &[
     ("_base64_codificar", "forja_base64_codificar", &[T::Texto], T::Texto),
     ("_base64_decodificar", "forja_base64_decodificar", &[T::Texto], T::Texto),
     ("_hex_decodificar_nativo", "forja_hex_decodificar", &[T::Texto], T::Texto),
+    ("_archivo_copiar", "forja_archivo_copiar", &[T::Texto, T::Texto], T::Int),
+    ("_fecha_desde_timestamp", "forja_fecha_desde_timestamp", &[T::Int], T::Texto),
+    ("_sha256", "forja_sha256", &[T::Texto], T::Texto),
+    ("_sistema_argumentos", "forja_argumentos", &[], T::Arreglo),
     ("_archivo_leer", "forja_archivo_leer", &[T::Texto], T::Int),
     (
         "_archivo_escribir",
