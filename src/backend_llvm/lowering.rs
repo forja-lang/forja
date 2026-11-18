@@ -339,6 +339,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_mapa_obtener_dinamico", "i64 (ptr, i64)"),
     ("forja_mapa_valor_a_texto_i64", "ptr (ptr, i64)"),
     ("forja_mapa_valor_a_texto_texto", "ptr (ptr, ptr)"),
+    ("forja_reemplazar", "ptr (ptr, ptr, ptr)"),
     ("forja_canal_nuevo", "ptr ()"),
     ("forja_canal_enviar", "void (ptr, i64)"),
     ("forja_canal_recibir", "i64 (ptr)"),
@@ -363,7 +364,8 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_sistema_usuario", "ptr ()"),
     ("forja_sistema_cpus", "i64 ()"),
     ("forja_sistema_salir", "void (i64)"),
-    ("forja_hilo_lanzar", "void (ptr, ptr)"),
+    ("forja_hilo_lanzar", "ptr (ptr, ptr)"),
+    ("forja_hilo_unir", "i64 (ptr)"),
     ("exit", "void (i32)"),
 ];
 
@@ -964,6 +966,12 @@ impl Lowering {
             for (i, (v, tipos)) in variantes.iter().enumerate() {
                 self.variantes
                     .insert(v.to_string(), (nombre_enum.to_string(), i, tipos.clone()));
+            }
+            // `Alguno(T)` es el nombre del preludio (`Opcion<T> = Alguno(T) |
+            // Ninguno`) y `Algo` el atajo: los dos apuntan a la misma variante
+            // (`183_opcion_propagacion`).
+            if let Some(v) = self.variantes.get("Algo").cloned() {
+                self.variantes.entry("Alguno".to_string()).or_insert(v);
             }
             self.enums
                 .insert(nombre_enum.to_string(), EnumInformacion { max_campos });
