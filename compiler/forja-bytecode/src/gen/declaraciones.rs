@@ -482,10 +482,6 @@ impl GeneradorBytecode {
                         self.generar_expresion(arg);
                         self.emitir(Opcode::Imprimir);
                     }
-                    if nombre == "escribir_linea" {
-                        self.emitir(Opcode::EmpujarTexto(Arc::from("\n")));
-                        self.emitir(Opcode::Imprimir);
-                    }
                 } else if nombre == "BD" {
                     // BD(especificación) → abrir conexión SQLite (nativa "BD").
                     // Ej: BD("sqlite:memoria") abre una base en memoria.

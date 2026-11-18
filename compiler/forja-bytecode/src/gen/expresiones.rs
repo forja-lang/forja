@@ -164,10 +164,6 @@ impl GeneradorBytecode {
                         self.generar_expresion(arg);
                         self.emitir(Opcode::Imprimir);
                     }
-                    if nombre == "escribir_linea" {
-                        self.emitir(Opcode::EmpujarTexto(Arc::from("\n")));
-                        self.emitir(Opcode::Imprimir);
-                    }
                 } else if nombre == "leer" && !self.es_variable_visible(nombre) {
                     // leer() pide input al usuario y deja el resultado en la pila
                     self.emitir(Opcode::LeerLinea);

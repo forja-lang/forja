@@ -21,9 +21,6 @@ ejemplos/gui/900_storybook.fa               ejemplo GUI: la VM imprime el log de
                                                 el AOT nativo no tiene runtime GUI
 ejemplos/algoritmos/211_colecciones.fa          `encontrar()` devuelve `nulo` sobre una casilla Entero: falta el
                                                 encajado de escalares (handoff7 §3), el nulo se pierde como 0
-ejemplos/otros/test_basico.fa                   la VM imprime dos saltos de linea de mas en `escribir_linea`
-                                                (3 lineas en vez de 1); el nativo da un salto
-ejemplos/otros/test_sobrecarga.fa               idem `test_basico`: `escribir_linea` de la VM agrega dos lineas
 ejemplos/stdlib/709_texto.fa                    `envolver` termina con un `nulo` pegado en la VM
                                                 (`...español.nulo`); el nativo da el texto bien envuelto
 ejemplos/juegos/153_ahorcado.fa                 elige la palabra con `tiempo_actual()`: distinta por definición
@@ -57,6 +54,3 @@ ejemplos/sistema/210_sistema.fa                  `Tiempo (ms)` lee el reloj y `A
                                                 binario AOT va suelto (1)
 ejemplos/sistema/213_fecha_aleatorio.fa          `ahora()`/`hora_actual()` leen el reloj: difieren por 1
                                                 segundo entre corridas
-ejemplos/sistema/215_hash.fa                     los hashes coinciden; la VM imprime lineas vacias de mas
-                                                porque su `escribir_linea` agrega un salto sobre `Imprimir`,
-                                                que ya lo trae (bug de la VM, no del nativo)

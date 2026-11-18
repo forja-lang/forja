@@ -57,6 +57,12 @@ impl Lowering {
             let t = tipos.get(i).cloned().unwrap_or(T::Int);
             let slot = self.alloca(&t, &p.nombre);
             self.guardar(&slot, valor_param(&t, i), &t);
+            // Un parámetro sin anotación (`funcion f(texto)`) puede traer un texto,
+            // un arreglo o un número: el tipo real se resuelve por tag al usarlo
+            // (`longitud`, `[i]`, concatenar). Sin esto `longitud(param)` daba 0.
+            if p.tipo.is_none() {
+                self.inciertos.insert(p.nombre.clone());
+            }
             self.vars.insert(p.nombre.clone(), Var { slot, t });
         }
 
