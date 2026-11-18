@@ -1432,3 +1432,45 @@ escribir(x)
         assert_eq!(salida.trim(), "verdadero\nfalso\n42");
     }
 }
+
+#[test]
+fn unir_de_un_hilo_en_una_casilla_sin_tipo() {
+    // `variable h = hilo { … }` guarda el handle como `Entero`; `.unir()` lo
+    // espera y devuelve lo que el cuerpo retornó. Y `unir()` sobre algo que no
+    // es un hilo devuelve el valor tal cual (la VM no tiene concurrencia real).
+    let fuente = r#"
+variable h = hilo {
+    variable suma = 0
+    variable i = 1
+    mientras (i <= 5) {
+        suma = suma + i
+        i = i + 1
+    }
+    retornar suma
+}
+escribir(h.unir())
+funcion suma(a: Entero, b: Entero) -> Entero { retornar a + b }
+escribir(suma(10, 20).unir())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "15\n30");
+    }
+}
+
+#[test]
+fn canal_sin_tipo_estatico_envia_y_recibe_los_bits() {
+    // `variable c = canal()` en una variable sin anotar: un texto enviado
+    // llegaba como `a_entero(texto)` (0). Ahora viajan los bits del puntero.
+    let fuente = r#"
+variable c = canal()
+variable h = hilo {
+    c.enviar("hola")
+    retornar 0
+}
+h.unir()
+escribir(c.recibir())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "hola");
+    }
+}
