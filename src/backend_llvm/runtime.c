@@ -855,7 +855,8 @@ int64_t forja_canal_intentar(void *pc) {
     return valor;
 }
 
-/* Lanza `fn(entorno, indice)` en un hilo del sistema. */
+/* Lanza `fn(entorno, indice)` en un hilo del sistema, sin handle: el hilo queda
+ * detached y su valor de retorno se pierde (`hilo {}` sin `unir()`). */
 typedef void (*ForjaHiloFn)(void *entorno, int64_t indice);
 
 #ifdef _WIN32
@@ -888,6 +889,84 @@ void forja_hilo_lanzar(void *fn, void *entorno) {
     if (pthread_create(&t, NULL, forja_hilo_trampoline_posix, args) == 0) {
         pthread_detach(t);
     }
+}
+#endif
+
+/* Hilo unible: `fn(entorno)` devuelve los bits del valor del cuerpo (i64), igual
+ * que `forja_canal_recibir`. `forja_hilo_lanzar_unible` devuelve un handle opaco
+ * (NULL si no arrancó) y `forja_hilo_unir` espera y devuelve esos bits tal cual
+ * (handle NULL → 0). El handle vive fuera de la arena: se libera al unir. */
+typedef int64_t (*ForjaHiloFnUnible)(void *entorno);
+
+#ifdef _WIN32
+typedef struct {
+    ForjaHiloFnUnible fn;
+    void *entorno;
+    int64_t resultado;
+    HANDLE hilo;
+} ForjaHilo;
+
+static DWORD WINAPI forja_hilo_unible_trampoline(LPVOID p) {
+    ForjaHilo *h = (ForjaHilo *)p;
+    h->resultado = h->fn(h->entorno);
+    return 0;
+}
+void *forja_hilo_lanzar_unible(void *fn, void *entorno) {
+    if (!fn) return NULL;
+    ForjaHilo *h = (ForjaHilo *)malloc(sizeof(ForjaHilo));
+    if (!h) return NULL;
+    h->fn = (ForjaHiloFnUnible)fn;
+    h->entorno = entorno;
+    h->resultado = 0;
+    h->hilo = CreateThread(NULL, 0, forja_hilo_unible_trampoline, h, 0, NULL);
+    if (!h->hilo) {
+        free(h);
+        return NULL;
+    }
+    return h;
+}
+int64_t forja_hilo_unir(void *hilo) {
+    ForjaHilo *h = (ForjaHilo *)hilo;
+    if (!h) return 0;
+    WaitForSingleObject(h->hilo, INFINITE);
+    CloseHandle(h->hilo);
+    int64_t resultado = h->resultado;
+    free(h);
+    return resultado;
+}
+#else
+typedef struct {
+    ForjaHiloFnUnible fn;
+    void *entorno;
+    int64_t resultado;
+    pthread_t hilo;
+} ForjaHilo;
+
+static void *forja_hilo_unible_trampoline(void *p) {
+    ForjaHilo *h = (ForjaHilo *)p;
+    h->resultado = h->fn(h->entorno);
+    return NULL;
+}
+void *forja_hilo_lanzar_unible(void *fn, void *entorno) {
+    if (!fn) return NULL;
+    ForjaHilo *h = (ForjaHilo *)malloc(sizeof(ForjaHilo));
+    if (!h) return NULL;
+    h->fn = (ForjaHiloFnUnible)fn;
+    h->entorno = entorno;
+    h->resultado = 0;
+    if (pthread_create(&h->hilo, NULL, forja_hilo_unible_trampoline, h) != 0) {
+        free(h);
+        return NULL;
+    }
+    return h;
+}
+int64_t forja_hilo_unir(void *hilo) {
+    ForjaHilo *h = (ForjaHilo *)hilo;
+    if (!h) return 0;
+    pthread_join(h->hilo, NULL);
+    int64_t resultado = h->resultado;
+    free(h);
+    return resultado;
 }
 #endif
 
