@@ -676,3 +676,30 @@ Commits: `e27677eb`
 - **Los 4 errores**: 146_arbol_avl y 186_gestion_memoria abortan con "acceso a `valor` sobre un
   objeto nulo" (sin investigar), 501_contratos_error es esperado (el contrato falla en las dos
   rutas y el arnés sólo compara salidas con rc 0), y el cuarto es la VM de 189.
+
+### 2026-11-18 20:30 — `== nulo`, juegos que cortan en EOF y `texto[i]` sin alocar
+Commits: `f83a67a0`, `c652faf1` (+ `ejemplos` `6e104a7`)
+
+- Medido (release del worktree, `ejemplos` en `6e104a7`): **183 coinciden · 0 difieren ·
+  53 no bajan · 3 no terminan · 4 error · 0 revientan**. `llvm_backend` 56,
+  `llvm_runtime` 3, `lib` 129, `corpus` 299, `runtime` 102, clippy limpio.
+- Cambió:
+  - **`x == nulo` comparaba mal**: caía en la regla «texto contra número» y daba siempre
+    `falso`, así que un `leer()` en EOF (NULL) no se reconocía como nulo. Ahora se comparan
+    los bits con 0. Efecto: `151_adivina_numero`, `152_piedra_papel_tijera` y
+    `159_generador_contraseñas` ya no giran sin entrada — los tres cortan con `salir(0)`
+    (helper `pedir_numero_o_fin`, commit en `ejemplos`) y **coinciden con la VM**.
+    «No terminan» bajó de 6 a 3.
+  - `forja_texto_indice` cachea los 256 textos de un carácter: recorrer `texto[i]` en un
+    bucle alocaba uno por vuelta.
+- **Los 3 que siguen sin terminar**: `189_benchmark_manual` (la VM tarda >60 s; el nativo
+  sale con error en 35 s), `194_expresiones_regulares` (el nativo no termina: los parámetros
+  sin tipo de `coincide_patron` llegan como bits y `longitud(parametro)` no ve el texto; es
+  el encajado de escalares §9) y la VM de uno de los juegos con más entrada.
+- **Los 4 errores**: `146_arbol_avl` y `186_gestion_memoria` abortan en nativo («acceso a
+  `valor` sobre un objeto nulo» — la VM devuelve nulo; permitirlo es la decisión de producto
+  «paridad vs nunca mentir», §2 del handoff7), `501_contratos_error` es esperado (el
+  contrato falla en ambas rutas y el arnés sólo compara salidas con rc 0), y la VM de 189.
+- **Bug de la VM anotado, no arreglado**: `escribir_linea` imprime **tres** saltos en la VM
+  (`escribir("a")` + `escribir_linea("b")` → `a\nb\n\n\n`); el nativo imprime uno, que es lo
+  que dice el nombre. Arreglarlo mueve la salida de la VM y los goldens: es de L2/L3.
