@@ -340,6 +340,8 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_mapa_valor_a_texto_i64", "ptr (ptr, i64)"),
     ("forja_mapa_valor_a_texto_texto", "ptr (ptr, ptr)"),
     ("forja_reemplazar", "ptr (ptr, ptr, ptr)"),
+    ("forja_a_codigo", "i64 (ptr)"),
+    ("forja_a_caracter", "ptr (i64)"),
     ("forja_canal_nuevo", "ptr ()"),
     ("forja_canal_enviar", "void (ptr, i64)"),
     ("forja_canal_recibir", "i64 (ptr)"),

@@ -1329,6 +1329,22 @@ impl Lowering {
 
     fn builtin(&mut self, nombre: &str, args: &[Expresion]) -> Result<Option<V>, String> {
         let v = match nombre {
+            // `a_codigo(c)` / `a_caracter(n)`: primitivas del registro nativo
+            // (`compiler/forja-native`), sin equivalente en la ruta LLVM (`170`).
+            "a_codigo" => {
+                let s = self.arg(nombre, args, 0)?;
+                let a = self.como(&s, T::Texto);
+                let r = self.r();
+                self.linea(&format!("{} = call i64 @forja_a_codigo(ptr {})", r, a));
+                V::Int(r)
+            }
+            "a_caracter" => {
+                let n = self.arg(nombre, args, 0)?;
+                let a = self.como(&n, T::Int);
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_a_caracter(i64 {})", r, a));
+                V::Texto(r)
+            }
             // `s.reemplazar(viejo, nuevo)`: todas las apariciones, como la VM.
             "reemplazar" => {
                 let s = self.arg(nombre, args, 0)?;
@@ -3490,6 +3506,8 @@ fn es_builtin(nombre: &str) -> bool {
             | "dividir"
             | "recortar"
             | "reemplazar"
+            | "a_codigo"
+            | "a_caracter"
             | "unir_elementos"
             | "escribir_linea"
             | "esperar"

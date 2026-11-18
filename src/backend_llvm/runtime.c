@@ -515,6 +515,46 @@ void forja_imprimir_dinamico(void *v) {
 }
 
 /* `"" + v` cuando el tipo del slot es una suposición. */
+/* `a_codigo(c)`: codigo Unicode del primer caracter de `s` (0 si esta vacio).
+ * `a_caracter(n)`: el texto UTF-8 de ese codigo. */
+int64_t forja_a_codigo(const char *s) {
+    if (!s || !*s) return 0;
+    const unsigned char *p = (const unsigned char *)s;
+    if (p[0] < 0x80) return p[0];
+    if ((p[0] & 0xE0) == 0xC0) return ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+    if ((p[0] & 0xF0) == 0xE0)
+        return ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+    if ((p[0] & 0xF8) == 0xF0)
+        return ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) |
+               (p[3] & 0x3F);
+    return 0;
+}
+
+char *forja_a_caracter(int64_t codigo) {
+    char *r = forja_texto_alloc(8);
+    uint32_t c = (uint32_t)codigo;
+    if (c < 0x80) {
+        r[0] = (char)c;
+        r[1] = 0;
+    } else if (c < 0x800) {
+        r[0] = (char)(0xC0 | (c >> 6));
+        r[1] = (char)(0x80 | (c & 0x3F));
+        r[2] = 0;
+    } else if (c < 0x10000) {
+        r[0] = (char)(0xE0 | (c >> 12));
+        r[1] = (char)(0x80 | ((c >> 6) & 0x3F));
+        r[2] = (char)(0x80 | (c & 0x3F));
+        r[3] = 0;
+    } else {
+        r[0] = (char)(0xF0 | (c >> 18));
+        r[1] = (char)(0x80 | ((c >> 12) & 0x3F));
+        r[2] = (char)(0x80 | ((c >> 6) & 0x3F));
+        r[3] = (char)(0x80 | (c & 0x3F));
+        r[4] = 0;
+    }
+    return r;
+}
+
 /* `reemplazar(texto, viejo, nuevo)`: todas las apariciones, como el `replace`
  * de Rust que usa la VM. */
 char *forja_reemplazar(const char *s, const char *viejo, const char *nuevo) {
