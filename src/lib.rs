@@ -1815,6 +1815,11 @@ fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
 
     let mut fns: HashSet<String> = HashSet::new();
     let mut clases: HashSet<String> = HashSet::new();
+    // `main` es raíz aunque nadie la llame (el CLI la ejecuta). Sin esto la
+    // función se conserva por la regla de abajo pero su cuerpo nunca se
+    // escanea, y las clases que instancia se podaban antes del backend
+    // (`clase Pajaro desconocida` con la clase declarada en el mismo archivo).
+    fns.insert("main".to_string());
     // Raíces: sentencias de nivel superior.
     sentencias(&programa.declaraciones, &mut fns, &mut clases);
     // Cierre transitivo: cada función alcanzada arrastra lo que llama.

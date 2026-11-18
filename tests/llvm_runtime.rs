@@ -85,3 +85,45 @@ fn el_tag_distingue_textos_de_escalares() {
     // longitud 10 (arena) · 600000 (registro) · 0 (escalar) · tag 1 · tag 0
     assert_eq!(salida.trim(), "10 600000 0 1 0");
 }
+
+/* `a + b` sobre arreglos: concatenación de casillas (las de texto viajan como
+ * puntero, con el `tipo` del arreglo para que `escribir` sepa imprimirlas). */
+const DRIVER_CONCAT: &str = r#"
+#include <stdint.h>
+#include <stdio.h>
+void *forja_arreglo_nuevo(int64_t n, int64_t tipo);
+void forja_arreglo_fijar(void *a, int64_t i, int64_t v);
+void *forja_arreglo_concat(void *a, void *b);
+int64_t forja_arreglo_obtener(void *a, int64_t i);
+int64_t forja_arreglo_longitud(void *a);
+char *forja_arreglo_a_texto(void *a);
+
+int main(void) {
+    void *a = forja_arreglo_nuevo(2, 0);
+    forja_arreglo_fijar(a, 0, 1);
+    forja_arreglo_fijar(a, 1, 2);
+    void *b = forja_arreglo_nuevo(1, 0);
+    forja_arreglo_fijar(b, 0, 3);
+    void *r = forja_arreglo_concat(a, b);
+    printf("%lld %lld %lld %s\n",
+           (long long)forja_arreglo_longitud(r),
+           (long long)forja_arreglo_obtener(r, 0),
+           (long long)forja_arreglo_obtener(r, 2),
+           forja_arreglo_a_texto(r));
+    /* Sin lado izquierdo: se queda con el derecho. */
+    void *solo = forja_arreglo_concat(0, b);
+    printf("%lld\n", (long long)forja_arreglo_longitud(solo));
+    return 0;
+}
+"#;
+
+#[test]
+fn concat_de_arreglos_pega_las_casillas() {
+    let Some(salida) = compilar_y_ejecutar(DRIVER_CONCAT) else {
+        return;
+    };
+    assert_eq!(
+        salida.replace("\r\n", "\n").trim(),
+        "3 1 3 [1,2,3]\n1"
+    );
+}
