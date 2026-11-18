@@ -127,3 +127,34 @@ fn concat_de_arreglos_pega_las_casillas() {
         "3 1 3 [1,2,3]\n1"
     );
 }
+
+/* Base64 y hex: mismo contrato que la VM (cadena vacía = entrada inválida). */
+const DRIVER_CODIFICACION: &str = r#"
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+char *forja_base64_codificar(const char *s);
+char *forja_base64_decodificar(const char *s);
+char *forja_hex_decodificar(const char *s);
+
+int main(void) {
+    printf("%s|%s|%s|%s|%s\n",
+           forja_base64_codificar("Hola Mundo"),
+           forja_base64_decodificar("SG9sYSBNdW5kbw=="),
+           forja_base64_decodificar("no-es-base64!"),
+           forja_hex_decodificar("486f6c61"),
+           forja_hex_decodificar("zz"));
+    return 0;
+}
+"#;
+
+#[test]
+fn base64_y_hex_como_la_vm() {
+    let Some(salida) = compilar_y_ejecutar(DRIVER_CODIFICACION) else {
+        return;
+    };
+    assert_eq!(
+        salida.replace("\r\n", "\n").trim(),
+        "SG9sYSBNdW5kbw==|Hola Mundo||Hola|"
+    );
+}

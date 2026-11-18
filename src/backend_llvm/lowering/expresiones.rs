@@ -24,6 +24,11 @@ fn lit_double(d: f64) -> String {
 /// `forja-native` (`_archivo_*` devuelven -1 al fallar, `_env_obtener` devuelve
 /// `nulo`). nombre nativo → (función C, tipos de los argumentos, tipo del valor).
 const NATIVAS_STDLIB: &[(&str, &str, &[T], T)] = &[
+    // Base64: misma implementacion RFC 4648 que la VM (`forja-native/src/base64.rs`);
+    // `_base64_decodificar` devuelve "" si el texto no es base64 valido.
+    ("_base64_codificar", "forja_base64_codificar", &[T::Texto], T::Texto),
+    ("_base64_decodificar", "forja_base64_decodificar", &[T::Texto], T::Texto),
+    ("_hex_decodificar_nativo", "forja_hex_decodificar", &[T::Texto], T::Texto),
     ("_archivo_leer", "forja_archivo_leer", &[T::Texto], T::Int),
     (
         "_archivo_escribir",

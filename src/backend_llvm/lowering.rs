@@ -351,6 +351,9 @@ const RUNTIME: &[(&str, &str)] = &[
     // Primitivas de la stdlib (`_archivo_*`, `_env_*`, `_sistema_*`): mismo
     // contrato que `forja-native` (centinela -1 / `nulo` en vez de abortar).
     ("forja_archivo_leer", "i64 (ptr)"),
+    ("forja_base64_codificar", "ptr (ptr)"),
+    ("forja_hex_decodificar", "ptr (ptr)"),
+    ("forja_base64_decodificar", "ptr (ptr)"),
     ("forja_archivo_escribir", "i64 (ptr, ptr)"),
     ("forja_archivo_agregar", "i64 (ptr, ptr)"),
     ("forja_archivo_existe", "i64 (ptr)"),

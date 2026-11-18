@@ -1786,6 +1786,37 @@ fn podar_inalcanzable(mut programa: ast::Programa) -> ast::Programa {
             | Expresion::AsignacionCampo { valor, .. }
             | Expresion::AsignacionCompuesta { valor, .. } => expr(valor, fns, clases),
             Expresion::Try(inner) => expr(inner, fns, clases),
+            // `este.arr[0] = nuevo B()`: sin esto la clase de `valor` no se
+            // marcaba y se podaba antes del backend (`clase Token desconocida`).
+            Expresion::ArregloFijar { array, valor } => {
+                expr(array, fns, clases);
+                expr(valor, fns, clases);
+            }
+            Expresion::Referencia { expr: e, .. } => expr(e, fns, clases),
+            Expresion::CanalNuevo(capacidad) => {
+                if let Some(c) = capacidad {
+                    expr(c, fns, clases);
+                }
+            }
+            // `si` como expresión y `seleccionar`: los cuerpos son sentencias.
+            Expresion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                expr(condicion, fns, clases);
+                sentencias(bloque_verdadero, fns, clases);
+                if let Some(b) = bloque_falso {
+                    sentencias(b, fns, clases);
+                }
+            }
+            Expresion::Seleccionar { brazos } => {
+                for b in brazos {
+                    for s in &b.cuerpo {
+                        sentencias(std::slice::from_ref(s), fns, clases);
+                    }
+                }
+            }
             Expresion::Closure { cuerpo, .. } | Expresion::Hilo { cuerpo } => {
                 sentencias(cuerpo, fns, clases)
             }

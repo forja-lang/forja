@@ -1359,6 +1359,105 @@ char *forja_leer_linea(void) {
     return r;
 }
 
+/* ── hexadecimal ─────────────────────────────────────────────────────── */
+static int forja_hex_valor(unsigned char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+/* `_hex_decodificar_nativo`: bytes hex → texto (UTF-8 best effort, como
+ * `String::from_utf8_lossy` de la VM); "" si el hex es inválido. */
+char *forja_hex_decodificar(const char *s) {
+    if (!s) return forja_dup("");
+    size_t n = strlen(s);
+    if (n < 2 || n % 2 != 0) return forja_dup("");
+    char *r = forja_texto_alloc((int64_t)(n / 2) + 1);
+    for (size_t i = 0; i < n / 2; i++) {
+        int alto = forja_hex_valor((unsigned char)s[i * 2]);
+        int bajo = forja_hex_valor((unsigned char)s[i * 2 + 1]);
+        if (alto < 0 || bajo < 0) {
+            return forja_dup("");
+        }
+        r[i] = (char)((alto << 4) | bajo);
+    }
+    r[n / 2] = '\0';
+    return r;
+}
+
+/* ── base64 (RFC 4648, igual que `forja-native/src/base64.rs`) ────────── */
+static const char FORJA_B64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+char *forja_base64_codificar(const char *s) {
+    if (!s) s = "";
+    size_t n = strlen(s);
+    size_t bloques = n / 3, resto = n % 3;
+    size_t cap = bloques * 4 + (resto ? 4 : 0);
+    char *r = forja_texto_alloc((int64_t)cap + 1);
+    char *o = r;
+    for (size_t i = 0; i < bloques; i++) {
+        unsigned b0 = (unsigned char)s[i * 3];
+        unsigned b1 = (unsigned char)s[i * 3 + 1];
+        unsigned b2 = (unsigned char)s[i * 3 + 2];
+        unsigned v = (b0 << 16) | (b1 << 8) | b2;
+        *o++ = FORJA_B64[(v >> 18) & 0x3F];
+        *o++ = FORJA_B64[(v >> 12) & 0x3F];
+        *o++ = FORJA_B64[(v >> 6) & 0x3F];
+        *o++ = FORJA_B64[v & 0x3F];
+    }
+    if (resto == 1) {
+        unsigned v = ((unsigned char)s[n - 1]) << 16;
+        *o++ = FORJA_B64[(v >> 18) & 0x3F];
+        *o++ = FORJA_B64[(v >> 12) & 0x3F];
+        *o++ = '=';
+        *o++ = '=';
+    } else if (resto == 2) {
+        unsigned v = (((unsigned char)s[n - 2]) << 16) | (((unsigned char)s[n - 1]) << 8);
+        *o++ = FORJA_B64[(v >> 18) & 0x3F];
+        *o++ = FORJA_B64[(v >> 12) & 0x3F];
+        *o++ = FORJA_B64[(v >> 6) & 0x3F];
+        *o++ = '=';
+    }
+    *o = '\0';
+    return r;
+}
+
+static int forja_b64_valor(unsigned char c) {
+    if (c == '=') return 0;
+    const char *p = strchr(FORJA_B64, (char)c);
+    return p ? (int)(p - FORJA_B64) : -1;
+}
+
+/* Devuelve "" si el texto no es base64 valido (la capa Forja arma el `Error`). */
+char *forja_base64_decodificar(const char *s) {
+    if (!s || !*s) return forja_dup("");
+    size_t n = strlen(s);
+    if (n % 4 != 0) return forja_dup("");
+    size_t relleno = 0;
+    if (s[n - 1] == '=') relleno = (s[n - 2] == '=') ? 2 : 1;
+    size_t bloques = n / 4;
+    char *r = forja_texto_alloc((int64_t)(bloques * 3) + 1);
+    size_t o = 0;
+    for (size_t i = 0; i < bloques; i++) {
+        int c0 = forja_b64_valor((unsigned char)s[i * 4]);
+        int c1 = forja_b64_valor((unsigned char)s[i * 4 + 1]);
+        int c2 = forja_b64_valor((unsigned char)s[i * 4 + 2]);
+        int c3 = forja_b64_valor((unsigned char)s[i * 4 + 3]);
+        if (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0) {
+            return forja_dup("");
+        }
+        unsigned v = ((unsigned)c0 << 18) | ((unsigned)c1 << 12) | ((unsigned)c2 << 6) |
+                     (unsigned)c3;
+        r[o++] = (char)(v >> 16);
+        if (relleno < 2 || i + 1 < bloques) r[o++] = (char)(v >> 8);
+        if (relleno == 0 || i + 1 < bloques) r[o++] = (char)v;
+    }
+    r[o] = '\0';
+    return r;
+}
+
 /* `escribir_linea(s)`: como `escribir` pero con salto de línea. */
 void forja_escribir_linea(const char *s) {
     fputs(s ? s : "nulo", stdout);
