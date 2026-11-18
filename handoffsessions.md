@@ -60,6 +60,14 @@ nativo vs VM: 154 coinciden · 0 difieren · 119 no bajan · 2 no terminan · 3 
 Merges ya dentro de `main`: `native/cajas` (`0b2cc95c`) y `native/atajos`
 (`bcb671f4`). `origin/main` al día.
 
+> **Corrección 2026-11-17 23:05** (sesión `native/cajas`, al final de este
+> archivo). `main` ya está en `557a9981` y esta medición **no se reproduce desde
+> un árbol limpio**: con `ejemplos` en el mismo `58b106ca` y árbol limpio, el
+> arnés da `150 · 0 · 95 · 4 · 4 · 0` (`00614f6b`, 22:47, release sin
+> recompilar). La brecha (154/119 vs 150/95) sólo puede venir del árbol sucio
+> con el que se midió o de la versión sin commitear del arnés. Re-medir con el
+> árbol quieto antes de citar cualquiera de los dos números.
+
 ## Tomado ahora
 
 | Zona | Quién | Desde |
@@ -187,6 +195,13 @@ después.
 4. `git worktree add` no trae `patches/` ni los submódulos: el build falla con
    `patch location … does not contain packages matching masonry_winit`. Receta
    en `plans/handoff8.md` §0.
+   - **Corrección 2026-11-17** (sesión `native/cajas`): desde `00614f6b`
+     `patches/` es **submódulo** (antes era un directorio gitignoreado, y la
+     receta era copiarlo a mano). `git submodule update --init` no alcanza si el
+     SHA registrado no está pusheado: traerlo del clon local del árbol principal
+     (`git -C patches fetch <ruta-al-principal>/patches <sha>` y
+     `git -C patches checkout --detach <sha>`). `plans/` tampoco viaja al
+     worktree (está gitignoreado): copiarlo si hace falta leer los handoffs.
 5. HEAD llegó a **no compilar** `forja-cli` (llamaba a `forja::compilar_a_asm_desde`,
    que sólo existía sin commitear). Lo dejé compilando en `4065ed9d`, un
    checkpoint de los 66 archivos que estaban sueltos. Moraleja: si tu cambio
@@ -205,3 +220,100 @@ después.
 
 **Zona tomada**: ninguna, la sesión terminó. El worktree `forja-shortcuts` se
 borró después del merge.
+
+---
+
+### 2026-11-17 23:05 — backend nativo: cajas descartadas, `101/104/105` y builtins (worktree `forja-native`, rama `native/cajas`)
+
+Commits propios: `7ec9ed22` (claves por clase), `1821cbcf` (builtins de
+entrada/introspección), `136c92e0` (`leer()` recorta), `290e630d` (handoff8
+versionado), `00614f6b` (merge de `main`). Los dos primeros ya los mergeó la
+sesión de arriba en `0b2cc95c`; lo único que aporta mi rama sobre `557a9981` es
+`136c92e0` (12 líneas en `runtime.c`) más el doc, así que el merge real es
+**fast-forward** (`git merge --ff-only native/cajas`).
+
+**Trabajé en un worktree aparte** (`C:\Users\gaucho\forja-native`, rama
+`native/cajas`, creado en `377f5bd4` con los submódulos fijados al SHA
+registrado): el árbol principal tenía 108 archivos sucios ajenos y
+`monomorphize_programa` desactivado con `TEMP-PI`, así que medir paridad ahí no
+valía. Receta de recreación en `plans/handoff8.md` §0.
+
+**Medido** (2026-11-17 22:47, `00614f6b` = `main` `557a9981` + el recorte de
+`leer`; árbol limpio, `ejemplos` en `58b106ca`, release de 22:47:36 y `cargo
+build` posterior sin recompilar, o sea el binario es el del commit):
+
+```
+nativo vs VM: 150 coinciden · 0 difieren · 95 no bajan · 4 no terminan · 4 error · 0 revientan
+llvm_backend 48/48 · lib 129 · corpus 299 · frontera_crates 2/2 · clippy y fmt limpios
+```
+
+Contra el `154 · 0 · 119` de «Estado verificado» — ver la corrección de arriba:
+la diferencia no se explica por el árbol (mismo `ejemplos`), sino por lo sucio de
+esa corrida o por su arnés sin commitear. No citar ninguno de los dos sin
+re-medir.
+
+**Backend — lo que cambió de criterio:**
+
+- `101/104/105` **no necesitan el modelo de cajas** del `handoff7` §3. La causa
+  era otra: `params_dinamicos` y `metodos_param` se indexaban por nombre de
+  método (`nuevo:0`, `obtener`), así que el `Caja<T>` genérico (que sobrevive a
+  la monomorfización) marcaba como «dinámico» el constructor y el `-> T` de
+  `Caja_Texto`/`Caja_Booleano`. Efectos: el constructor recibía `ptrtoint` donde
+  la firma especializada esperaba `ptr` (clang rechazaba el IR y `aot` caía a
+  bytecode **en silencio**) y `obtener()` se imprimía por bits (`1` vs
+  `verdadero`). La clave ahora lleva la clase. La monomorfización ya propaga el
+  tipo concreto a campos, parámetros y retornos (`specialize_clase` +
+  `campos_concretos`), así que el encajado de escalares no hace falta **para
+  genéricos**.
+- Builtins recuperados de `stash@{2}`: `leer`, `escribir_linea`,
+  `unir_elementos`, `tipo`, `_mapa_claves/_mapa_valores/_mapa_pares`, más lo que
+  los sostiene (evidencia de tipo por aritmética y ternario, pistas de tipo
+  frescas por cuerpo, `ret_dinamico` en métodos). Al portarlos con
+  `git apply -3` hay que **borrar los duplicados** de `metodos_param`/
+  `ret_dinamico` en el `struct` y en el constructor: el stash es anterior a
+  `6a5d7a17`/`a4abea9c` y esos hunks ya estaban.
+- Dos diferencias con la VM que aparecieron al probarlos: `leer()` sin tipo de
+  retorno dejaba el `nulo` de fin de entrada como `0` (ahora `tipo_builtin` dice
+  `Texto` y `forja_concat` une un texto nulo como `"nulo"`), y `tipo(v)` creía el
+  tipo estático de un `arr[i]` —una suposición— así que `aplanar` no veía los
+  arreglos anidados (ahora sólo `Booleano`/`Decimal` usan la vía estática).
+- `136c92e0`: `forja_leer_linea` recorta la línea y trata la vacía (o de sólo
+  espacios) como fin de entrada, igual que `Opcode::LeerLinea`. Probado con
+  **stdin por tubería** contra `forja ejecutar` (con datos, vacío y línea en
+  blanco), no sólo con la entrada vacía del arnés: `  x  ` → `x`, línea vacía →
+  `nulo`, EOF → `nulo`.
+- Exclusiones nuevas, con motivo medido: `211_colecciones`, `test_basico` y
+  `test_sobrecarga` (las dos últimas porque `escribir_linea` de la **VM** imprime
+  tres líneas por llamada; el nativo imprime una).
+
+**Abierto y dónde está:**
+
+- Los 95 que no bajan: separar por causa real (`forja llvm ejemplo.fa /tmp/x`).
+  `146_arbol_avl` y `186_gestion_memoria` salen con error explícito de runtime
+  («acceso a `valor` sobre un objeto nulo»), sin investigar. Y la decisión §2 del
+  `handoff7` (paridad vs «nunca mentir»), que es de producto.
+- **El encajado de escalares ya no tiene como justificante a los genéricos**: le
+  queda sólo `nulo` en una casilla tipada (`211_colecciones`: `encontrar()`
+  imprime `0` donde la VM imprime `nulo`). Medir cuántos ejemplos lo piden antes
+  de escribirlo; los stashes `{0}`/`{1}` sirven de punto de partida.
+- `golden_runner` falla en `main` con **11 goldens commiteados viejos** (`66`,
+  `139`, `142`, `143`, `150`, `169`, `170`, `190`, `193`, `198`, `400`); el árbol
+  principal ya los regeneró sin commitear. No es del backend: el diff de
+  `66_busqueda_lineal` es una línea de salida del programa.
+- **`cargo test -p forja` no puede terminar**: se cuelga dentro de
+  `tests/runtime.rs` (los `concurrencia_stress::f12_t2_*` imprimen `FAILED` pero
+  el binario nunca sale: hilos bloqueados en `recibir()`, el runner no puede
+  cerrar el proceso) y también en
+  `ir_emision_paridad_funcional_con_ast` (misma familia, casos de canal). El tope
+  `fijar_max_inst(10_000_000_000)` no los corta: **bloquean**, no giran. Para
+  correr el resto:
+  `cargo test --offline -p forja -- --skip ir_emision_paridad_funcional_con_ast`.
+- `juegos/158_contador_palabras.fa` llama a `mayuscula()`, que no existe en
+  ningún lado (ni en el ejemplo, ni en la VM, ni en la stdlib). Es del submódulo
+  `ejemplos`.
+- Inconsistencia de la VM: `Opcode::LeerLinea` recorta y la línea vacía es nulo;
+  `Uop::LeerLinea` no recorta y devuelve texto vacío. Copié la primera (es la que
+  usa `forja ejecutar`); conviene decidir cuál es la buena.
+
+**Zona tomada**: ninguna, la sesión terminó. `src/backend_llvm/**`,
+`scripts/paridad-exclusiones` y `tests/llvm_backend.rs` quedan libres.
