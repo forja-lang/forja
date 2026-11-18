@@ -217,7 +217,8 @@ impl ConstructorDesdeAst {
     /// mapa. Sólo los globales son del programa entero.
     fn reiniciar_tipos_de_variables(&mut self) {
         let globales = self.mapa_globales.clone();
-        self.tipos_var.retain(|nombre, _| globales.contains_key(nombre));
+        self.tipos_var
+            .retain(|nombre, _| globales.contains_key(nombre));
     }
 
     fn obtener_memoria(&self, nombre: &str) -> Option<IdxMemoria> {

@@ -24,6 +24,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <sys/stat.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -1357,11 +1358,11 @@ int64_t forja_archivo_agregar(const char *ruta, const char *contenido) {
     return escrito == n ? 0 : -1;
 }
 
+/* `stat` y no `fopen`: la VM (`Path::exists`) dice que existe para directorios. */
 int64_t forja_archivo_existe(const char *ruta) {
-    FILE *f = ruta && *ruta ? fopen(ruta, "rb") : NULL;
-    if (!f) return 0;
-    fclose(f);
-    return 1;
+    struct stat st;
+    if (!ruta || !*ruta) return 0;
+    return stat(ruta, &st) == 0 ? 1 : 0;
 }
 
 /* `_archivo_eliminar(ruta)` → 0, o -1. */
@@ -1370,18 +1371,12 @@ int64_t forja_archivo_eliminar(const char *ruta) {
     return remove(ruta) == 0 ? 0 : -1;
 }
 
-/* `_archivo_tamano(ruta)` → bytes, o -1. */
+/* `_archivo_tamano(ruta)` → bytes, o -1 (como `std::fs::metadata().len()`). */
 int64_t forja_archivo_tamano(const char *ruta) {
+    struct stat st;
     if (!ruta || !*ruta) return -1;
-    FILE *f = fopen(ruta, "rb");
-    if (!f) return -1;
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
-        return -1;
-    }
-    long n = ftell(f);
-    fclose(f);
-    return n < 0 ? -1 : (int64_t)n;
+    if (stat(ruta, &st) != 0) return -1;
+    return (int64_t)st.st_size;
 }
 
 /* `_sistema_variable_entorno(nombre)` → texto, o `nulo` (NULL). */
