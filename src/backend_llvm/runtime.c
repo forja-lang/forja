@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include <time.h>
 #include <math.h>
@@ -452,6 +453,22 @@ void *forja_arreglo_nuevo(int64_t n, int64_t tipo) {
     a->datos = (int64_t *)forja_alloc(a->cap * (int64_t)sizeof(int64_t));
     forja_registrar(a, FORJA_T_ARREGLO);
     return a;
+}
+
+/* `a + b` sobre arreglos: concatenación (`[v] + este.elementos`). Antes el
+ * lowering lo trataba como suma de enteros —ptrtoint + add— y reventaba al
+ * desreferenciar la suma de dos punteros. Las casillas viajan como i64. */
+void *forja_arreglo_concat(void *pa, void *pb) {
+    ForjaArreglo *a = (ForjaArreglo *)pa;
+    ForjaArreglo *b = (ForjaArreglo *)pb;
+    if (!a) return b ? pb : forja_arreglo_nuevo(0, 0);
+    if (!b) return pa;
+    /* El 1 dicen que las casillas son textos (punteros) aunque estén vacíos. */
+    int64_t tipo = a->len ? a->tipo : b->tipo;
+    ForjaArreglo *r = (ForjaArreglo *)forja_arreglo_nuevo(a->len + b->len, tipo);
+    for (int64_t i = 0; i < a->len; i++) r->datos[i] = a->datos[i];
+    for (int64_t i = 0; i < b->len; i++) r->datos[a->len + i] = b->datos[i];
+    return r;
 }
 
 /* Casilla de un arreglo que guarda arreglos (`este.matriz[i]`, `adyacencia[i]`).
@@ -1330,8 +1347,14 @@ char *forja_leer_linea(void) {
     }
     if (n > 0 && buf[n - 1] == '\r') n--;
     buf[n] = '\0';
-    char *r = forja_texto_alloc((int64_t)n + 1);
-    memcpy(r, buf, n + 1);
+    /* Como la VM (`texto_de_lectura`): recorta los espacios de los extremos.
+     * Una linea en blanco es texto vacio; solo el fin de entrada es `nulo`. */
+    size_t ini = 0, fin = n;
+    while (ini < fin && isspace((unsigned char)buf[ini])) ini++;
+    while (fin > ini && isspace((unsigned char)buf[fin - 1])) fin--;
+    char *r = forja_texto_alloc((int64_t)(fin - ini) + 1);
+    memcpy(r, buf + ini, fin - ini);
+    r[fin - ini] = '\0';
     free(buf);
     return r;
 }

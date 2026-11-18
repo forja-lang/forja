@@ -295,6 +295,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_imprimir_nulo", "void ()"),
     ("forja_nueva_linea", "void ()"),
     ("forja_arreglo_nuevo", "ptr (i64, i64)"),
+    ("forja_arreglo_concat", "ptr (ptr, ptr)"),
     ("forja_leer_linea", "ptr ()"),
     ("forja_escribir_linea", "void (ptr)"),
     ("forja_unir_elementos", "ptr (ptr, ptr)"),

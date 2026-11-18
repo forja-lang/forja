@@ -746,6 +746,18 @@ impl Lowering {
                 }
             }
         }
+        // Arreglos: `[v] + arr` concatena (la VM lo hace; antes caía en la suma
+        // de enteros y el `ptrtoint`+`add` de dos arreglos reventaba).
+        if matches!(operador, Suma) && (a.t() == T::Arreglo || b.t() == T::Arreglo) {
+            let x = self.como(&a, T::Arreglo);
+            let y = self.como(&b, T::Arreglo);
+            let r = self.r();
+            self.linea(&format!(
+                "{} = call ptr @forja_arreglo_concat(ptr {}, ptr {})",
+                r, x, y
+            ));
+            return Ok(V::Arreglo(r));
+        }
         // Texto: concatenación y comparación con el runtime.
         let texto = a.t() == T::Texto || b.t() == T::Texto;
         if texto && matches!(operador, Suma) {
