@@ -33,6 +33,16 @@ pub(crate) fn cmd_aot(args: &[String]) {
             process::exit(1);
         }
     };
+    // Una app GUI no tiene host de widgets en el backend LLVM: el ejecutable
+    // compilaba, salía con 0 y no imprimía nada (la peor mentira). Mejor
+    // fallar explícito y decir con qué comando sí corre.
+    if importa_gui(&fuente) {
+        eprintln!(concat!(
+            "❌ AOT nativo no soporta apps GUI: el backend LLVM no tiene host de widgets. ",
+            "Usá `forja ejecutar` (runtime gráfico `forja-rt-gui`) o `forja compilar`."
+        ));
+        process::exit(1);
+    }
     let ruta_salida = Path::new(&salida);
     match compilar_llvm_a(&fuente, ruta_salida) {
         Ok(()) => println!("✅ AOT nativo: {salida}"),

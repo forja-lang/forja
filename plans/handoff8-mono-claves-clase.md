@@ -43,10 +43,18 @@ aparecieron cuatro bugs (uno con **segfault**):
 5. Un parámetro que sólo se usa como aguja de `contiene(texto, ch)` no se veía
    como Texto: `_es_digito` recibía el texto como número (segfault en `709`).
 
+## GUI: de mentira silenciosa a error explícito (§3.5 de `handoff4.md`)
+
+`forja aot` sobre una app GUI compilaba, salía con 0 y **no imprimía nada** (la
+VM tampoco corre: no hay host de widgets). Ahora `cmd_aot` detecta
+`importar gui` y falla con mensaje y código 1, señalando `forja ejecutar`
+(`forja-rt-gui`) o `forja compilar`. Los 3 ejemplos GUI pasan de «difieren» a
+«no bajan» (skipped) y la exclusión de `900_storybook` se fue (ya no aplica).
+
 ## Medido (árbol con este commit, release)
 
 ```
-nativo vs VM: 154 coinciden · 0 difieren · 116 no bajan · 2 no terminan · 6 error · 0 revientan
+nativo vs VM: 154 coinciden · 0 difieren · 119 no bajan · 2 no terminan · 3 error · 0 revientan
 ```
 
 Tests: `llvm_backend` 40/40 · `lib` 129 · `corpus` 299 · `forja-vm`/`forja-cli`/
@@ -55,6 +63,39 @@ Tests: `llvm_backend` 40/40 · `lib` 129 · `corpus` 299 · `forja-vm`/`forja-cl
 Exclusiones nuevas (con motivo medido): `709_texto` (la VM pega un `nulo` al
 texto envuelto: `...español.nulo`) y `153_ahorcado` (elige palabra con
 `tiempo_actual()`, no determinista; coincidió una vez por casualidad).
+
+## Benchmarks re-medidos (§3.6) — hay una regresión vieja
+
+`scripts/bench-competencias.sh` (3 reps, mínimo, árbol quieto):
+
+| caso | forja | rust | ratio | baseline 2026-11-09 |
+|---|---|---|---|---|
+| ffi | 38 | 37 | 1.03x | 1.02x |
+| dispatch | 52 | 52 | 1.00x | 1.03x |
+| **parseo** | **1893** | **522** | **3.63x** | **1.03x (546 ms)** |
+| memcache | 248 | 255 | 0.97x | 1.04x |
+| vectores | 85 | 122 | 0.70x | 1.51x (0.97x con `reservar`) |
+| overflowpanic | 66 | 66 | 1.00x | 1.01x |
+| hash | 354 | 262 | 1.35x | 0.94x |
+| erroresanidados | 355 | 1283 | 0.28x | 0.61x |
+| concurrencia | 40 | 41 | 0.98x | 0.42x |
+| stress | 122 | 256 | 0.48x | 1.51x |
+
+**`parseo` es 3.4x más lento que la baseline** (Rust se mide igual: 522 vs 531 ms,
+así que no es la máquina). Perfilado a mano con el mismo binario:
+
+- construir los textos (`forja_concat` + 2 `a_texto`) = **1.42 s de 1.75 s**;
+  `subcadena` sólo 0,15 s; `indice_de` despreciable.
+- **no es el registro de tags**: compilando sin `forja_registrar` en
+  `forja_texto_alloc` el caso tarda lo mismo (1849 ms vs 1750 ms).
+- escala casi lineal (250k→182 ms, 500k→389, 1M→846, 2M→1750).
+
+La regresión está entre la baseline (2026-11-09, `98b6693b`) y hoy, en el camino
+de alloc/texto; no la introdujo este merge (no toca `forja_concat`/`a_texto`).
+**No actualicé `baseline.json`**: publicarla dejaría el 3.6x como «normal» y el
+job de CI (`Bench competencias`) es justamente el que avisa. Siguiente paso
+sugerido: bisecar `98b6693b..HEAD` sobre `runtime.c` con este perfil (3 min por
+commit) y mirar `forja_alloc`/`forja_texto_alloc`.
 
 ## Lo que sigue rojo/abierto
 
