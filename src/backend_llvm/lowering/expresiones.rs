@@ -284,10 +284,61 @@ impl Lowering {
                 metodo,
                 argumentos,
             } => self.llamada_metodo(objeto, metodo, argumentos),
-            Expresion::AccesoMiembro { objeto, miembro } => match self.expr(objeto)? {
-                V::Clase(obj, clase) => self.campo_obtener(&obj, &clase, miembro),
-                otro => self.despacho_campo_obtener(&otro, miembro),
-            },
+            Expresion::AccesoMiembro { objeto, miembro } => {
+                // `r.valor` / `r.error` sobre un `Resultado` guardado en una variable:
+                // la VM los resuelve por el valor del momento (`nulo` si la variante no
+                // es esa). El tipo del payload sale de la firma de la función.
+                if matches!(miembro.as_str(), "valor" | "error") {
+                    if let Expresion::Identificador {
+                        nombre: variable, ..
+                    } = objeto.as_ref()
+                    {
+                        if let Some((t_ok, t_err)) = self.resultado_var.get(variable).cloned() {
+                            let (t, caso) = if miembro == "valor" {
+                                (t_ok, "Ok")
+                            } else {
+                                (t_err, "Error")
+                            };
+                            let esperado = self
+                                .variantes
+                                .get(caso)
+                                .map(|v| v.1)
+                                .unwrap_or(if miembro == "valor" { 0 } else { 1 });
+                            let valor = self.expr(objeto)?;
+                            let p = self.como(&valor, T::Enum("Resultado".to_string()));
+                            let pt = self.r();
+                            self.linea(&format!(
+                                "{} = getelementptr inbounds %Enum.Resultado, ptr {}, i32 0, i32 0",
+                                pt, p
+                            ));
+                            let tag = self.r();
+                            self.linea(&format!("{} = load i64, ptr {}", tag, pt));
+                            let pp = self.r();
+                            self.linea(&format!(
+                                "{} = getelementptr inbounds %Enum.Resultado, ptr {}, i32 0, i32 1",
+                                pp, p
+                            ));
+                            let payload = self.r();
+                            self.linea(&format!("{} = load i64, ptr {}", payload, pp));
+                            let es = self.r();
+                            self.linea(&format!(
+                                "{} = icmp eq i64 {}, {}",
+                                es, tag, esperado
+                            ));
+                            let sel = self.r();
+                            self.linea(&format!(
+                                "{} = select i1 {}, i64 {}, i64 0",
+                                sel, es, payload
+                            ));
+                            return Ok(self.desde_slot(&sel, &t));
+                        }
+                    }
+                }
+                match self.expr(objeto)? {
+                    V::Clase(obj, clase) => self.campo_obtener(&obj, &clase, miembro),
+                    otro => self.despacho_campo_obtener(&otro, miembro),
+                }
+            }
             Expresion::Instanciacion { clase, argumentos } => self.instanciar(clase, argumentos),
             Expresion::Arreglo(items) => {
                 let n = items.len().to_string();

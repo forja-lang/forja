@@ -588,19 +588,41 @@ impl Lowering {
             Declaracion::AsignacionMultiple {
                 variables, valor, ..
             } => {
-                // `variable e, r = canal()`: el canal nativo es simétrico, así que
-                // ambos nombres apuntan al mismo handle.
                 let v = self.expr(valor)?;
-                if v.t() != T::Canal {
-                    return Err(
-                        "`variable a, b = ...` sólo se soporta para `canal()` en la ruta LLVM"
-                            .into(),
-                    );
-                }
-                for nombre in variables {
-                    let slot = self.alloca(&T::Canal, nombre);
-                    self.guardar(&slot, V::Canal(v.r().to_string()), &T::Canal);
-                    self.vars.insert(nombre.clone(), Var { slot, t: T::Canal });
+                if v.t() == T::Canal {
+                    // `variable e, r = canal()`: el canal nativo es simétrico, así
+                    // que ambos nombres apuntan al mismo handle.
+                    for nombre in variables {
+                        let slot = self.alloca(&T::Canal, nombre);
+                        self.guardar(&slot, V::Canal(v.r().to_string()), &T::Canal);
+                        self.vars.insert(nombre.clone(), Var { slot, t: T::Canal });
+                    }
+                } else {
+                    // `variable x, y = f()`: la VM reparte las casillas del arreglo
+                    // que devuelve `f` (aunque venga de un `-> auto`, sin tipo). Se
+                    // valida el valor por tag antes de indexarlo y cada casilla queda
+                    // "incierta": texto/impresión se resuelven por tag en runtime.
+                    let dato = self.como_slot(&v);
+                    let validado = self.r();
+                    self.linea(&format!(
+                        "{} = call ptr @forja_arreglo_validar(i64 {})",
+                        validado, dato
+                    ));
+                    let mut dudosas = Vec::new();
+                    for (i, nombre) in variables.iter().enumerate() {
+                        let el = self.r();
+                        self.linea(&format!(
+                            "{} = call i64 @forja_arreglo_obtener(ptr {}, i64 {})",
+                            el, validado, i
+                        ));
+                        let slot = self.alloca(&T::Int, nombre);
+                        self.guardar(&slot, V::Int(el), &T::Int);
+                        self.vars.insert(nombre.clone(), Var { slot, t: T::Int });
+                        dudosas.push(nombre.clone());
+                    }
+                    for nombre in dudosas {
+                        self.inciertos.insert(nombre);
+                    }
                 }
             }
         }
