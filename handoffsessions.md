@@ -703,3 +703,24 @@ Commits: `f83a67a0`, `c652faf1` (+ `ejemplos` `6e104a7`)
 - **Bug de la VM anotado, no arreglado**: `escribir_linea` imprime **tres** saltos en la VM
   (`escribir("a")` + `escribir_linea("b")` → `a\nb\n\n\n`); el nativo imprime uno, que es lo
   que dice el nombre. Arreglarlo mueve la salida de la VM y los goldens: es de L2/L3.
+
+### 2026-11-18 21:30 — `escribir_linea` de la VM, parámetros sin tipo y el test flaky
+Commits: `9aeee470`, el revert de `inciertos` en parámetros y este test
+
+- Medido (release del worktree): **187 coinciden · 0 difieren · 53 no bajan · 3 no terminan ·
+  4 error · 0 revientan**, con `llvm_backend` 56, `llvm_runtime` 3, `lib` 129, `corpus` 299,
+  `runtime` 102, clippy limpio.
+- Cambió:
+  - **`escribir_linea` de la VM imprimía tres saltos** (los generadores de bytecode e IR
+    agregaban un `\n` sobre `Imprimir`, que ya cierra la línea). Ahora imprime uno, igual que
+    `forja_escribir_linea`. `215_hash`, `test_basico` y `test_sobrecarga` **coinciden** y
+    salieron de `paridad-exclusiones`; sus goldens se regeneraron (el texto nuevo es el
+    correcto: desaparecen las líneas vacías de más).
+  - `test_async_hilo_sin_retorno` esperaba 100 ms a que un hilo imprimiera: con la máquina
+    cargada el test fallaba. Ahora espera 500 ms (prueba que el hilo corre, no su latencia).
+  - Probado y **revertido**: marcar los parámetros sin tipo como «inciertos» arreglaba el
+    cuelgue de `194` pero rompía `162_aprox_e` y `400_exacto_debug` (imprimían Decimal/Exacto
+    como entero). El trade-off no cierra: 194 sigue en «no termina».
+- Sigue abierto, con causa: `194` y `146`/`186` son el modelo dinámico (§9 / acceso a campo
+  de nulo, decisión de producto); `189` es lento en la VM; `seleccionar` (7), sockets/JSON/
+  XHB/compartido (~10) y GUI (28) siguen fuera de alcance.
