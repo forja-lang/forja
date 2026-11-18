@@ -26,7 +26,10 @@ cd "$ROOT"
 
 FORJA="${FORJA:-$ROOT/target/release/forja$( [ "$(uname -s)" != "Linux" ] && echo .exe )}"
 TIMEOUT="${TIMEOUT:-20}"
-OUT="$ROOT/target/paridad"
+# Un directorio por corrida: dos sesiones (o un CI y uno local) midiendo a la
+# vez compartían `target/paridad` y cada `rm -rf` borraba los `.aot` de la otra
+# (aparecían como "no bajan a nativo" y `grep: ... No such file or directory`).
+OUT="${PARIDAD_OUT:-$ROOT/target/paridad}/$(date +%Y%m%d-%H%M%S)-$$"
 EXCLUSIONES="$ROOT/scripts/paridad-exclusiones"
 VERBOSE=0
 ACTUALIZAR=0
@@ -56,7 +59,6 @@ sucios="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
 echo "sucio:   $sucios archivo(s) sin commitear"
 echo "ejemplos: $(find ejemplos -name '*.fa' | wc -l | tr -d ' ')"
 
-rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # Copia del binario: si otra sesión corre `cargo build` mientras se mide, cargo
@@ -149,6 +151,7 @@ for f in $(find ejemplos -name '*.fa' | sort); do
 done
 
 echo
+echo "informe:   $OUT"
 echo "nativo vs VM: $coinciden coinciden · $difieren difieren (sin excluir) · $saltados no bajan a nativo · $tiempos no terminan en ${TIMEOUT}s · $errores salen con error explícito · $crash revientan"
 
 if [ "$ACTUALIZAR" = 1 ]; then
