@@ -1386,3 +1386,49 @@ main()
         assert_eq!(salida.trim(), "fin");
     }
 }
+
+#[test]
+fn coincidir_enum_que_llego_por_una_casilla_sin_tipo() {
+    // El enum viaja por un parámetro sin anotar (casilla `Entero`): `coincidir`
+    // lo reconoce por las variantes de los brazos (`111_match_enum`).
+    let fuente = r#"
+tipo Direccion = Norte | Sur
+funcion describir(d) -> Texto {
+    coincidir (d) {
+        caso Norte -> { retornar "norte" }
+        caso Sur -> { retornar "sur" }
+    }
+}
+variable d = Norte
+escribir(describir(d))
+d = Sur
+escribir(describir(d))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "norte\nsur");
+    }
+}
+
+#[test]
+fn coincidir_entero_con_patrones_literales() {
+    // `coincidir` sobre un entero (no un `tipo`): `caso 0`, `caso x` y `_`
+    // (`600_match_completo`).
+    let fuente = r#"
+funcion par(n) -> Booleano {
+    coincidir (n % 2) {
+        caso 0 -> { retornar verdadero }
+        caso _ -> { retornar falso }
+    }
+}
+escribir(par(4))
+escribir(par(5))
+variable x = 0
+coincidir (42) {
+    caso v -> { x = v }
+}
+escribir(x)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "verdadero\nfalso\n42");
+    }
+}

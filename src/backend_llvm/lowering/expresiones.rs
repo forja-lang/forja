@@ -2040,16 +2040,48 @@ impl Lowering {
         // el payload se enlaza con esos tipos, no con el `Entero` del preludio.
         let payload_anotado = match scrutinee {
             Expresion::Identificador { nombre, .. } => self.resultado_var.get(nombre).cloned(),
+            // `coincidir (ops[i])`: las casillas del arreglo salen del mismo
+            // productor que se recordó al declararlo.
+            Expresion::Index { objeto, .. } => match objeto.as_ref() {
+                Expresion::Identificador { nombre, .. } => self.resultado_var.get(nombre).cloned(),
+                _ => None,
+            },
             _ => None,
         };
         let v = self.expr(scrutinee)?;
+        // `coincidir` sobre un entero: `caso 0` y `caso x` (que enlaza el
+        // valor). La VM lo acepta sin `tipo` de por medio (`600`).
+        let hay_constructores = brazos
+            .iter()
+            .any(|b| matches!(&b.patron, crate::ast::Patron::Constructor(..)));
+        if !hay_constructores {
+            if let V::Int(r) = &v {
+                let r = r.clone();
+                return self.coincidir_entero(r, brazos);
+            }
+        }
         let (obj, en) = match v {
             V::Enum(r, e) => (r, e),
             other => {
-                return Err(format!(
-                    "`coincidir` espera un valor de `tipo` (enum), no un {}",
-                    other.t().nombre()
-                ))
+                // Un enum puede llegar por una casilla sin tipo (parámetro sin
+                // anotar, `variable x = …`): los bits del puntero están ahí y el
+                // `tipo` lo dicen las variantes de los brazos
+                // (`111`/`describir_dir(d)`).
+                let en = brazos.iter().find_map(|b| match &b.patron {
+                    crate::ast::Patron::Constructor(n, _) => {
+                        self.variantes.get(n).map(|(en, _, _)| en.clone())
+                    }
+                    _ => None,
+                });
+                match en {
+                    Some(en) => (self.como(&other, T::Enum(en.clone())), en),
+                    None => {
+                        return Err(format!(
+                            "`coincidir` espera un valor de `tipo` (enum), no un {}",
+                            other.t().nombre()
+                        ))
+                    }
+                }
             }
         };
         let ptag = self.r();
@@ -2150,6 +2182,61 @@ impl Lowering {
             self.etiqueta(&sig);
         }
         self.linea(&format!("br label %{}", fin));
+        self.etiqueta(&fin);
+        Ok(V::Int("0".into()))
+    }
+
+    /// `coincidir` sobre un `Entero` con patrones literales, `_` y variables.
+    fn coincidir_entero(
+        &mut self,
+        valor: String,
+        brazos: &[crate::ast::BrazoMatch],
+    ) -> Result<V, String> {
+        let fin = self.bloque("coincidir.fin");
+        for brazo in brazos {
+            match &brazo.patron {
+                crate::ast::Patron::Literal(e) => {
+                    let lit = self.expr(e)?;
+                    let b = self.como(&lit, T::Int);
+                    let cuerpo = self.bloque("caso");
+                    let sig = self.bloque("caso.siguiente");
+                    let c = self.r();
+                    self.linea(&format!("{} = icmp eq i64 {}, {}", c, valor, b));
+                    self.linea(&format!("br i1 {}, label %{}, label %{}", c, cuerpo, sig));
+                    self.etiqueta(&cuerpo);
+                    for s in &brazo.cuerpo {
+                        self.sentencia(s)?;
+                    }
+                    if !self.termina {
+                        self.linea(&format!("br label %{}", fin));
+                    }
+                    self.etiqueta(&sig);
+                }
+                crate::ast::Patron::Variable(nombre) => {
+                    let slot = self.alloca(&T::Int, nombre);
+                    self.guardar(&slot, V::Int(valor.clone()), &T::Int);
+                    self.vars.insert(nombre.clone(), Var { slot, t: T::Int });
+                    for s in &brazo.cuerpo {
+                        self.sentencia(s)?;
+                    }
+                    if !self.termina {
+                        self.linea(&format!("br label %{}", fin));
+                    }
+                }
+                crate::ast::Patron::Ignorar => {
+                    for s in &brazo.cuerpo {
+                        self.sentencia(s)?;
+                    }
+                    if !self.termina {
+                        self.linea(&format!("br label %{}", fin));
+                    }
+                }
+                crate::ast::Patron::Constructor(..) => {}
+            }
+        }
+        if !self.termina {
+            self.linea(&format!("br label %{}", fin));
+        }
         self.etiqueta(&fin);
         Ok(V::Int("0".into()))
     }
