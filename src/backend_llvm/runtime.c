@@ -346,9 +346,18 @@ void *forja_texto_indice(const char *s, int64_t i) {
     if (!s) return NULL;
     int64_t n = (int64_t)strlen(s);
     if (i < 0 || i >= n) return NULL;
-    char *r = forja_texto_alloc(2);
-    r[0] = s[i];
-    r[1] = ' ';
+    /* Los textos de un carácter se cachean por byte: un recorrido
+     * `texto[i]` en un bucle alocaba uno por vuelta (el matcher de 194 tardaba
+     * 37 s). Nadie muta un texto, así que compartirlos es seguro. */
+    unsigned char c = (unsigned char)s[i];
+    static char *cache[256];
+    char *r = cache[c];
+    if (!r) {
+        r = forja_texto_alloc(2);
+        r[0] = (char)c;
+        r[1] = ' ';
+        cache[c] = r;
+    }
     return r;
 }
 

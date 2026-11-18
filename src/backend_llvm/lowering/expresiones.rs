@@ -818,6 +818,21 @@ impl Lowering {
             ));
             return Ok(V::Arreglo(r));
         }
+        // `x == nulo` / `x != nulo`: se comparan los bits con 0 (un texto es un
+        // puntero NULL al final de la entrada, un objeto nulo también). Antes caía
+        // en la regla "texto contra número" y daba siempre `falso`.
+        if matches!(operador, IgualIgual | Diferente)
+            && (matches!(a, V::Nulo) || matches!(b, V::Nulo))
+        {
+            let otro = if matches!(a, V::Nulo) { &b } else { &a };
+            let bits = self.como_slot(otro);
+            let r = self.r();
+            let op = if matches!(operador, IgualIgual) { "eq" } else { "ne" };
+            self.linea(&format!("{} = icmp {} i64 {}, 0", r, op, bits));
+            let z = self.r();
+            self.linea(&format!("{} = zext i1 {} to i64", z, r));
+            return Ok(V::Bool(z));
+        }
         // Texto: concatenación y comparación con el runtime.
         let texto = a.t() == T::Texto || b.t() == T::Texto;
         if texto && matches!(operador, Suma) {
