@@ -1474,3 +1474,27 @@ escribir(c.recibir())
         assert_eq!(salida.trim(), "hola");
     }
 }
+
+#[test]
+fn identificadores_con_acento_bajan_a_nativo() {
+    // Los símbolos del IR sólo admiten ASCII: un identificador con acento
+    // salía como `%año.0 = alloca i64` y clang rechazaba el `.ll`.
+    let fuente = r#"
+variable año = 2026
+funcion saludar_a_peña(nombre: Texto) -> Texto {
+    retornar "Hola, " + nombre
+}
+funcion main() {
+    escribir("Año: " + a_texto(año))
+    escribir(saludar_a_peña("ñandú"))
+}
+main()
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.replace("
+", "
+"), "Año: 2026
+Hola, ñandú
+");
+    }
+}

@@ -1596,8 +1596,9 @@ fn ejecutar_con_pgo_impl(
 
 /// Compila código Forja a LLVM IR usando el backend generador de texto LLVM
 pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
+    let codigo = sanear_identificadores(codigo);
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::nuevo(codigo);
+    let mut lexer = lexer::Lexer::nuevo(&codigo);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
@@ -1647,7 +1648,8 @@ pub fn programa_para_backend_nativo(
     codigo: &str,
     raiz: &std::path::Path,
 ) -> Result<ast::Programa, Vec<error::ErrorForja>> {
-    let programa = resolver_imports(codigo, raiz).map_err(|e| {
+    let codigo = sanear_identificadores(codigo);
+    let programa = resolver_imports(&codigo, raiz).map_err(|e| {
         vec![error::ErrorForja::nuevo(
             error::ErrorTipo::ErrorSemantico,
             0,
@@ -1660,6 +1662,57 @@ pub fn programa_para_backend_nativo(
     // programa ni usa (usan nativas cuyo tipo no está declarado). Se poda lo
     // inalcanzable desde las sentencias de nivel superior.
     Ok(podar_inalcanzable(programa))
+}
+
+/// Un identificador de Forja puede llevar acentos (`variable año`,
+/// `funcion generar_contraseña`), pero un símbolo de LLVM/ASM sin comillas sólo
+/// admite ASCII: el `.ll` salía con `%año.0 = alloca i64` y clang lo rechazaba.
+/// Acá se cambia cada carácter no ASCII **de un identificador** por `_` (las
+/// cadenas y los comentarios quedan intactos: ahí viven los emojis y los
+/// acentos de los mensajes). Dos nombres que sólo difieran en el acento
+/// colisionan; es preferible a no compilar.
+#[cfg(not(target_arch = "wasm32"))]
+fn sanear_identificadores(codigo: &str) -> String {
+    let mut salida = String::with_capacity(codigo.len());
+    let mut chars = codigo.chars().peekable();
+    let mut en_texto = false;
+    let mut en_comentario = false;
+    while let Some(c) = chars.next() {
+        if en_comentario {
+            salida.push(c);
+            if c == '\n' {
+                en_comentario = false;
+            }
+            continue;
+        }
+        if en_texto {
+            salida.push(c);
+            if c == '\\' {
+                // El escape copia tal cual el siguiente carácter.
+                if let Some(siguiente) = chars.next() {
+                    salida.push(siguiente);
+                }
+            } else if c == '"' {
+                en_texto = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => {
+                en_texto = true;
+                salida.push(c);
+            }
+            '/' => {
+                if chars.peek() == Some(&'/') {
+                    en_comentario = true;
+                }
+                salida.push(c);
+            }
+            _ if !c.is_ascii() => salida.push('_'),
+            _ => salida.push(c),
+        }
+    }
+    salida
 }
 
 /// Deja sólo las funciones, clases y enums alcanzables desde las sentencias de
