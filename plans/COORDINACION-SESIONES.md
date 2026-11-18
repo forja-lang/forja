@@ -205,3 +205,23 @@ Queda de `handoff5` sólo §5 (partir `lowering.rs` en `firmas.rs`/`clases.rs`/
 `modulo.rs`), a propósito: es un refactor de ~2.900 líneas sobre un archivo que
 las otras sesiones están tocando. Hacerlo con el árbol quieto y el arnés como
 red.
+
+### Paridad medida (2026-11-17 21:28, árbol con 35 archivos sucios de la sesión `native`)
+
+```
+árbol:    f88595cb
+binario:  target/release/forja.exe (21:27) -> copia fija al empezar
+nativo vs VM: 154 coinciden · 0 difieren · 119 no bajan a nativo
+              · 2 no terminan en 20s · 3 salen con error explícito · 0 revientan
+```
+
+Coincide con el `154 · 0 · 116 · 0` de `handoff8`. Los 2 que no terminan son los
+no deterministas de siempre (tiempo/rand). **0 difieren y 0 revientan**: el
+criterio del job de CI se cumple con los cambios de `handoff5` dentro.
+
+Las dos corridas anteriores dieron 105 y 97 "coinciden" y 175/186 "no bajan"
+**por concurrencia**, no por el backend: una de ellas perdió 122 ejemplos porque
+`cargo build` de otra sesión reemplazó `forja.exe` a mitad de corrida, y la otra
+porque las dos sesiones compartían `target/paridad` y cada `rm -rf` borraba los
+`.aot` ajenos. Arreglado en `0bd48d7f` (copia del binario) y `f88595cb`
+(directorio por corrida).
