@@ -140,7 +140,7 @@ escribir("r = " + b)
 {ir_local}"
     );
     assert!(
-        ir_local.contains("%a.0 = alloca i64"),
+        ir_local.contains("= alloca i64") && ir_local.contains("%a."),
         "falta alloca de a:
 {ir_local}"
     );
@@ -1306,4 +1306,171 @@ main()
         "el chequeo se disparó: {salida}"
     );
     assert!(salida.starts_with("ana 0"), "salida inesperada: {salida}");
+}
+
+#[test]
+fn retorno_con_nulo_en_una_rama_no_declara_void() {
+    // `retornar nulo` en una rama dejaba el `define` en `void` mientras el
+    // cuerpo devolvía un valor (`i64`/`ptr`), y clang rechazaba el módulo
+    // (`193_json_basico`, `165_numeros_complejos`, `166_matrices`).
+    let fuente = r#"
+funcion f(cond) {
+    si (cond) { retornar nulo }
+    retornar "hola"
+}
+escribir("v=" + f(falso))
+"#;
+    let ir = ir(fuente);
+    assert!(
+        !ir.contains("define void @f("),
+        "f quedó `void` con ramas que devuelven valor:\n{ir}"
+    );
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "v=hola");
+    }
+}
+
+#[test]
+fn global_que_arranca_en_nulo_se_tipa_por_la_asignacion() {
+    // `variable g = nulo` seguido de `g = nuevo C()` dentro de una función: el
+    // global era `i64` y el `store` de un puntero no compilaba (`171_singleton`).
+    let fuente = r#"
+clase C {
+    x
+    constructor() { este.x = 7 }
+    funcion v() -> Entero { retornar este.x }
+}
+variable g = nulo
+funcion usar() {
+    si (g == nulo) { g = nuevo C() }
+}
+usar()
+escribir(g.v())
+"#;
+    let ir = ir(fuente);
+    assert!(
+        ir.contains("@g_g = internal global ptr null"),
+        "el global @g_g no se tipó como puntero:\n{ir}"
+    );
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "7");
+    }
+}
+
+#[test]
+fn slots_locales_con_el_mismo_nombre_no_colisionan() {
+    // Dos `variable _ = …` en bloques distintos compartían etiqueta y el
+    // módulo definía `%_.N` dos veces (`201_login_gui`).
+    let fuente = r#"
+funcion dame() { retornar 1 }
+funcion main() {
+    si (verdadero) { variable _ = dame() }
+    si (falso) { variable _ = dame() }
+    escribir("fin")
+}
+main()
+"#;
+    let ir = ir(fuente);
+    let mut vistos = std::collections::HashSet::new();
+    for l in ir.lines() {
+        let t = l.trim();
+        if let Some(resto) = t.strip_prefix('%') {
+            if let Some(nombre) = resto.split_whitespace().next() {
+                if t.contains("= alloca") && !vistos.insert(nombre.to_string()) {
+                    panic!("slot `%{nombre}` definido dos veces:\n{ir}");
+                }
+            }
+        }
+    }
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "fin");
+    }
+}
+
+#[test]
+fn coincidir_enum_que_llego_por_una_casilla_sin_tipo() {
+    // El enum viaja por un parámetro sin anotar (casilla `Entero`): `coincidir`
+    // lo reconoce por las variantes de los brazos (`111_match_enum`).
+    let fuente = r#"
+tipo Direccion = Norte | Sur
+funcion describir(d) -> Texto {
+    coincidir (d) {
+        caso Norte -> { retornar "norte" }
+        caso Sur -> { retornar "sur" }
+    }
+}
+variable d = Norte
+escribir(describir(d))
+d = Sur
+escribir(describir(d))
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "norte\nsur");
+    }
+}
+
+#[test]
+fn coincidir_entero_con_patrones_literales() {
+    // `coincidir` sobre un entero (no un `tipo`): `caso 0`, `caso x` y `_`
+    // (`600_match_completo`).
+    let fuente = r#"
+funcion par(n) -> Booleano {
+    coincidir (n % 2) {
+        caso 0 -> { retornar verdadero }
+        caso _ -> { retornar falso }
+    }
+}
+escribir(par(4))
+escribir(par(5))
+variable x = 0
+coincidir (42) {
+    caso v -> { x = v }
+}
+escribir(x)
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "verdadero\nfalso\n42");
+    }
+}
+
+#[test]
+fn unir_de_un_hilo_en_una_casilla_sin_tipo() {
+    // `variable h = hilo { … }` guarda el handle como `Entero`; `.unir()` lo
+    // espera y devuelve lo que el cuerpo retornó. Y `unir()` sobre algo que no
+    // es un hilo devuelve el valor tal cual (la VM no tiene concurrencia real).
+    let fuente = r#"
+variable h = hilo {
+    variable suma = 0
+    variable i = 1
+    mientras (i <= 5) {
+        suma = suma + i
+        i = i + 1
+    }
+    retornar suma
+}
+escribir(h.unir())
+funcion suma(a: Entero, b: Entero) -> Entero { retornar a + b }
+escribir(suma(10, 20).unir())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "15\n30");
+    }
+}
+
+#[test]
+fn canal_sin_tipo_estatico_envia_y_recibe_los_bits() {
+    // `variable c = canal()` en una variable sin anotar: un texto enviado
+    // llegaba como `a_entero(texto)` (0). Ahora viajan los bits del puntero.
+    let fuente = r#"
+variable c = canal()
+variable h = hilo {
+    c.enviar("hola")
+    retornar 0
+}
+h.unir()
+escribir(c.recibir())
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(salida.trim(), "hola");
+    }
 }

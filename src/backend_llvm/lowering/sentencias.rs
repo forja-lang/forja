@@ -288,7 +288,17 @@ impl Lowering {
                 }
                 // `variable r = f()` con `f() -> Resultado<Texto, Texto>`: se
                 // recuerdan los tipos del payload para el `coincidir`.
-                if let Some(Expresion::LlamadaFuncion { nombre: f, .. }) = valor {
+                let productor = match valor {
+                    Some(Expresion::LlamadaFuncion { nombre: f, .. }) => Some(f.as_str()),
+                    // `variable ops = [f(x), g(y)]` con `f -> Resultado<T, E>`:
+                    // las casillas del arreglo guardan el mismo payload.
+                    Some(Expresion::Arreglo(items)) => match items.first() {
+                        Some(Expresion::LlamadaFuncion { nombre: f, .. }) => Some(f.as_str()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(f) = productor {
                     if let Some(tipos) = self.resultado_fn.get(f).cloned() {
                         self.resultado_var.insert(nombre.clone(), tipos);
                     }

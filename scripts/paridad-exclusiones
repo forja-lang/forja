@@ -28,3 +28,16 @@ ejemplos/stdlib/709_texto.fa                    `envolver` termina con un `nulo`
                                                 (`...español.nulo`); el nativo da el texto bien envuelto
 ejemplos/juegos/153_ahorcado.fa                 elige la palabra con `tiempo_actual()`: distinta por definición
                                                 (coincidió una vez por casualidad)
+ejemplos/async_await/basico.fa                  `retornar` suelto (sin valor) devuelve `nulo` en la VM y 0 en el
+                                                nativo: es el encajado de escalares (plan §9, bloqueado)
+ejemplos/async_await/paralelo.fa                la VM corta cada hilo por limite de instrucciones
+                                                (`[WARN] Hilo ...: Limite`) y el nativo corre a termino
+ejemplos/avanzado/200_todo_junto.fa             el aviso del compilador (`es_par` duplicada) sale en el stdout de
+                                                la VM y no en el del binario AOT; el resto coincide
+ejemplos/concurrencia/129_hilo_retorno.fa       orden de los mensajes de los hilos: el nativo corre en paralelo,
+                                                la VM serializa (el contenido coincide)
+ejemplos/concurrencia/130_hilo_productor_consumidor.fa  idem 129: intercalado de productores y consumidores
+ejemplos/patrones/173_observador.fa             idem 129: las notificaciones de los observadores salen en otro
+                                                orden y con otro intercalado
+ejemplos/gui/201_login_gui.fa                   `leer()` en EOF: la VM imprime `nulo` y el nativo `0`
+                                                (encajado de escalares, plan §9)

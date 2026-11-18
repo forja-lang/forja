@@ -515,6 +515,76 @@ void forja_imprimir_dinamico(void *v) {
 }
 
 /* `"" + v` cuando el tipo del slot es una suposición. */
+/* `a_codigo(c)`: codigo Unicode del primer caracter de `s` (0 si esta vacio).
+ * `a_caracter(n)`: el texto UTF-8 de ese codigo. */
+int64_t forja_a_codigo(const char *s) {
+    if (!s || !*s) return 0;
+    const unsigned char *p = (const unsigned char *)s;
+    if (p[0] < 0x80) return p[0];
+    if ((p[0] & 0xE0) == 0xC0) return ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+    if ((p[0] & 0xF0) == 0xE0)
+        return ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+    if ((p[0] & 0xF8) == 0xF0)
+        return ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) |
+               (p[3] & 0x3F);
+    return 0;
+}
+
+char *forja_a_caracter(int64_t codigo) {
+    char *r = forja_texto_alloc(8);
+    uint32_t c = (uint32_t)codigo;
+    if (c < 0x80) {
+        r[0] = (char)c;
+        r[1] = 0;
+    } else if (c < 0x800) {
+        r[0] = (char)(0xC0 | (c >> 6));
+        r[1] = (char)(0x80 | (c & 0x3F));
+        r[2] = 0;
+    } else if (c < 0x10000) {
+        r[0] = (char)(0xE0 | (c >> 12));
+        r[1] = (char)(0x80 | ((c >> 6) & 0x3F));
+        r[2] = (char)(0x80 | (c & 0x3F));
+        r[3] = 0;
+    } else {
+        r[0] = (char)(0xF0 | (c >> 18));
+        r[1] = (char)(0x80 | ((c >> 12) & 0x3F));
+        r[2] = (char)(0x80 | ((c >> 6) & 0x3F));
+        r[3] = (char)(0x80 | (c & 0x3F));
+        r[4] = 0;
+    }
+    return r;
+}
+
+/* `reemplazar(texto, viejo, nuevo)`: todas las apariciones, como el `replace`
+ * de Rust que usa la VM. */
+char *forja_reemplazar(const char *s, const char *viejo, const char *nuevo) {
+    if (!s) return forja_dup("nulo");
+    if (!viejo || !*viejo) return forja_dup(s);
+    if (!nuevo) nuevo = "";
+    size_t ls = strlen(s), lv = strlen(viejo), ln = strlen(nuevo);
+    size_t apariciones = 0;
+    const char *p = s;
+    while ((p = strstr(p, viejo)) != NULL) {
+        apariciones++;
+        p += lv;
+    }
+    if (!apariciones) return forja_dup(s);
+    char *r = forja_texto_alloc((int64_t)(ls - apariciones * lv + apariciones * ln + 1));
+    char *o = r;
+    const char *i = s;
+    const char *encontrado;
+    while ((encontrado = strstr(i, viejo)) != NULL) {
+        size_t tramo = (size_t)(encontrado - i);
+        memcpy(o, i, tramo);
+        o += tramo;
+        memcpy(o, nuevo, ln);
+        o += ln;
+        i = encontrado + lv;
+    }
+    strcpy(o, i);
+    return r;
+}
+
 char *forja_a_texto_dinamico(void *v) {
     switch (forja_tag_de(v)) {
         case FORJA_T_ARREGLO:
@@ -855,39 +925,104 @@ int64_t forja_canal_intentar(void *pc) {
     return valor;
 }
 
-/* Lanza `fn(entorno, indice)` en un hilo del sistema. */
-typedef void (*ForjaHiloFn)(void *entorno, int64_t indice);
+/* Lanza `fn(entorno, indice)` en un hilo del sistema y devuelve un handle para
+ * `forja_hilo_unir`. El cuerpo del hilo devuelve sus bits como `int64_t`
+ * (`retornar x` dentro de `hilo { … }`). */
+typedef int64_t (*ForjaHiloFn)(void *entorno, int64_t indice);
+
+typedef struct {
+#ifdef _WIN32
+    HANDLE hilo;
+#else
+    pthread_t hilo;
+    int lanzado;
+#endif
+    ForjaHiloFn fn;
+    void *entorno;
+    int64_t valor;
+} ForjaHilo;
+
+/* Registro de handles vivos: `unir(x)` sobre algo que no es un hilo (la VM no
+ * tiene concurrencia real y devuelve el valor tal cual) no debe desreferenciar
+ * un puntero cualquiera (`async_await/basico`: `suma(1, 2).unir()`). */
+#define FORJA_MAX_HILOS 4096
+static ForjaHilo *forja_hilos_reg[FORJA_MAX_HILOS];
+static int forja_hilos_n = 0;
+static ForjaMutex forja_hilos_mutex;
+static int forja_hilos_mutex_listo = 0;
+
+static void forja_hilo_registrar(ForjaHilo *h) {
+    if (!forja_hilos_mutex_listo) {
+        forja_mutex_init(&forja_hilos_mutex);
+        forja_hilos_mutex_listo = 1;
+    }
+    forja_mutex_lock(&forja_hilos_mutex);
+    if (forja_hilos_n < FORJA_MAX_HILOS) forja_hilos_reg[forja_hilos_n++] = h;
+    forja_mutex_unlock(&forja_hilos_mutex);
+}
+
+static ForjaHilo *forja_hilo_buscar(void *hilo) {
+    ForjaHilo *encontrado = NULL;
+    if (!forja_hilos_mutex_listo) return NULL;
+    forja_mutex_lock(&forja_hilos_mutex);
+    for (int i = 0; i < forja_hilos_n; i++) {
+        if ((void *)forja_hilos_reg[i] == hilo) {
+            encontrado = forja_hilos_reg[i];
+            break;
+        }
+    }
+    forja_mutex_unlock(&forja_hilos_mutex);
+    return encontrado;
+}
 
 #ifdef _WIN32
 static DWORD WINAPI forja_hilo_trampoline(LPVOID p) {
-    void **args = (void **)p;
-    ForjaHiloFn fn = (ForjaHiloFn)args[0];
-    fn(args[1], 0);
+    ForjaHilo *h = (ForjaHilo *)p;
+    h->valor = h->fn(h->entorno, 0);
     return 0;
 }
-void forja_hilo_lanzar(void *fn, void *entorno) {
-    void **args = (void **)forja_alloc((int64_t)(2 * sizeof(void *)));
-    args[0] = fn;
-    args[1] = entorno;
-    HANDLE h = CreateThread(NULL, 0, forja_hilo_trampoline, args, 0, NULL);
-    if (h) CloseHandle(h);
+void *forja_hilo_lanzar(void *fn, void *entorno) {
+    ForjaHilo *h = (ForjaHilo *)forja_alloc((int64_t)sizeof(ForjaHilo));
+    h->fn = (ForjaHiloFn)fn;
+    h->entorno = entorno;
+    h->valor = 0;
+    h->hilo = CreateThread(NULL, 0, forja_hilo_trampoline, h, 0, NULL);
+    forja_hilo_registrar(h);
+    return h;
+}
+int64_t forja_hilo_unir(void *hilo) {
+    ForjaHilo *h = forja_hilo_buscar(hilo);
+    if (!h) return (int64_t)(intptr_t)hilo;
+    if (h->hilo) {
+        WaitForSingleObject(h->hilo, INFINITE);
+        CloseHandle(h->hilo);
+        h->hilo = NULL;
+    }
+    return h->valor;
 }
 #else
-typedef void (*ForjaHiloFnPosix)(void *, int64_t);
 static void *forja_hilo_trampoline_posix(void *p) {
-    void **args = (void **)p;
-    ForjaHiloFnPosix fn = (ForjaHiloFnPosix)args[0];
-    fn(args[1], 0);
+    ForjaHilo *h = (ForjaHilo *)p;
+    h->valor = h->fn(h->entorno, 0);
     return NULL;
 }
-void forja_hilo_lanzar(void *fn, void *entorno) {
-    void **args = (void **)forja_alloc((int64_t)(2 * sizeof(void *)));
-    args[0] = fn;
-    args[1] = entorno;
-    pthread_t t;
-    if (pthread_create(&t, NULL, forja_hilo_trampoline_posix, args) == 0) {
-        pthread_detach(t);
+void *forja_hilo_lanzar(void *fn, void *entorno) {
+    ForjaHilo *h = (ForjaHilo *)forja_alloc((int64_t)sizeof(ForjaHilo));
+    h->fn = (ForjaHiloFn)fn;
+    h->entorno = entorno;
+    h->valor = 0;
+    h->lanzado = pthread_create(&h->hilo, NULL, forja_hilo_trampoline_posix, h) == 0;
+    forja_hilo_registrar(h);
+    return h;
+}
+int64_t forja_hilo_unir(void *hilo) {
+    ForjaHilo *h = forja_hilo_buscar(hilo);
+    if (!h) return (int64_t)(intptr_t)hilo;
+    if (h->lanzado) {
+        pthread_join(h->hilo, NULL);
+        h->lanzado = 0;
     }
+    return h->valor;
 }
 #endif
 

@@ -1109,7 +1109,8 @@ impl Lowering {
                                     Some(a) => self.expr(a)?,
                                     None => return Err("`enviar` necesita un argumento".into()),
                                 };
-                                let x = self.como(&v, T::Int);
+                                // Los bits tal cual: un texto viaja como puntero.
+                                let x = self.como_slot(&v);
                                 self.linea(&format!(
                                     "call void @forja_canal_enviar(ptr {}, i64 {})",
                                     c, x
@@ -1328,6 +1329,37 @@ impl Lowering {
 
     fn builtin(&mut self, nombre: &str, args: &[Expresion]) -> Result<Option<V>, String> {
         let v = match nombre {
+            // `a_codigo(c)` / `a_caracter(n)`: primitivas del registro nativo
+            // (`compiler/forja-native`), sin equivalente en la ruta LLVM (`170`).
+            "a_codigo" => {
+                let s = self.arg(nombre, args, 0)?;
+                let a = self.como(&s, T::Texto);
+                let r = self.r();
+                self.linea(&format!("{} = call i64 @forja_a_codigo(ptr {})", r, a));
+                V::Int(r)
+            }
+            "a_caracter" => {
+                let n = self.arg(nombre, args, 0)?;
+                let a = self.como(&n, T::Int);
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_a_caracter(i64 {})", r, a));
+                V::Texto(r)
+            }
+            // `s.reemplazar(viejo, nuevo)`: todas las apariciones, como la VM.
+            "reemplazar" => {
+                let s = self.arg(nombre, args, 0)?;
+                let viejo = self.arg(nombre, args, 1)?;
+                let nuevo = self.arg(nombre, args, 2)?;
+                let a = self.como(&s, T::Texto);
+                let b = self.como(&viejo, T::Texto);
+                let c = self.como(&nuevo, T::Texto);
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_reemplazar(ptr {}, ptr {}, ptr {})",
+                    r, a, b, c
+                ));
+                V::Texto(r)
+            }
             "longitud" | "len" | "largo" => {
                 let v = self.arg(nombre, args, 0)?;
                 let incierto_arg = args.first().map(|a| self.incierto(a)).unwrap_or(false);
@@ -1929,7 +1961,10 @@ impl Lowering {
         let ret_previo = self.ret_actual.clone();
         let etiquetas_previas = std::mem::take(&mut self.etiquetas);
         self.termina = false;
-        self.ret_actual = T::Nulo;
+        // El cuerpo devuelve los bits de su `retornar` para `unir()`.
+        self.ret_actual = T::Int;
+        let ret_dinamico_previo = self.ret_dinamico;
+        self.ret_dinamico = true;
         for (i, (nombre, t)) in capturas.iter().enumerate() {
             let slot = self.alloca(t, nombre);
             let p = self.r();
@@ -1954,7 +1989,7 @@ impl Lowering {
             self.sentencia(s)?;
         }
         if !self.termina {
-            self.linea("ret void");
+            self.linea("ret i64 0");
         }
         let cuerpo_txt = std::mem::take(&mut self.cuerpos);
         let prologo_txt = std::mem::take(&mut self.prologo);
@@ -1963,22 +1998,28 @@ impl Lowering {
         self.prologo = prologo_previo;
         self.termina = termina_previo;
         self.ret_actual = ret_previo;
+        self.ret_dinamico = ret_dinamico_previo;
         self.etiquetas = etiquetas_previas;
 
         let mut f = String::new();
         use std::fmt::Write as _;
-        let _ = writeln!(f, "define void @{}(ptr %entorno) {{", nombre_fn);
+        let _ = writeln!(f, "define i64 @{}(ptr %entorno) {{", nombre_fn);
         let _ = writeln!(f, "entry:");
         f.push_str(&prologo_txt);
         f.push_str(&cuerpo_txt);
         let _ = writeln!(f, "}}");
         self.extra.push_str(&f);
 
+        let hilo = self.r();
         self.linea(&format!(
-            "call void @forja_hilo_lanzar(ptr @{}, ptr {})",
-            nombre_fn, env
+            "{} = call ptr @forja_hilo_lanzar(ptr @{}, ptr {})",
+            hilo, nombre_fn, env
         ));
-        Ok(V::Nulo)
+        // El handle viaja como `Entero` (bits del puntero): la casilla de
+        // `variable h = hilo { ... }` es un slot sin tipo.
+        let bits = self.r();
+        self.linea(&format!("{} = ptrtoint ptr {} to i64", bits, hilo));
+        Ok(V::Int(bits))
     }
 
     /// `Variante(a, b)` → objeto `%Enum.X` con tag en el slot 0 y payloads en i64.
@@ -2040,16 +2081,48 @@ impl Lowering {
         // el payload se enlaza con esos tipos, no con el `Entero` del preludio.
         let payload_anotado = match scrutinee {
             Expresion::Identificador { nombre, .. } => self.resultado_var.get(nombre).cloned(),
+            // `coincidir (ops[i])`: las casillas del arreglo salen del mismo
+            // productor que se recordó al declararlo.
+            Expresion::Index { objeto, .. } => match objeto.as_ref() {
+                Expresion::Identificador { nombre, .. } => self.resultado_var.get(nombre).cloned(),
+                _ => None,
+            },
             _ => None,
         };
         let v = self.expr(scrutinee)?;
+        // `coincidir` sobre un entero: `caso 0` y `caso x` (que enlaza el
+        // valor). La VM lo acepta sin `tipo` de por medio (`600`).
+        let hay_constructores = brazos
+            .iter()
+            .any(|b| matches!(&b.patron, crate::ast::Patron::Constructor(..)));
+        if !hay_constructores {
+            if let V::Int(r) = &v {
+                let r = r.clone();
+                return self.coincidir_entero(r, brazos);
+            }
+        }
         let (obj, en) = match v {
             V::Enum(r, e) => (r, e),
             other => {
-                return Err(format!(
-                    "`coincidir` espera un valor de `tipo` (enum), no un {}",
-                    other.t().nombre()
-                ))
+                // Un enum puede llegar por una casilla sin tipo (parámetro sin
+                // anotar, `variable x = …`): los bits del puntero están ahí y el
+                // `tipo` lo dicen las variantes de los brazos
+                // (`111`/`describir_dir(d)`).
+                let en = brazos.iter().find_map(|b| match &b.patron {
+                    crate::ast::Patron::Constructor(n, _) => {
+                        self.variantes.get(n).map(|(en, _, _)| en.clone())
+                    }
+                    _ => None,
+                });
+                match en {
+                    Some(en) => (self.como(&other, T::Enum(en.clone())), en),
+                    None => {
+                        return Err(format!(
+                            "`coincidir` espera un valor de `tipo` (enum), no un {}",
+                            other.t().nombre()
+                        ))
+                    }
+                }
             }
         };
         let ptag = self.r();
@@ -2150,6 +2223,61 @@ impl Lowering {
             self.etiqueta(&sig);
         }
         self.linea(&format!("br label %{}", fin));
+        self.etiqueta(&fin);
+        Ok(V::Int("0".into()))
+    }
+
+    /// `coincidir` sobre un `Entero` con patrones literales, `_` y variables.
+    fn coincidir_entero(
+        &mut self,
+        valor: String,
+        brazos: &[crate::ast::BrazoMatch],
+    ) -> Result<V, String> {
+        let fin = self.bloque("coincidir.fin");
+        for brazo in brazos {
+            match &brazo.patron {
+                crate::ast::Patron::Literal(e) => {
+                    let lit = self.expr(e)?;
+                    let b = self.como(&lit, T::Int);
+                    let cuerpo = self.bloque("caso");
+                    let sig = self.bloque("caso.siguiente");
+                    let c = self.r();
+                    self.linea(&format!("{} = icmp eq i64 {}, {}", c, valor, b));
+                    self.linea(&format!("br i1 {}, label %{}, label %{}", c, cuerpo, sig));
+                    self.etiqueta(&cuerpo);
+                    for s in &brazo.cuerpo {
+                        self.sentencia(s)?;
+                    }
+                    if !self.termina {
+                        self.linea(&format!("br label %{}", fin));
+                    }
+                    self.etiqueta(&sig);
+                }
+                crate::ast::Patron::Variable(nombre) => {
+                    let slot = self.alloca(&T::Int, nombre);
+                    self.guardar(&slot, V::Int(valor.clone()), &T::Int);
+                    self.vars.insert(nombre.clone(), Var { slot, t: T::Int });
+                    for s in &brazo.cuerpo {
+                        self.sentencia(s)?;
+                    }
+                    if !self.termina {
+                        self.linea(&format!("br label %{}", fin));
+                    }
+                }
+                crate::ast::Patron::Ignorar => {
+                    for s in &brazo.cuerpo {
+                        self.sentencia(s)?;
+                    }
+                    if !self.termina {
+                        self.linea(&format!("br label %{}", fin));
+                    }
+                }
+                crate::ast::Patron::Constructor(..) => {}
+            }
+        }
+        if !self.termina {
+            self.linea(&format!("br label %{}", fin));
+        }
         self.etiqueta(&fin);
         Ok(V::Int("0".into()))
     }
@@ -2751,7 +2879,9 @@ impl Lowering {
         };
         // Métodos de primitivos: `arr.empujar(x)`, `s.longitud()`, `n.absoluto()`
         // son `empujar(arr, x)`, `longitud(s)`, `absoluto(n)`.
-        if !es_metodo_de_clase && (es_builtin(metodo) || metodo == "absoluto") {
+        // `r1.es_ok()` con `es_ok` una `funcion` libre (stdlib incluida).
+        let es_funcion_libre = self.firmas.contains_key(metodo);
+        if !es_metodo_de_clase && (es_builtin(metodo) || metodo == "absoluto" || es_funcion_libre) {
             let mut args = Vec::with_capacity(argumentos.len() + 1);
             args.push(objeto.clone());
             args.extend(argumentos.iter().cloned());
@@ -2796,8 +2926,64 @@ impl Lowering {
             self.linea(&format!("{} = call i64 @forja_canal_recibir(ptr {})", r, c));
             return Ok(V::Int(r));
         }
-        // Canal: `e.enviar(v)` / `r.recibir()`.
         let receptor = self.expr(objeto)?;
+        // `unir`/`enviar`/`recibir` sin tipo estatico: solo si ninguna clase los
+        // declara (un decorador con `enviar(mensaje)` no es un canal).
+        let lo_declara_una_clase = self
+            .clases
+            .values()
+            .any(|cl| cl.metodos.iter().any(|(m, _, _)| m == metodo));
+        // `h.unir()`: el handle del hilo viaja en una casilla sin tipo (`hilo`
+        // devuelve sus bits), asi que no hay clase que lo declare.
+        if metodo == "unir"
+            && argumentos.is_empty()
+            && !lo_declara_una_clase
+            && !matches!(receptor, V::Clase(..))
+        {
+            let h = self.como(&receptor, T::Canal);
+            let r = self.r();
+            self.linea(&format!("{} = call i64 @forja_hilo_unir(ptr {})", r, h));
+            return Ok(V::Int(r));
+        }
+        // Canal sin tipo estatico: el metodo se resuelve por el nombre.
+        let es_metodo_canal = matches!(
+            metodo,
+            "enviar" | "recibir" | "try_recibir" | "intentar_recibir"
+        );
+        if es_metodo_canal && !lo_declara_una_clase && !matches!(receptor, V::Clase(..)) {
+            let c = match &receptor {
+                V::Canal(c) => c.clone(),
+                otro => self.como(otro, T::Canal),
+            };
+            match metodo {
+                "enviar" => {
+                    let v = match argumentos.first() {
+                        Some(a) => self.expr(a)?,
+                        None => return Err("`enviar` necesita un argumento".into()),
+                    };
+                    let x = self.como_slot(&v);
+                    self.linea(&format!(
+                        "call void @forja_canal_enviar(ptr {}, i64 {})",
+                        c, x
+                    ));
+                    return Ok(V::Nulo);
+                }
+                "try_recibir" | "intentar_recibir" => {
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_canal_intentar(ptr {})",
+                        r, c
+                    ));
+                    return Ok(V::Int(r));
+                }
+                _ => {
+                    let r = self.r();
+                    self.linea(&format!("{} = call i64 @forja_canal_recibir(ptr {})", r, c));
+                    return Ok(V::Int(r));
+                }
+            }
+        }
+        // Canal: `e.enviar(v)` / `r.recibir()`.
         if let V::Canal(c) = &receptor {
             let c = c.clone();
             match metodo {
@@ -2882,14 +3068,23 @@ impl Lowering {
             metodo,
             lista.join(", ")
         ));
+        // Mismo mapa que `cargar`: si el metodo devuelve un `tipo`, un mapa o
+        // un canal, el valor no es un `Entero` (una casilla `i64` guardaba un
+        // puntero y clang rechazaba el modulo, `200_todo_junto`).
         Ok(match &ret {
             T::Dec => V::Dec(r),
             T::Texto => V::Texto(r),
             T::Arreglo => V::Arreglo(r),
+            T::Mapa => V::Mapa(r),
+            T::Exacto => V::Exacto(r),
+            T::Enum(c) => V::Enum(r, c.clone()),
+            T::Canal => V::Canal(r),
+            T::Closure => V::Closure(r),
             T::Clase(c) => V::Clase(r, c.clone()),
+            T::Funcion => V::Funcion(r),
             T::Nulo => V::Nulo,
             T::Bool => V::Bool(r),
-            _ => V::Int(r),
+            T::Int => V::Int(r),
         })
     }
 
@@ -3310,6 +3505,9 @@ fn es_builtin(nombre: &str) -> bool {
             | "empujar"
             | "dividir"
             | "recortar"
+            | "reemplazar"
+            | "a_codigo"
+            | "a_caracter"
             | "unir_elementos"
             | "escribir_linea"
             | "esperar"

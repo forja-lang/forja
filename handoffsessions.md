@@ -377,3 +377,50 @@ Commits: `c02ad23b` (+ `compiler/forja-types` `746a9f7`), `f68330fc`
 - Ejemplo para verificar: `variable x = leer()` + `escribir(x)` con stdin
   vacío, y `escribir("[" + leer() + "]")` con `  x  `.
 - Bloquea: paridad de `leer()` entre las dos rutas (L2:T4).
+### 2026-11-18 14:10 — L1 (native/lowering): backend nativo, grupos I, D, C y G (rama `native/lowering`)
+Commits: `d5b3882f`, `29b2dc69`, `2aa53c90`, `9209305f`, `b7232880`
+
+- Medido: `scripts/paridad-native-vm.sh` → **171 coinciden · 0 difieren · 67 no bajan ·
+  5 no terminan · 4 error · 0 revientan** (árbol con `b7232880`, 14:05, limpio).
+  Base del plan (`00614f6b`): 150 · 0 · 95 · 4 · 4 · 0.
+- Cambió:
+  - `retornar nulo` en una rama ya no deja el `define` en `void` (193, 165, 166);
+    global `variable g = nulo` se tipa por su primera asignación (171); `alloca`
+    avanza el contador de etiquetas (201_login_gui).
+  - `coincidir` sobre un enum metido en una casilla `Entero` (111, 112, 113, 114,
+    115, 177, 179, 152) y sobre enteros con patrones literales / `caso x` (600);
+    payload de `Error` de tipo enum en un arreglo (89, que además hacía segfault).
+  - `hilo { … } .unir()`: `forja_hilo_lanzar` devuelve handle, `forja_hilo_unir`
+    lo espera y da los bits del `retornar`; `unir()` sobre algo que no es un hilo
+    devuelve el valor (126, 127, 128, 129, 130, 173, 200).
+  - `enviar`/`recibir` sin tipo estático (los bits viajan como i64, antes un
+    texto enviado se convertía con `a_entero`), azúcar de método para `funcion`
+    libres (`r1.es_ok()`), `reemplazar` nativo (80), `a_codigo`/`a_caracter`
+    (170), `Alguno` como alias de `Algo` (183), retorno de método tipado como su
+    `tipo`/mapa/canal (200).
+- Abierto:
+  - **Bug de front-end (para L2)**: hay declaraciones que desaparecen antes del
+    lowering. Repros mínimos: `target/vM.fa` (de 71_rasgos: rasgo con `-> Texto`
+    + `variable mensaje = p.aterrizar()`) y `target/v214c.fa` (de 214: el cuerpo
+    de `probar_base64` accede a `dec1.valor`); en los dos, `decls` ya no trae la
+    `clase`/`funcion` al llegar al backend ("clase `Pajaro` desconocida", "función
+    `probar_base64` no declarada"). Afecta también a `199_forja_desde_forja`
+    (`clase Token`).
+  - `220_servidor_h2`: llamadas con nombre de módulo (`servidor_h2.registrar_x`)
+    no soportadas nativamente.
+  - `143_pila`, `194_enums_tuplas`, `102_generico_intercambiar`: arreglo
+    heterogéneo + destructuring → es el encajado de escalares (§9, bloqueado).
+    Medido: al quitar la prohibición de arreglos heterogéneos, `143` imprime `*`
+    donde la VM imprime `25`; por eso la prohibición sigue en su lugar.
+  - `158`, `159`, `156`, `185`, `214`: ejemplos rotos (`mayuscula`, `caracter`,
+    `abs`, `anon` no existen en ningún lado; el fuente de `185` está corrupto) →
+    son de L3.
+  - `302`, `403`, `404_login_test`: apps GUI, `aot` las rechaza por diseño.
+  - `216_concurrencia`: usa `es_ok` sin importar `std/resultado` (la VM también
+    devuelve `nulo`: ejemplo roto, de L3).
+- **Zona tomada por L1 fuera de su tabla**: `src/backend_llvm/runtime.c` (era de
+  L4, que no llegó a arrancar). Lo que se agregó ahí: handle de hilo +
+  `forja_hilo_unir`, `forja_reemplazar`, `forja_a_codigo`/`forja_a_caracter` y el
+  registro de handles vivos. Nada de lo existente cambió de semántica (el intento
+  de que `forja_a_texto_dinamico(NULL)` diera "nulo" se revirtió: el 0 entero
+  también llega como puntero nulo y rompía 33 ejemplos).
