@@ -7,6 +7,20 @@
 
 use super::*;
 
+/// Texto que deja una lectura de stdin, o `None` en fin de entrada.
+///
+/// Semántica única de `leer()`: se recorta la línea (espacios, `\r\n`) y
+/// **sólo el fin de entrada** es `nulo`; una línea en blanco es texto vacío
+/// (antes `Opcode::LeerLinea` la confundía con EOF y era imposible leer una
+/// línea vacía). El nativo (`forja_leer_linea`) todavía no recorta: pedido a L4.
+pub(crate) fn texto_de_lectura(leidos: usize, crudo: &str) -> Option<&str> {
+    if leidos == 0 {
+        None
+    } else {
+        Some(crudo.trim())
+    }
+}
+
 impl ForjaFast {
     /// Ejecuta las ramas de IO y utilidades del `match op`: `ParseInt`,
     /// `TiempoActual`, `Print` y `ReadLine`.
@@ -63,18 +77,14 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::LeerLinea => {
-                let mut i = String::new();
-                if std::io::stdin().read_line(&mut i).is_ok() {
-                    let trimmed = i.trim();
-                    if trimmed.is_empty() {
-                        // EOF: push Nulo para que el programa pueda detectar fin de entrada
-                        self.empujar_valor(ValorFast::nulo());
-                    } else {
-                        let idx = self.reservar_texto(Arc::from(trimmed));
+                let mut crudo = String::new();
+                let leidos = std::io::stdin().read_line(&mut crudo).unwrap_or(0);
+                match texto_de_lectura(leidos, &crudo) {
+                    None => self.empujar_valor(ValorFast::nulo()),
+                    Some(t) => {
+                        let idx = self.reservar_texto(Arc::from(t));
                         self.empujar_valor(ValorFast::texto(idx));
                     }
-                } else {
-                    self.empujar_valor(ValorFast::nulo());
                 }
                 self.ip += 1;
             }

@@ -317,3 +317,63 @@ re-medir.
 
 **Zona tomada**: ninguna, la sesión terminó. `src/backend_llvm/**`,
 `scripts/paridad-exclusiones` y `tests/llvm_backend.rs` quedan libres.
+
+### 2026-11-18 00:25 — vm/cuelgues: `Ninguno` y `leer()` (rama `vm/cuelgues`)
+Commits: `c02ad23b` (+ `compiler/forja-types` `746a9f7`), `f68330fc`
+
+- Medido: `cargo test --offline -p forja --test corpus` → 299 · `--test runtime`
+  → **102 pasan, 0 fallan, 1 ignored en 0,52 s** · `--lib` → 129 ·
+  `--test codegen ir_emision_paridad_funcional_con_ast` → ok (0,02 s).
+  Todas con el árbol de la rama, commit `c02ad23b`, 2026-11-18 00:20.
+  `bash scripts/paridad-native-vm.sh` (Git Bash, árbol limpio en `1a58b470`,
+  binario release 00:27) → **151 coinciden · 0 difieren · 94 no bajan ·
+  4 no terminan · 4 error · 0 revientan** (base `150`).
+- Cambió:
+  - `compiler/forja-types`: los dos checkers registran las variantes del
+    prelude al construirse. `retornar Ninguno` (el parser lo entrega como
+    `Identificador`) ya no es «variable no declarada» en las rutas que no
+    inyectan el prelude (`compilar_a_llvm_programa`, `analizar`, `transpilar`,
+    `compilar_modulo`). Arregla la fase de análisis de `83`, `84`, `88`, `103`,
+    `109`; `forja llvm` de `83_option_simple` y `103_generico_pila` genera IR y
+    `83` compila con `aot` con salida idéntica a la VM.
+  - `compiler/forja-vm`: `Opcode::LeerLinea` y `Uop::LeerLinea` comparten
+    `texto_de_lectura()`: recorta; **sólo** el fin de entrada es `nulo`; la
+    línea en blanco es texto vacío. Medido con `forja ejecutar` y stdin por
+    tubería: `  x  ` → `x`, línea en blanco → `[]`, EOF → `nulo`.
+- **L2:T2 y L2:T3 no tenían trabajo**: en `2a6f63fc` (base de la rama) los
+  `f12_t2_*` ya pasan (con `unir()` y tope de 60 s en el arnés) y
+  `ir_emision_paridad_funcional_con_ast` termina. La premisa del plan venía de
+  una medición anterior a los fixes de `ops_concurrencia`/`ops_metodos`.
+- Abierto y dónde está (no es de este carril): ver los PEDIDO de abajo.
+- `cargo fmt --check -p forja` **falla en `src/transpiler.rs`** (código previo,
+  sin tocar acá); `cargo fmt --check -p forja-vm -p forja-types` limpio.
+  `--test codegen` tiene 1 fallo previo (`ir_cobertura_corpus`: `206`, `305`,
+  `306` no compilan) reproducido con el `forja-types` viejo.
+- Zona tomada: ninguna. `compiler/forja-types`, `compiler/forja-vm`,
+  `tests/runtime/**` y `tests/codegen/ir_emision.rs`.
+
+### PEDIDO L2 → L1 — 2026-11-18 00:25
+- Archivo: `src/backend_llvm/lowering.rs` §3.4 (preludio) y
+  `lowering/expresiones.rs` (`construir_variante_con`).
+- Problema medido: `forja llvm ejemplos/resultados/84_option_desempaquetar.fa`
+  → `variante 'Alguno' desconocida`. El parser canoniza `caso Algo(v)` a
+  `Alguno`, pero la tabla del preludio del lowering sólo registra `"Algo"`.
+  Igual en `88_option_combinar.fa`.
+- Bloquea: la parte nativa de L2:T1 (`84`/`88` ya pasan el análisis).
+
+### PEDIDO L2 → L1 — 2026-11-18 00:25 (informativo, ya es L1:T1/T2)
+- `103_generico_pila.fa`: ya pasa el front-end; `forja aot` falla en lowering
+  con IR inválido (`'%v14' defined with type 'ptr' but expected 'i64'`), familia
+  del grupo I.
+- `109_generico_opcion.fa`: ya pasa el front-end; `forja llvm` falla con
+  «`coincidir` espera un valor de `tipo` (enum), no un Entero» (grupo D).
+
+### PEDIDO L2 → L4 — 2026-11-18 00:25
+- Función: `forja_leer_linea` en `src/backend_llvm/runtime.c`.
+- Semántica que fija la VM (medida): recortar la línea (`  x  ` → `x`); línea
+  en blanco → texto vacío; **fin de entrada → `nulo`**.
+- Hoy en nativo: `  x  ` → `  x  ` (no recorta) y en EOF imprime `0`
+  (`escribir(leer())` → `0`; con la VM → `nulo`).
+- Ejemplo para verificar: `variable x = leer()` + `escribir(x)` con stdin
+  vacío, y `escribir("[" + leer() + "]")` con `  x  `.
+- Bloquea: paridad de `leer()` entre las dos rutas (L2:T4).
