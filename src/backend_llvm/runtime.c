@@ -1078,9 +1078,18 @@ char *forja_leer_linea(void) {
         return NULL;
     }
     if (n > 0 && buf[n - 1] == '\r') n--;
-    buf[n] = '\0';
-    char *r = forja_texto_alloc((int64_t)n + 1);
-    memcpy(r, buf, n + 1);
+    /* La VM recorta la linea y una linea vacia (o de solo espacios) cuenta como
+     * fin de entrada: `leer()` devuelve nulo (ver `Opcode::LeerLinea`). */
+    size_t ini = 0;
+    while (ini < n && (buf[ini] == ' ' || buf[ini] == '\t')) ini++;
+    while (n > ini && (buf[n - 1] == ' ' || buf[n - 1] == '\t')) n--;
+    if (ini == n) {
+        free(buf);
+        return NULL;
+    }
+    char *r = forja_texto_alloc((int64_t)(n - ini) + 1);
+    memcpy(r, buf + ini, n - ini);
+    r[n - ini] = '\0';
     free(buf);
     return r;
 }
