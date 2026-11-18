@@ -16,8 +16,8 @@
   Acceso directo: O(1) vs cálculo: O(n)
 
 --- 4. Variables locales ---
-  Lento (acceso repetido): 0
-  Rápido (variable local): 0
+  Lento (acceso repetido): 275
+  Rápido (variable local): 275
   Cachear accesos reduce la sobrecarga
 
 --- Resumen de técnicas ---

@@ -4,6 +4,8 @@ impl NativoRegistro {
     pub fn registrar_json(&mut self) {
         self.registrar("_json_stringificar", nativo_json_stringificar);
         self.registrar("_json_parsear", nativo_json_parsear);
+        self.registrar("_json_validar", nativo_json_validar);
+        self.registrar("_json_pretty", nativo_json_pretty);
     }
 
     pub fn registrar_quic_h3(&mut self) {
@@ -109,6 +111,41 @@ pub fn nativo_json_parsear(
         }
     }
     let aidx = vm.reservar_arr(arr);
+    Ok(ValorFast::arreglo(aidx))
+}
+
+/// `_json_validar(texto)` → Booleano: ¿es JSON bien formado?
+pub fn nativo_json_validar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() || !args[0].es_texto() {
+        return Ok(ValorFast::booleano(false));
+    }
+    let texto = vm.obtener_texto(args[0].indice_texto()).to_string();
+    Ok(ValorFast::booleano(
+        serde_json::from_str::<serde_json::Value>(&texto).is_ok(),
+    ))
+}
+
+/// `_json_pretty(valor)` → arreglo `[codigo, texto]` con 2 espacios de sangría.
+pub fn nativo_json_pretty(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Ok(ValorFast::nulo());
+    }
+    let compacto = json_stringificar_valor(vm, args[0]);
+    let (codigo, texto) = match serde_json::from_str::<serde_json::Value>(&compacto) {
+        Ok(v) => (
+            0i64,
+            serde_json::to_string_pretty(&v).unwrap_or_else(|_| compacto.clone()),
+        ),
+        Err(e) => (1i64, e.to_string()),
+    };
+    let indice = vm.reservar_texto(Arc::from(texto.as_str()));
+    let aidx = vm.reservar_arr(vec![ValorFast::entero(codigo), ValorFast::texto(indice)]);
     Ok(ValorFast::arreglo(aidx))
 }
 

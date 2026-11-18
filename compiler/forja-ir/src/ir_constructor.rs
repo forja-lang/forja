@@ -91,6 +91,11 @@ pub struct ConstructorDesdeAst {
     /// nombres de funciones declaradas, para tratarlas como valor
     /// (`&funcion`, callbacks por nombre).
     funciones_definidas: HashSet<String>,
+    /// Globales que ya se asignaron al menos una vez. Los globales se
+    /// pre-reservan (en nulo) para que las funciones los vean, así que sin esto
+    /// una llamada `nombre(...)` donde `nombre` es un global *y* una función se
+    /// resolvía como llamada indirecta al global vacío.
+    globales_asignados: HashSet<String>,
     /// contador para nombrar las funciones de hilo (`__hilo_N`).
     hilo_counter: usize,
     /// pila de ciclos activos `(salida, continuación)` para traducir
@@ -168,6 +173,7 @@ impl ConstructorDesdeAst {
             variantes_enum: HashMap::new(),
             closure_counter: 0,
             funciones_definidas: HashSet::new(),
+            globales_asignados: HashSet::new(),
             hilo_counter: 0,
             ciclos: Vec::new(),
             siguiente_temporal: 0,
@@ -203,6 +209,16 @@ impl ConstructorDesdeAst {
             self.next_mem += 1;
             idx
         }
+    }
+
+    /// Los tipos por nombre también se filtran entre cuerpos: dos funciones
+    /// pueden usar el mismo nombre con tipos distintos (`variable m = {...}` en
+    /// una, parámetro `m` arreglo en otra) y `Index` elegiría la instrucción de
+    /// mapa. Sólo los globales son del programa entero.
+    fn reiniciar_tipos_de_variables(&mut self) {
+        let globales = self.mapa_globales.clone();
+        self.tipos_var
+            .retain(|nombre, _| globales.contains_key(nombre));
     }
 
     fn obtener_memoria(&self, nombre: &str) -> Option<IdxMemoria> {
@@ -488,12 +504,21 @@ impl ConstructorDesdeAst {
                 // variable local o global, o callback recibido por parámetro),
                 // la llamada es indirecta.
                 if let Some(mem) = self.mem_de_variable(nombre) {
-                    let callee = constructor_ir.emitir_carga(mem);
-                    let args: Vec<IdValor> = argumentos
-                        .iter()
-                        .map(|a| self.expresion_a_ir(constructor_ir, a))
-                        .collect();
-                    return constructor_ir.emitir_llamada_clausura(callee, args);
+                    // Un global pre-reservado existe (en nulo) desde el arranque.
+                    // Si todavía no se asignó y el nombre es una función, la
+                    // llamada es a la función: `variable componentes =
+                    // fecha.componentes(ts)` tiene que llamar a la función.
+                    let es_local = self.mapa_variables.contains_key(nombre);
+                    let global_con_valor = self.globales_asignados.contains(nombre);
+                    let es_funcion = self.funciones_definidas.contains(nombre);
+                    if es_local || global_con_valor || !es_funcion {
+                        let callee = constructor_ir.emitir_carga(mem);
+                        let args: Vec<IdValor> = argumentos
+                            .iter()
+                            .map(|a| self.expresion_a_ir(constructor_ir, a))
+                            .collect();
+                        return constructor_ir.emitir_llamada_clausura(callee, args);
+                    }
                 }
                 // `leer()` es el builtin de lectura, pero una variable
                 // con ese nombre (un closure) tiene prioridad, igual que en el
@@ -947,8 +972,10 @@ impl ConstructorDesdeAst {
                 valor,
                 ..
             } => {
-                let mem = self.reservar_memoria(nombre);
-                constructor_ir.emitir_reserva(mem);
+                // El inicializador se evalúa ANTES de reservar el slot: si no,
+                // `variable componentes = fecha.componentes(ts)` ya veía la
+                // variable `componentes` (en nulo) y la llamada se resolvía como
+                // "llamar al valor de la variable" en vez de a la función.
                 let val = match valor {
                     Some(e) => {
                         let mut v = self.expresion_a_ir(constructor_ir, e);
@@ -985,7 +1012,12 @@ impl ConstructorDesdeAst {
                     }
                     None => constructor_ir.emitir_const_nulo(),
                 };
+                let mem = self.reservar_memoria(nombre);
+                constructor_ir.emitir_reserva(mem);
                 constructor_ir.emitir_guardado(mem, val);
+                if self.mapa_globales.contains_key(nombre) {
+                    self.globales_asignados.insert(nombre.clone());
+                }
             }
 
             Declaracion::Asignacion { nombre, valor, .. } => {
@@ -1396,6 +1428,9 @@ impl ConstructorDesdeAst {
         }
 
         let name_sym = self.simbolos.internar("main");
+        // Los `IdValor` son locales a cada `ConstructorIr`: los tipos anotados
+        // en cuerpos anteriores colisionarían por id. Ver `compilar_funcion`.
+        self.tipos_valor.clear();
         let mut constructor_ir = ConstructorIr::nuevo();
         constructor_ir.simbolos = self.simbolos.clone();
         let _entrada = constructor_ir.nuevo_bloque();
@@ -1514,6 +1549,8 @@ impl ConstructorDesdeAst {
 
         // Marco propio: guardar y restaurar el del host.
         let vars_previas = std::mem::take(&mut self.mapa_variables);
+        let tipos_previos = std::mem::take(&mut self.tipos_valor);
+        let tipos_var_previos = std::mem::take(&mut self.tipos_var);
         let next_local_previo = self.next_local;
         let in_funcion_previo = self.in_funcion;
         self.next_local = IdxMemoria(0);
@@ -1563,6 +1600,8 @@ impl ConstructorDesdeAst {
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.mapa_variables = vars_previas;
+        self.tipos_valor = tipos_previos;
+        self.tipos_var = tipos_var_previos;
         self.next_local = next_local_previo;
         self.in_funcion = in_funcion_previo;
         (funcion, capturadas)
@@ -1611,6 +1650,8 @@ impl ConstructorDesdeAst {
         self.hilo_counter += 1;
 
         let vars_previas = std::mem::take(&mut self.mapa_variables);
+        let tipos_previos = std::mem::take(&mut self.tipos_valor);
+        let tipos_var_previos = std::mem::take(&mut self.tipos_var);
         let next_local_previo = self.next_local;
         let in_funcion_previo = self.in_funcion;
         self.next_local = IdxMemoria(0);
@@ -1637,6 +1678,8 @@ impl ConstructorDesdeAst {
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.mapa_variables = vars_previas;
+        self.tipos_valor = tipos_previos;
+        self.tipos_var = tipos_var_previos;
         self.next_local = next_local_previo;
         self.in_funcion = in_funcion_previo;
         (funcion, capturadas)
@@ -1651,6 +1694,12 @@ impl ConstructorDesdeAst {
     ) -> FuncionSsa {
         self.in_funcion = true;
         self.mapa_variables.clear();
+        // Los `IdValor` de cada cuerpo empiezan en 0: si no se limpia, un valor
+        // de este cuerpo hereda el tipo estático que otro cuerpo anotó para el
+        // mismo id (p. ej. `arr` tomado por mapa y `arr[i]` emitido como
+        // `ObtenerValorDeMapa`, que devuelve nulo sobre un arreglo).
+        self.tipos_valor.clear();
+        self.reiniciar_tipos_de_variables();
         self.next_local = IdxMemoria(0);
 
         let mut constructor_ir = ConstructorIr::nuevo();
@@ -1690,6 +1739,8 @@ impl ConstructorDesdeAst {
     fn compilar_metodo(&mut self, clase: &str, metodo: &Metodo) -> FuncionSsa {
         self.in_funcion = true;
         self.mapa_variables.clear();
+        self.tipos_valor.clear();
+        self.reiniciar_tipos_de_variables();
         self.next_local = IdxMemoria(0);
 
         let mut constructor_ir = ConstructorIr::nuevo();
@@ -1792,5 +1843,68 @@ mod tests {
         assert_eq!(ir.funciones.len(), 2, "main + f");
         assert_eq!(ir.funciones[0].parametros.len(), 0);
         assert_eq!(ir.funciones[1].parametros.len(), 0);
+    }
+
+    #[test]
+    fn el_tipo_estatico_no_se_filtra_entre_cuerpos() {
+        // Cada cuerpo reinicia los `IdValor`. El mapa de `a` anota su id 2 como
+        // `Mapa`; en `b` ese mismo id es la carga de `arr`. Sin aislamiento,
+        // `arr[0]` se emite como `ObtenerValorDeMapa` (nulo sobre un arreglo)
+        // en vez de `ObtenerElemento`.
+        let prog = parsear_fuente(
+            "funcion a() {\n    variable m = {\"a\": 1}\n    retornar m[\"a\"]\n}\nfuncion b(arr) {\n    variable z = 0\n    retornar arr[0]\n}\nescribir(b([7]))",
+        );
+        let mut constructor_ir = ConstructorDesdeAst::nuevo();
+        let ir = constructor_ir.programa_a_ir(&prog);
+        assert!(constructor_ir.soportado);
+        let b = ir
+            .funciones
+            .iter()
+            .find(|f| ir.simbolos.nombre_de(f.nombre) == "b")
+            .expect("función b en el IR");
+        let mapa_gets = b
+            .bloques
+            .iter()
+            .flat_map(|bl| &bl.instrucciones)
+            .filter(|i| matches!(i, Instruccion::ObtenerValorDeMapa(..)))
+            .count();
+        assert_eq!(
+            mapa_gets, 0,
+            "un arreglo no debe compilarse como acceso a mapa"
+        );
+    }
+
+    #[test]
+    fn el_tipo_por_nombre_no_se_filtra_entre_cuerpos() {
+        // `a` declara `m` como mapa; en `c` el mismo nombre es un parámetro
+        // arreglo. El tipo por nombre no debe cruzar de un cuerpo a otro.
+        let prog = parsear_fuente(
+            "funcion a() {
+    variable m = {\"a\": 1}
+    retornar m[\"a\"]
+}
+funcion c(m) {
+    retornar m[0]
+}
+escribir(c([7]))",
+        );
+        let mut constructor_ir = ConstructorDesdeAst::nuevo();
+        let ir = constructor_ir.programa_a_ir(&prog);
+        assert!(constructor_ir.soportado);
+        let c = ir
+            .funciones
+            .iter()
+            .find(|f| ir.simbolos.nombre_de(f.nombre) == "c")
+            .expect("función c en el IR");
+        let mapa_gets = c
+            .bloques
+            .iter()
+            .flat_map(|bl| &bl.instrucciones)
+            .filter(|i| matches!(i, Instruccion::ObtenerValorDeMapa(..)))
+            .count();
+        assert_eq!(
+            mapa_gets, 0,
+            "un arreglo no debe compilarse como acceso a mapa"
+        );
     }
 }

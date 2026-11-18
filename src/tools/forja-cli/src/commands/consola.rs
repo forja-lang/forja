@@ -35,6 +35,43 @@ pub(crate) fn rechazar_flags(args: &[String]) {
     }
 }
 
+/// Resuelve los `importar` para el transpilador (`destino: nativo`, `forja transpilar`).
+pub(crate) fn resolver_modulos(
+    fuente: &str,
+    entrada: &str,
+    programa: forja::ast::Programa,
+) -> forja::ast::Programa {
+    let base = Path::new(entrada)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    match forja::resolver_imports(fuente, &base) {
+        Ok(resuelto) => resuelto,
+        Err(e) => {
+            eprintln!("⚠️  no pude resolver los imports: {e}");
+            programa
+        }
+    }
+}
+
+/// ¿El fuente importa el paquete gráfico? (`importar gui` / `std/gui`)
+///
+/// Se mira sólo la línea del import (sin comentarios), así `importar "gui"`,
+/// `importar  gui` y `importar std/gui` cuentan igual.
+pub(crate) fn importa_gui(fuente: &str) -> bool {
+    fuente.lines().any(|linea| {
+        let resto = linea
+            .split_once("//")
+            .map_or(linea, |(codigo, _)| codigo)
+            .trim();
+        let Some(ruta) = resto.strip_prefix("importar ") else {
+            return false;
+        };
+        matches!(ruta.trim(), "gui" | "\"gui\"" | "std/gui" | "\"std/gui\"")
+    })
+}
+
 /// forja compilar <archivo.fa> [salida]
 /// Compila un archivo .fa a un ejecutable autónomo.
 /// Con `consola: true` en `forja.yaml` se conserva la ventana de consola.
@@ -55,15 +92,10 @@ pub(crate) fn cmd_construir(args: &[String]) {
             .to_string()
     });
 
-    // Detectar si usa GUI (importar gui)
+    // Detectar si usa GUI (importar gui / std/gui)
     let usa_gui = std::fs::read_to_string(&entrada)
         .ok()
-        .map(|s| {
-            s.contains("importar gui")
-                || s.contains("importar \"gui\"")
-                || s.contains("importar std/gui")
-                || s.contains("importar \"std/gui\"")
-        })
+        .map(|s| importa_gui(&s))
         .unwrap_or(false);
 
     if usa_gui {
@@ -201,39 +233,6 @@ pub(crate) fn cmd_transpile(args: &[String]) {
         }
     };
 
-    // Resolver imports para el JSON del runtime (AST completo con módulos)
-    // Usar el directorio actual como raíz para resolver imports (modulos/, stdlib/)
-    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-    let entrada_padre = std::path::Path::new(input_path)
-        .parent()
-        .unwrap_or(std::path::Path::new("."));
-    // Si input_path es relativo, combinar con CWD. Si es absoluto, usar su parent.
-    let raiz_for_imports = if std::path::Path::new(input_path).is_absolute() {
-        entrada_padre.to_path_buf()
-    } else {
-        cwd.join(entrada_padre)
-    };
-    eprintln!(
-        "📂 Directorio raíz para imports: {}",
-        raiz_for_imports.display()
-    );
-    let programa_resuelto = match forja::resolver_imports(&fuente, &raiz_for_imports) {
-        Ok(p) => {
-            eprintln!(
-                "📦 Imports resueltos correctamente ({} declaraciones)",
-                p.declaraciones.len()
-            );
-            Some(p)
-        }
-        Err(e) => {
-            eprintln!(
-                "⚠️ No se pudieron resolver imports: {}. Usando AST sin módulos.",
-                e
-            );
-            None
-        }
-    };
-
     // FASE 4: Type Checker + Type Inference
     let mut verificador = semantics::TipoChecker::nuevo();
     let _ = verificador.analizar(&programa);
@@ -242,6 +241,9 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     let mut prestamo_checker =
         semantics::PrestamoChecker::con_estricto(forja::config::actual().estricto);
     let _ = prestamo_checker.analizar(&programa);
+
+    // El transpilador sólo comenta `importar`: los módulos .fa viajan resueltos.
+    let programa = crate::commands::resolver_modulos(&fuente, input_path, programa);
 
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::nuevo();
@@ -292,8 +294,13 @@ pub(crate) fn cmd_transpile(args: &[String]) {
                 process::exit(1);
             }
         };
-        let forja_toml = forja::ruta_para_toml(&forja_root);
+        // El crate `forja` vive en `compiler/forja`, no en la raíz del workspace
+        // (la raíz es un workspace virtual: `cargo` no encuentra un paquete ahí).
+        let forja_toml = forja::ruta_para_toml(&forja_root.join("compiler/forja"));
         let forja_gui_rt_toml = forja::ruta_para_toml(&forja_root.join("library/gui-rt"));
+        // Fork de `masonry_winit` (FORJA_PRESENT_MODE / FORJA_GUI_PERF): el
+        // proyecto está fuera del workspace, así que lleva su propio `[patch]`.
+        let patch_masonry_toml = forja::ruta_para_toml(&forja_root.join("patches/masonry_winit"));
         format!(
             r#"[package]
 name = "{}"
@@ -314,6 +321,9 @@ forja = {{ path = "{}" }}
 forja-gui-rt = {{ path = "{}" }}
 serde_json = "1"
 
+[patch."https://github.com/linebender/xilem"]
+masonry_winit = {{ path = "{}" }}
+
 # Perfil de desarrollo optimizado: las dependencias del stack gráfico
 # (xilem, vello, wgpu, parley) son 10-20x más lentas sin optimizar y eso hace
 # que arrastrar un slider o el scrollbar se sienta pegajoso en `cargo run`.
@@ -327,7 +337,7 @@ opt-level = 3
 version = "0.30.13"
 features = ["android-native-activity"]
 "#,
-            nombre_crate, nombre_crate, forja_toml, forja_gui_rt_toml
+            nombre_crate, nombre_crate, forja_toml, forja_gui_rt_toml, patch_masonry_toml
         )
     } else {
         format!(
@@ -367,43 +377,58 @@ edition = "2021"
         process::exit(1);
     }
 
-    // Si usa GUI, guardar AST como JSON (para include_str! en build)
-    // Usar el programa con imports resueltos (incluye funciones de módulos)
-    if usa_gui {
-        let ast_json = match &programa_resuelto {
-            Some(p) => serde_json::to_string_pretty(&p.declaraciones)
-                .unwrap_or_else(|_| format!("{:#?}", p.declaraciones)),
-            None => format!("{:#?}", programa.declaraciones),
-        };
-        let json_ruta = fuente_directorio.join("programa.json");
-        if let Err(e) = fs::write(&json_ruta, &ast_json) {
-            eprintln!("Error escribiendo '{}': {}", json_ruta.display(), e);
-            process::exit(1);
-        }
-    }
-
     println!("✅ Proyecto Rust exportado: {}\\", project_directorio);
     println!("   {}\\Cargo.toml", project_directorio);
-    println!("   {}\\src\\main.rs", project_directorio);
+    println!("   {}\\src\\{}", project_directorio, archivo_name);
     println!();
     println!("📦 Compilando con cargo...");
 
+    // Apps GUI: compartir el target dir con `destino: nativo`. Si cada proyecto
+    // usa su propio `<proyecto>/target`, Xilem se recompila entero por proyecto.
+    let target_gui = usa_gui.then(|| {
+        std::env::var_os("FORJA_GUI_TARGET_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+                home.map(|h| {
+                    std::path::PathBuf::from(h)
+                        .join(".cache")
+                        .join("forja-gui-target")
+                })
+                .unwrap_or_else(|| std::path::PathBuf::from("target"))
+            })
+    });
+
     // Compilar automáticamente con cargo
     let intentar_construir = |args: &[&str]| -> Result<(), ()> {
-        let resultado = std::process::Command::new("cargo")
+        let mut comando = std::process::Command::new("cargo");
+        comando
             .args(args)
+            // Sin sccache: la línea de comandos de `forja-gui-rt` (cientos de
+            // `-L dependency=…`) supera el límite de rutas de Windows y el
+            // wrapper falla con "Nombre de archivo o extensión demasiado largo".
+            .env("RUSTC_WRAPPER", "")
             .current_dir(&project_directorio)
             .stdout(std::process::Stdio::inherit())
-            .stderr(std::process::Stdio::inherit())
-            .status();
-        match resultado {
+            .stderr(std::process::Stdio::inherit());
+        if let Some(dir) = &target_gui {
+            comando.env("CARGO_TARGET_DIR", dir);
+        }
+        match comando.status() {
             Ok(s) if s.success() => Ok(()),
             _ => Err(()),
         }
     };
 
+    // Con lock existente, `--locked` evita que cargo vuelva a resolver xilem
+    // (rebuild total por un commit nuevo de la branch `main`).
+    let args_release: &[&str] = if Path::new(&project_directorio).join("Cargo.lock").exists() {
+        &["build", "--release", "--locked"]
+    } else {
+        &["build", "--release"]
+    };
     // Intentar release primero, si falla probar debug
-    let construir_correcto = intentar_construir(&["build", "--release"]).or_else(|_| {
+    let construir_correcto = intentar_construir(args_release).or_else(|_| {
         eprintln!("⚠️  Compilación release falló, intentando debug...");
         intentar_construir(&["build"])
     });
@@ -417,10 +442,18 @@ edition = "2021"
                 tallo_entrada.replace(['-', ' '], "_")
             };
             println!();
-            println!(
-                "🚀 Ejecutable: .\\{}\\target\\{}\\{}",
-                project_directorio, construir_directorio, exe_name
-            );
+            match &target_gui {
+                Some(dir) => println!(
+                    "🚀 Ejecutable: {}\\{}\\{}",
+                    dir.display(),
+                    construir_directorio,
+                    exe_name
+                ),
+                None => println!(
+                    "🚀 Ejecutable: .\\{}\\target\\{}\\{}",
+                    project_directorio, construir_directorio, exe_name
+                ),
+            }
         }
         Err(_) => {
             eprintln!();
@@ -447,6 +480,19 @@ pub(crate) fn compilador_cruzado(destino: compiler_asm::DestinoArch) -> &'static
     }
 }
 
+/// Raíz del proyecto: el primer ancestro con `library/` o `stdlib/`, que es
+/// donde los backends nativos buscan la stdlib.
+pub(crate) fn raiz_proyecto() -> std::path::PathBuf {
+    let mut r = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    for ancestro in r.clone().ancestors() {
+        if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
+            r = ancestro.to_path_buf();
+            break;
+        }
+    }
+    r
+}
+
 /// forja llvm <archivo.fa> [salida.ll]
 pub(crate) fn cmd_llvm(args: &[String]) {
     let Some(ruta) = args.first() else {
@@ -461,16 +507,7 @@ pub(crate) fn cmd_llvm(args: &[String]) {
         }
     };
     // Igual que `forja aot`: resolver imports + podar lo inalcanzable.
-    let raiz = {
-        let mut r = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        for ancestro in r.clone().ancestors() {
-            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
-                r = ancestro.to_path_buf();
-                break;
-            }
-        }
-        r
-    };
+    let raiz = raiz_proyecto();
     match forja::compilar_a_llvm_desde(&fuente, &raiz) {
         Ok(ir) => {
             let out = args

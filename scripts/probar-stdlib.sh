@@ -41,6 +41,17 @@ for archivo in library/std/tests/*.fa; do
     total=$((total + 1))
     salida="$("$FORJA" run "$archivo" 2>&1)"
     estado=$?
+    # 127 con salida vacía = no se pudo *lanzar* el binario (en Windows, un
+    # antivirus o un `cargo build` recién hecho bloquea el .exe un instante).
+    # No es un fallo del módulo: se reintenta una vez y queda avisado.
+    if [ "$estado" -eq 127 ] && [ -z "$salida" ]; then
+        sleep 1
+        salida="$("$FORJA" run "$archivo" 2>&1)"
+        estado=$?
+        if [ "$estado" -ne 127 ]; then
+            echo "ℹ️  $nombre: el binario no se pudo lanzar la primera vez (reintentado)"
+        fi
+    fi
     if [ $estado -ne 0 ]; then
         fallidos=$((fallidos + 1))
         echo "❌ $nombre (exit $estado)"

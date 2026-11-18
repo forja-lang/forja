@@ -4,9 +4,15 @@ use std::fs;
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 
 const FBC_MAGIC: &[u8; 4] = b"FBC\0";
+/// App GUI: el payload es el **fuente Forja**, que evalúa `forja-gui-rt`.
+const FBG_MAGIC: &[u8; 4] = b"FBG\0";
+/// App GUI con imports: el payload es el **AST resuelto en JSON** (los módulos
+/// viajan inlinados porque el runtime no resuelve `importar`).
+const FBA_MAGIC: &[u8; 4] = b"FBA\0";
 
 /// Intenta cargar y ejecutar bytecode incrustado al final del propio .exe
-/// Formato: stub.exe + bytecode + 4 bytes de tamaño u32 LE + 4 bytes magic FBC
+/// Formato: stub.exe + payload + 4 bytes de tamaño u32 LE + 4 bytes de magic
+/// (`FBC` = bytecode de la VM, `FBG` = fuente de una app GUI).
 pub fn try_selfrun() -> Option<()> {
     let exe_ruta = std::env::current_exe().ok()?;
 
@@ -24,7 +30,18 @@ pub fn try_selfrun() -> Option<()> {
     let mut footer = [0u8; 8];
     archivo.read_exact(&mut footer).ok()?;
 
-    // Verificar magic header FBC\0
+    // Verificar magic header FBC\0 (bytecode) o FBG\0/FBA\0 (app GUI)
+    if &footer[4..8] == FBA_MAGIC || &footer[4..8] == FBG_MAGIC {
+        let tamano = u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64;
+        if tamano == 0 || tamano > archivo_longitud - 8 {
+            return None;
+        }
+        let inicio = archivo_longitud - 8 - tamano;
+        archivo.seek(SeekFrom::Start(inicio)).ok()?;
+        let mut fuente = vec![0u8; tamano as usize];
+        archivo.read_exact(&mut fuente).ok()?;
+        return ejecutar_gui(&fuente, &footer[4..8] == FBA_MAGIC);
+    }
     if &footer[4..8] != FBC_MAGIC {
         return None; // No hay bytecode incrustado
     }
@@ -97,6 +114,67 @@ pub fn try_selfrun() -> Option<()> {
     }
 
     Some(())
+}
+
+/// Ejecuta una app GUI incrustada (payload = fuente Forja).
+///
+/// La GUI necesita el AST: `forja-gui-rt` arma la ventana y evalúa el programa.
+/// Sólo existe con la feature `gui` (la compila `forja-rt --features gui`).
+///
+/// `es_ast`: el payload es el AST resuelto en JSON (`FBA`) y no fuente (`FBG`).
+fn ejecutar_gui(payload: &[u8], es_ast: bool) -> Option<()> {
+    #[cfg(feature = "gui")]
+    {
+        let programa = if es_ast {
+            match serde_json::from_slice::<crate::ast::Programa>(payload) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("❌ El AST incrustado está corrupto: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            let fuente = std::str::from_utf8(payload).ok()?;
+            let mut lexer = crate::lexer::Lexer::nuevo(fuente);
+            let tokens = match lexer.tokenize() {
+                Ok(t) => t,
+                Err(errs) => {
+                    eprintln!("❌ Error de sintaxis: {}", errs[0]);
+                    std::process::exit(1);
+                }
+            };
+            match crate::parser::Parser::nuevo(tokens).parsear() {
+                Ok(p) => p,
+                Err(errs) => {
+                    eprintln!("❌ Error de sintaxis: {}", errs[0]);
+                    std::process::exit(1);
+                }
+            }
+        };
+        let args: Vec<String> = std::env::args().collect();
+        let estado = forja_gui_rt::initialize_from_args(&args);
+        match forja_gui_rt::gui_nativa::construir_y_ejecutar(
+            &programa,
+            estado.as_deref(),
+            None,
+            true,
+        ) {
+            Ok(()) => Some(()),
+            Err(e) => {
+                eprintln!("❌ Error en la app GUI: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    #[cfg(not(feature = "gui"))]
+    {
+        let _ = (payload, es_ast);
+        eprintln!(
+            "❌ Este ejecutable es una app GUI y este runtime no trae el motor gráfico.\n\
+             Necesitás `forja-rt-gui` (cargo build -p forja-rt --features gui)."
+        );
+        std::process::exit(1)
+    }
 }
 
 /// ¿El comando puede reemplazar este mismo ejecutable?

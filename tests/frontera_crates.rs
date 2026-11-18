@@ -82,6 +82,18 @@ fn capas_del_compilador_solo_miran_hacia_abajo() {
         deps("forja-session"),
         vec!["forja-errors", "forja-span", "serde", "serde_yaml"]
     );
+    // Consumidor del pipeline (GUI nativa y web), no una fase: puede mirar
+    // hacia arriba, igual que `forja-vm`.
+    assert_eq!(
+        deps("forja-interprete"),
+        vec![
+            "forja-syntax",
+            "serde_json",
+            "forja-native",
+            "forja-vm",
+            "forja-runtime",
+        ]
+    );
 }
 
 #[test]
@@ -104,6 +116,7 @@ fn toda_crate_de_compiler_tiene_regla_de_capa() {
         "forja-session",
         "forja-driver",
         "forja-vm",
+        "forja-interprete",
     ];
     for e in std::fs::read_dir(&raiz).expect("compiler/") {
         let p = e.unwrap().path();

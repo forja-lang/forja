@@ -75,7 +75,7 @@ Dos diferencias con la VM que salieron al probarlo, y su fix:
 | `12_input`: `¡Hola, 0!` en vez de `¡Hola, nulo!` | `leer()` no tenía tipo de retorno → slot `Entero` → el `nulo` del final de la entrada se guardaba como `0`. `tipo_builtin` ahora dice `Texto`, y `forja_concat` une un texto nulo como `"nulo"` |
 | `aplanar([[1,2],[3,[4]],5])` no aplanaba | `tipo(v)` acertaba por el tipo estático, que sobre un `arr[i]` es una **suposición** (`Entero`). Ahora sólo `Booleano`/`Decimal` usan la vía estática (son bits); el resto pregunta el tag del runtime |
 
-## 2. Estado medido en `native/cajas` (`1821cbcf`)
+## 2. Estado medido en `native/cajas` (mergeado con `main` @ `557a9981`)
 
 ```bash
 cd /c/Users/gaucho/forja-native
@@ -84,9 +84,13 @@ bash scripts/paridad-native-vm.sh
 ```
 
 ```
-nativo vs VM: 153 coinciden · 0 difieren (sin excluir) · 92 no bajan a nativo
-              · 5 no terminan en 20s · 4 salen con error explícito · 0 revientan
+nativo vs VM: 150 coinciden · 0 difieren (sin excluir) · 95 no bajan a nativo
+              · 4 no terminan en 20s · 4 salen con error explícito · 0 revientan
 ```
+
+(Los números bajan un poco respecto de `1821cbcf` porque `main` movió el
+submódulo `ejemplos` y tiene su propio trabajo de VM; la referencia de esa
+sesión es `154 · 0 · 119` sobre su árbol sin commitear.)
 
 Contra las `145 / 3 / 128 / 5 / 2 / 0` del handoff7: **0 diferencias**, ningún
 crash y **12 ejemplos más** que bajan a nativo. Los "no bajan" y "error
@@ -148,25 +152,34 @@ los "no terminan"). Arreglarlo es del submódulo, no de acá.
 
 | Suite | Resultado |
 |---|---|
-| `cargo test -p forja --test llvm_backend` | **40/40** (38 + 2 nuevos) |
-| `cargo test -p forja --lib` | 127 |
+| `cargo test -p forja --test llvm_backend` | **48/48** (los de `main` + los 2 nuevos) |
+| `cargo test -p forja --lib` | 129 |
 | `cargo test -p forja --test corpus` | 299 |
+| `cargo test -p forja --test frontera_crates` | 2/2 |
 | `cargo clippy -p forja --lib` / `cargo fmt --check -p forja` | limpios |
 
 `cargo test -p forja --no-fail-fast -- --skip ir_emision_paridad_funcional_con_ast`
-corre **39 suites en verde** y falla en 5 casos **ajenos al backend nativo**
-(ninguno importa `src/backend_llvm`, y los 3 commits de esta rama no tocan una
-línea fuera de `src/backend_llvm/**`, `scripts/paridad-exclusiones` y
-`tests/llvm_backend.rs`):
+recorre las suites en orden alfabético: **39 en verde** hasta `tests/runtime.rs`,
+y ahí se **queda colgado para siempre** (los tests de canales imprimen `FAILED`
+pero el binario no termina de salir: los hilos de Forja quedan bloqueados en
+`recibir()`, así que el runner no puede cerrar el proceso; el tope de 5400 s
+mató la corrida). Las suites que van después de `runtime` en el orden de cargo
+**no llegaron a correr**.
+
+Los fallos conocidos, todos **ajenos al backend nativo** (ninguno importa
+`src/backend_llvm`, y los commits de esta rama no tocan una línea fuera de
+`src/backend_llvm/**`, `scripts/paridad-exclusiones`, `tests/llvm_backend.rs` y
+`plans/`):
 
 | Falla | Por qué no es de acá |
 |---|---|
-| `golden_runner::golden_del_corpus` (3 ejemplos: `400_exacto`, `400_exacto_debug`, `170_cifrado_cesar`) | corre con `forja::ejecutar` (VM). Los goldens de esta rama quedaron viejos respecto del comportamiento actual de la VM; el árbol principal **ya los regeneró sin commitear** (`M tests/golden/*.out`) |
+| `golden_runner::golden_del_corpus` (11 ejemplos: `66`, `139`, `142`, `143`, `150`, `169`, `170`, `190`, `193`, `198`, `400`) | corre con `forja::ejecutar` (VM). Los goldens **commiteados** quedaron viejos respecto del comportamiento actual de la VM; el árbol principal **ya los regeneró sin commitear** (`M tests/golden/*.out`). Verificado que no es del nativo: el diff de `66_busqueda_lineal` es una línea de salida del programa, no un valor |
 | `frontera_crates::toda_crate_de_compiler_tiene_regla_de_capa` | pide la regla de capa de la crate nueva `forja-interprete`; el árbol principal **ya la tiene sin commitear** (`M tests/frontera_crates.rs`) |
-| `runtime::async_tests::test_async_hilo_sin_retorno` y `runtime::concurrencia_stress::f12_t2_*` (6) | VM + canales/hilos: `tx.enviar` bloquea sin lector y el test muere por tiempo. Misma familia que el cuelgue de `ir_emision` |
+| `runtime::async_tests::test_async_hilo_sin_retorno` y `runtime::concurrencia_stress::f12_t2_*` (6) | VM + canales/hilos: `tx.enviar`/`recibir` bloquean sin contraparte. Misma familia que el cuelgue de `ir_emision`, y además dejan el binario de test sin poder salir |
 
-O sea: al mergear `native/cajas` en un `main` sano, las 5 fallas deberían
-desaparecer solas (3 son de archivos que el otro árbol ya arregló sin commitear).
+Los goldens y `frontera_crates` **ya están arreglados en `main`**
+(`f3413555` y anteriores), así que al mergear deberían quedar sólo los 6 de
+concurrencia.
 
 ## 3. Lo que sigue (orden sugerido, corregido)
 

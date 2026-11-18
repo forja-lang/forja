@@ -157,3 +157,23 @@ escribir(duplicar(esperado / 2) == esperado)
         "salida: {salida:?}"
     );
 }
+
+#[test]
+fn decimal_con_enteros_divide_en_punto_flotante() {
+    // Repro: `Decimal` acepta enteros (promoción), pero las operaciones
+    // Decimal especializadas no los convertían: `var d: Decimal = 1; d / 2700`
+    // daba división entera (0) y `d + 1` daba nulo.
+    let salida = salida(
+        r#"
+funcion dividir(a: Decimal, b: Decimal) -> Decimal {
+    retornar a / b
+}
+variable d: Decimal = 1
+escribir(dividir(1, 4))
+escribir(d / 4)
+escribir(d + 1)
+escribir(d * 3)
+"#,
+    );
+    assert_eq!(salida, vec!["0.25", "0.25", "2", "3"], "salida: {salida:?}");
+}

@@ -355,6 +355,7 @@ fn obtener_nativas() -> HashMap<&'static str, FuncionNativa> {
     m.insert("tipo", nativa_tipo);
     m.insert("a_texto", nativa_a_texto);
     m.insert("escribir", nativa_escribir);
+    m.insert("salir_app", nativa_salir_app);
     m.insert("empujar", nativa_empujar);
     // SQLite
     // Archivo
@@ -533,6 +534,19 @@ fn nativa_a_texto(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor
         .first()
         .ok_or("a_texto(valor) requiere 1 argumento".to_string())?;
     Ok(Valor::Texto(val.to_display()))
+}
+
+/// `salir_app()` — cierra la app (las apps GUI no tienen forma de terminar desde
+/// un callback: `boton("Cerrar", &cerrar)` no hacía nada y la ventana quedaba
+/// abierta). En la web no hay proceso que cerrar: no hace nada.
+fn nativa_salir_app(args: &[Valor], _almacen: &dyn AlmacenValores) -> Result<Valor, String> {
+    if !args.is_empty() {
+        return Err("salir_app() no requiere argumentos".to_string());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    std::process::exit(0);
+    #[cfg(target_arch = "wasm32")]
+    Ok(Valor::Nulo)
 }
 
 /// `escribir(valor…)` — imprime los argumentos separados por espacio.

@@ -225,7 +225,12 @@ fn cli_nuevo_proyecto_y_ejecutar_principal() {
     let app = directorio_raiz.join("miapp");
     assert!(app.join("main.fa").is_file());
     assert!(app.join("forja.json").is_file());
+    assert!(app.join("forja.yaml").is_file());
     assert!(app.join("modulos").is_dir());
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(app.join("forja.json")).unwrap()).unwrap();
+    assert_eq!(json["forja"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(json["modulos"], serde_json::json!([]));
 
     let o = correr(&app, &["ejecutar", "main.fa"], None);
     assert!(o.status.success(), "{}", salida(&o));
@@ -492,5 +497,33 @@ fn cli_aot_nativo_compila_y_ejecuta() {
     let out = std::process::Command::new(&bin).output().unwrap();
     assert!(out.status.success());
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "5");
+    let _ = std::fs::remove_dir_all(directorio_raiz);
+}
+
+#[test]
+fn cli_repl_importa_modulos_y_divide_decimal() {
+    let directorio_raiz = directorio_raiz_prueba("repl_import");
+    escribir(
+        &directorio_raiz,
+        "mates.fa",
+        "funcion sumar(a, b) {\n    retornar a + b\n}\n",
+    );
+    let entrada = "importar \"mates\"\n\
+                   escribir(sumar(2, 3))\n\
+                   funcion dividir(a: Decimal, b: Decimal) {\n\
+                   \x20   retornar a / b\n\
+                   }\n\
+                   escribir(dividir(1, 4))\n\
+                   /salir\n";
+    let o = correr(&directorio_raiz, &["repl"], Some(entrada));
+    let texto = salida(&o);
+    assert!(
+        !texto.contains("no definida"),
+        "el REPL no resolvió el import:\n{texto}"
+    );
+    assert!(
+        texto.contains("0.25"),
+        "Decimal con enteros no dividió en punto flotante:\n{texto}"
+    );
     let _ = std::fs::remove_dir_all(directorio_raiz);
 }

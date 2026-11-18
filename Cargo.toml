@@ -55,6 +55,12 @@ default-members = [
 ]
 exclude = [".forja_gui_cache", "fuzz"]
 
+# Fork local de `masonry_winit` (elegir present mode con FORJA_PRESENT_MODE y
+# medir frames con FORJA_GUI_PERF=1). Aplica al compilar el runtime GUI
+# (`forja-rt --features gui`) o `destino: nativo`; las apps ya compiladas no cambian.
+[patch."https://github.com/linebender/xilem"]
+masonry_winit = { path = "patches/masonry_winit" }
+
 # xilem y su stack (masonry, masonry_core, masonry_winit, xilem_masonry,
 # masonry_imaging, tree_arena) se consumen directo del `main` de linebender:
 # el último release publicado (0.4.0, oct-2025) está desactualizado y los
@@ -79,6 +85,15 @@ opt-level = 3
 opt-level = 3
 lto = "fat"
 codegen-units = 1
+
+# Perfil del runtime gráfico prebuilt (`forja-rt --features gui`). El link con
+# LTO fat + codegen-units=1 era el 60 % del build (283 s de 494 s); con thin LTO
+# y 4 unidades el binario sale en 3m37s en vez de 8m14s y rinde igual (el trabajo
+# pesado lo hacen wgpu/vello, que igual se distribuyen en rlibs).
+[profile.rt]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
 
 # Perfil dist: prioriza TAMAÑO (binarios mínimos, sin símbolos).
 # Usar con `cargo build --profile dist` (el AAR usa `dist-android`).

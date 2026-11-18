@@ -568,6 +568,9 @@ pub fn resolver_imports(
     // como acceso a una variable inexistente. El HIR dice qué nombres exporta
     // cada módulo: solo se reescribe `alias.miembro` si el miembro existe.
     let mut alias_modulos: HashMap<String, HashSet<String>> = HashMap::new();
+    // (alias, programa) de cada módulo inlineado: de acá salen los alias
+    // manglados de los nombres que exporta más de un módulo.
+    let mut modulos_inlinados: Vec<(String, ast::Programa)> = Vec::new();
     let mut hir = forja_hir::Hir::nuevo();
 
     // Nombres de funciones del programa principal: se recolectan antes de
@@ -581,7 +584,14 @@ pub fn resolver_imports(
         })
         .collect();
 
-    let mut final_decls = Vec::new();
+    // Posiciones: los módulos se insertan donde estaban sus `importar` para
+    // no cambiar el orden de inicialización del programa principal.
+    enum Item {
+        Decl(ast::Declaracion),
+        Modulo(usize),
+    }
+
+    let mut items: Vec<Item> = Vec::new();
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ref ruta) = decl {
             // La GUI nativa la resuelve `forja-gui-rt` al transpilar; no hay un
@@ -596,7 +606,7 @@ pub fn resolver_imports(
                         .or_default()
                         .insert("*".to_string());
                 }
-                final_decls.push(decl);
+                items.push(Item::Decl(decl));
                 continue;
             }
             let sub_prog = modulo_resolver
@@ -623,16 +633,48 @@ pub fn resolver_imports(
                         .insert(nombre.to_string());
                 }
             }
-            final_decls.extend(sub_prog.declaraciones);
+            modulos_inlinados.push((alias, sub_prog));
+            items.push(Item::Modulo(modulos_inlinados.len() - 1));
         } else if let ast::Declaracion::ImportarExterna(ref ruta) = decl {
             // Cargar la librería externa en el registro FFI
             crate::ffi::cargar_libreria(ruta)
                 .map_err(|e| format!("Error cargando librería externa '{}': {}", ruta, e))?;
-            final_decls.push(decl);
+            items.push(Item::Decl(decl));
         } else {
-            final_decls.push(decl);
+            items.push(Item::Decl(decl));
         }
     }
+
+    let (mapa_modulos, alias_clones) =
+        forja_hir::imports::alias_manglados(&alias_modulos, &mut modulos_inlinados);
+    // Dos módulos con la misma clase, o con la misma constante y distinto
+    // valor: el dedup deja la primera y la otra desaparece en silencio.
+    let decls_de_modulos: Vec<ast::Declaracion> = modulos_inlinados
+        .iter()
+        .flat_map(|(_, programa)| programa.declaraciones.iter().cloned())
+        .collect();
+    let conflictos_declaraciones =
+        forja_hir::imports::conflictos_de_nivel_superior(&decls_de_modulos);
+    if !conflictos_declaraciones.is_empty() {
+        return Err(conflictos_declaraciones.join(
+            "
+",
+        ));
+    }
+
+    let mut final_decls: Vec<ast::Declaracion> = Vec::new();
+    for item in items {
+        match item {
+            Item::Decl(decl) => final_decls.push(decl),
+            Item::Modulo(indice) => {
+                for decl in &modulos_inlinados[indice].1.declaraciones {
+                    final_decls.push(decl.clone());
+                }
+            }
+        }
+    }
+    final_decls.extend(alias_clones);
+
     // Llamadas sin calificar a nombres que exportan dos módulos: con los
     // imports inlineados resolvían a cualquiera de los dos, en silencio
     // (`parsear` de csv, json, toml y url).
@@ -662,7 +704,7 @@ pub fn resolver_imports(
         );
     }
     for decl in &mut final_decls {
-        reescribir_llamadas_de_modulo(decl, &alias_modulos);
+        reescribir_llamadas_de_modulo(decl, &mapa_modulos);
     }
     programa.declaraciones = dedup_declaraciones(final_decls);
     Ok(programa)
@@ -702,11 +744,20 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
         }
     }
 
+    /// Los módulos no se copian a `salida` en bloque: se registra la
+    /// posición `(módulo, declaración)` para poder usar la versión ya
+    /// renombrada por el manglado de nombres ambiguos.
+    enum Item {
+        Decl(ast::Declaracion),
+        ModuloDecl(usize, usize),
+    }
+
     fn inlinear(
         ruta: &str,
         alias: &mut HashMap<String, HashSet<String>>,
         visitados: &mut HashSet<String>,
-        salida: &mut Vec<ast::Declaracion>,
+        items: &mut Vec<Item>,
+        modulos: &mut Vec<(String, ast::Programa)>,
     ) -> Result<(), String> {
         if !visitados.insert(ruta.to_string()) {
             return Ok(());
@@ -724,11 +775,14 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
         }
         let programa = parsear(fuente)?;
         registrar_alias(ruta, &programa, alias);
-        for decl in programa.declaraciones {
-            if let ast::Declaracion::Importar(sub) = &decl {
-                inlinear(sub, alias, visitados, salida)?;
+        let indice = modulos.len();
+        let a = ruta.rsplit('/').next().unwrap_or(ruta).to_string();
+        modulos.push((a, programa.clone()));
+        for (posicion, decl) in programa.declaraciones.iter().enumerate() {
+            if let ast::Declaracion::Importar(sub) = decl {
+                inlinear(sub, alias, visitados, items, modulos)?;
             } else {
-                salida.push(decl);
+                items.push(Item::ModuloDecl(indice, posicion));
             }
         }
         Ok(())
@@ -745,14 +799,46 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
         .collect();
     let mut alias: HashMap<String, HashSet<String>> = HashMap::new();
     let mut visitados: HashSet<String> = HashSet::new();
-    let mut final_decls = Vec::new();
+    let mut modulos_inlinados: Vec<(String, ast::Programa)> = Vec::new();
+    let mut items: Vec<Item> = Vec::new();
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ruta) = &decl {
-            inlinear(ruta, &mut alias, &mut visitados, &mut final_decls)?;
+            inlinear(
+                ruta,
+                &mut alias,
+                &mut visitados,
+                &mut items,
+                &mut modulos_inlinados,
+            )?;
         } else {
-            final_decls.push(decl);
+            items.push(Item::Decl(decl));
         }
     }
+    let (mapa_modulos, alias_clones) =
+        forja_hir::imports::alias_manglados(&alias, &mut modulos_inlinados);
+    let decls_de_modulos: Vec<ast::Declaracion> = modulos_inlinados
+        .iter()
+        .flat_map(|(_, programa)| programa.declaraciones.iter().cloned())
+        .collect();
+    let conflictos_declaraciones =
+        forja_hir::imports::conflictos_de_nivel_superior(&decls_de_modulos);
+    if !conflictos_declaraciones.is_empty() {
+        return Err(conflictos_declaraciones.join(
+            "
+",
+        ));
+    }
+    let mut final_decls: Vec<ast::Declaracion> = Vec::new();
+    for item in items {
+        match item {
+            Item::Decl(decl) => final_decls.push(decl),
+            Item::ModuloDecl(indice, posicion) => {
+                final_decls.push(modulos_inlinados[indice].1.declaraciones[posicion].clone());
+            }
+        }
+    }
+    final_decls.extend(alias_clones);
+
     // Mismo control que en la ruta de disco: nombres exportados por dos módulos.
     let ambiguos = forja_hir::imports::nombres_ambiguos(&alias);
     if !ambiguos.is_empty() {
@@ -780,7 +866,7 @@ pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, S
         );
     }
     for decl in &mut final_decls {
-        reescribir_llamadas_de_modulo(decl, &alias);
+        reescribir_llamadas_de_modulo(decl, &mapa_modulos);
     }
     programa.declaraciones = dedup_declaraciones(final_decls);
     Ok(programa)
@@ -1528,6 +1614,39 @@ pub fn compilar_a_llvm_desde(
     codigo: &str,
     raiz: &std::path::Path,
 ) -> Result<String, Vec<error::ErrorForja>> {
+    compilar_a_llvm_programa(programa_para_backend_nativo(codigo, raiz)?)
+}
+
+/// Compila a **assembly** resolviendo `importar` y podando lo inalcanzable,
+/// igual que [`compilar_a_llvm_desde`].
+///
+/// Es el punto de entrada que usa `forja asm`. Devuelve errores de compilación
+/// (no de enlazado) cuando el programa necesita una primitiva nativa que el
+/// backend ASM no implementa.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_a_asm_desde(
+    codigo: &str,
+    raiz: &std::path::Path,
+    destino: compiler_asm::DestinoArch,
+) -> Result<String, Vec<error::ErrorForja>> {
+    let programa = programa_para_backend_nativo(codigo, raiz)?;
+    compiler_asm::compilar_a_asm_con_destino(&programa, destino)
+}
+
+/// AST listo para un backend nativo (ASM o LLVM): imports resueltos y
+/// funciones/clases inalcanzables podadas.
+///
+/// Los dos backends nativos necesitan **el mismo** punto de entrada. Antes
+/// `forja asm` parseaba el archivo y compilaba el AST crudo, así que
+/// `std/env.variable_entorno(...)` seguía siendo un acceso a miembro: fallaba
+/// con «el backend ASM no soporta 'LlamadaMetodo'» y, en programas sin
+/// calificar, emitía llamadas a funciones de la stdlib que nunca se inlinearon
+/// y el linker resolvía como «undefined reference».
+#[cfg(not(target_arch = "wasm32"))]
+pub fn programa_para_backend_nativo(
+    codigo: &str,
+    raiz: &std::path::Path,
+) -> Result<ast::Programa, Vec<error::ErrorForja>> {
     let programa = resolver_imports(codigo, raiz).map_err(|e| {
         vec![error::ErrorForja::nuevo(
             error::ErrorTipo::ErrorSemantico,
@@ -1537,11 +1656,10 @@ pub fn compilar_a_llvm_desde(
             "Revisá los `importar` del programa.",
         )]
     })?;
-    // La stdlib entera se inlinearía en el programa y el backend choca con
-    // módulos que el programa ni usa (usan funciones nativas cuyo tipo no está
-    // declarado). Se poda lo inalcanzable desde las sentencias de nivel
-    // superior antes de bajar a LLVM.
-    compilar_a_llvm_programa(podar_inalcanzable(programa))
+    // La stdlib entera se inlinearía y el backend choca con módulos que el
+    // programa ni usa (usan nativas cuyo tipo no está declarado). Se poda lo
+    // inalcanzable desde las sentencias de nivel superior.
+    Ok(podar_inalcanzable(programa))
 }
 
 /// Deja sólo las funciones, clases y enums alcanzables desde las sentencias de

@@ -31,7 +31,10 @@ pub fn nativo_binario_empaquetar(
         } else {
             (fmt_bytes[i] as char, 1usize)
         };
-        let little = endian == "le";
+        // Sin prefijo se empaqueta en little endian, igual que
+        // `_binario_desempaquetar` lee: antes escribía big endian y leerlo
+        // sin prefijo devolvía otro número (`empaquetar("h")` != roundtrip).
+        let little = endian != "be";
         let val = if posicion < arr.len() {
             arr[posicion].a_entero()
         } else {
@@ -61,7 +64,7 @@ pub fn nativo_binario_empaquetar(
         posicion += 1;
         i += skip;
     }
-    let salida = String::from_utf8(buffer).unwrap_or_default();
+    let salida = bytes_a_hex(&buffer);
     Ok({
         let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
@@ -74,7 +77,7 @@ pub fn nativo_binario_desempaquetar(
 ) -> Result<ValorFast, ErrFast> {
     let formato = obtener_texto(vm, args[0])?;
     let datos = obtener_texto(vm, args[1])?;
-    let octetos = datos.as_bytes();
+    let octetos = hex_a_bytes(&datos)?;
     let mut vals: Vec<ValorFast> = Vec::new();
     let mut byte_pos = 0usize;
     let fmt_bytes = formato.as_bytes();
@@ -145,8 +148,8 @@ pub fn nativo_binario_a_hex(
     vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let datos = obtener_texto(vm, args[0])?;
-    let hex: String = datos.bytes().map(|b| format!("{:02x}", b)).collect();
+    // Los datos binarios viajan como hex: `a_hex` es identidad.
+    let hex = obtener_texto(vm, args[0])?;
     Ok({
         let indice = vm.reservar_texto(Arc::from(hex.as_str()));
         ValorFast::texto(indice)
@@ -157,14 +160,10 @@ pub fn nativo_binario_desde_hex(
     vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
+    // El contrato del módulo es que los datos binarios ya son hex.
     let hex = obtener_texto(vm, args[0])?;
-    let octetos: Vec<u8> = (0..hex.len())
-        .step_by(2)
-        .filter_map(|i| u8::from_str_radix(&hex[i..(i + 2).min(hex.len())], 16).ok())
-        .collect();
-    let salida = String::from_utf8(octetos).unwrap_or_default();
     Ok({
-        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(hex.as_str()));
         ValorFast::texto(indice)
     })
 }
@@ -185,4 +184,32 @@ pub fn nativo_binario_tamano(
         }
     }
     Ok(ValorFast::entero(tamano))
+}
+
+fn bytes_a_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(&mut s, "{:02x}", b);
+    }
+    s
+}
+
+fn hex_a_bytes(hex: &str) -> Result<Vec<u8>, ErrFast> {
+    if hex.len() % 2 != 0 {
+        return Err(ErrFast::TipoInv("binario: se esperaba hex".into()));
+    }
+    let mut out = Vec::with_capacity(hex.len() / 2);
+    let bytes = hex.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let par = std::str::from_utf8(&bytes[i..i + 2])
+            .map_err(|_| ErrFast::TipoInv("binario: hex inválido".into()))?;
+        out.push(
+            u8::from_str_radix(par, 16)
+                .map_err(|_| ErrFast::TipoInv("binario: hex inválido".into()))?,
+        );
+        i += 2;
+    }
+    Ok(out)
 }

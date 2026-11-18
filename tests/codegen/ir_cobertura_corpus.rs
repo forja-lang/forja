@@ -126,9 +126,12 @@ fn corpus_completo_por_ir_sin_fallback() {
 const DIVERGENCIAS_CONOCIDAS: &[&str] = &[
     // 167: bug del backend AST con la raíz de Newton en decimales (plan4).
     "167_estadistica.fa",
-    // 400: el backend AST ya resuelve bien `variable X = X(...)` y devuelve
-    // `absoluto(num)`; el pipeline IR todavía devuelve nulo ahí.
-    "400_exacto_debug.fa",
+    // 732 ya converge: el tipo estático anotado por `IdValor` se filtraba
+    // entre cuerpos (los ids empiezan en 0 en cada uno) y `arr[i]` se emitía
+    // como `ObtenerValorDeMapa` → nulo. Ver
+    // `forja_ir::ir_constructor::tests::el_tipo_estatico_no_se_filtra_entre_cuerpos`.
+    // 400 ya converge: se arregló que un global pre-reservado se tomara como
+    // llamada indirecta (`variable componente = fecha.componentes(ts)`).
 ];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
@@ -153,6 +156,11 @@ const NO_DETERMINISTAS: &[&str] = &[
     // El orden de claves de un `mapa` depende del `HashMap`: 209_json serializa
     // un mapa y cada backend lo recorre en un orden distinto.
     "json.serializar",
+    // 714_limitador imprime `espera_ms`, que depende del reloj real.
+    "espera_ms",
+    // 736_perfilado cuenta llamadas en el profiler nativo, que guarda estado
+    // global del proceso: la corrida IR ve el contador que dejó la corrida AST.
+    "perfilado.iniciar",
 ];
 
 fn ejecutar_bytecode(bc: Vec<forja::bytecode::Opcode>) -> Result<Vec<String>, String> {

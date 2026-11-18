@@ -7,6 +7,109 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [0.9.6] - sin publicar
 
+### GUI — el runtime que ya viene con Forja ahora funciona
+
+- **`forja transpilar` y `destino: nativo` arreglados con clases y textos multilínea:**
+  el constructor se generaba como `Clase { }` vacío (el parser emite
+  `este.campo = valor` como `Expresion::AsignacionCampo`, no como
+  `AsignacionMiembro`), los campos ignoraban su tipo declarado (`codigo: Entero`
+  salía `String`) y `esc_ast_texto` no escapaba `\n`/`\r`/`\t` («bare CR not
+  allowed in string»). Además esos caminos ahora resuelven los `importar`, así que
+  una app con módulos propios (o `std/json`) transpila y corre.
+- **`forja ejecutar` respeta `estado:` y `recarga:` en apps GUI.** `estado:` es un
+  JSON con las variables del store con las que arranca la app (se pasa como
+  `--load-state=`, que el runtime ya leía pero la CLI rechazaba); `recarga:`
+  reinicia el `.exe` cuando cambia cualquier `.fa` del proyecto (la ventana se
+  arma una vez, así que se reinicia, no se recarga en caliente).
+- **Test de click sin ventana** (`gui-rt`): recorre el camino real del botón
+  (`MaterialButton` → `ejecutar_callback_y_actualizar` → store → re-extraer
+  layout). `masonry_testing` no sirve acá: monta widgets de Masonry y el árbol de
+  la app es una vista de Xilem.
+- **`salir_app()` compila en wasm** (era `Valor::Nulo()` en vez de `Valor::Nulo`);
+  `forja-wasm`, `forja-wasm-gui` y `forja-gui-dom` vuelven a verificar en
+  `wasm32-unknown-unknown`.
+
+- **Las apps GUI pueden importar módulos propios.** Antes el payload era el
+  fuente tal cual y el intérprete ignora `importar`, así que llamar a una función
+  de un módulo del proyecto fallaba en runtime. Ahora `forja compilar` incrusta el
+  **AST ya resuelto** (`resolver_imports`) serializado en JSON, con footer `FBA`
+  propio; el runtime lo deserializa y dibuja igual. Los `FBC` (bytecode) y `FBG`
+  (fuente) siguen funcionando.
+
+- **`escribir(resultado)` ahora muestra el valor.** `resultado` es keyword del
+  lenguaje (postcondiciones), así que en posición de expresión se parseaba como
+  `Expresion::Resultado` y la etiqueta quedaba **vacía**: ningún botón parecía
+  hacer nada aunque el estado sí cambiaba. `expr_a_layout`/`expr_a_valor` ahora
+  leen la variable `resultado` del store (y el evaluador ya lo hacía).
+- **Sin logs forzados.** `debug::es_depuracion_enabled()` devolvía `true` fijo:
+  cada render, cambio de variable y callback armaba y escribía trazas en stderr
+  aunque la app no tuviera consola. Arranque de una app GUI release: **0,21 s**
+  (antes ~5 s con la build debug). Se activa con `FORJA_GUI_DEBUG=1`,
+  `FORJA_DEBUG=1` o `FORJA_GUI_PERF=1`.
+- **`forja ejecutar app.fa` corre apps GUI.** Con `destino: maquina` (default)
+  compila al vuelo el ejecutable con el fuente incrustado y lo corre con
+  `forja-rt-gui`; antes sólo imprimía "no corre en la VM". `destino: nativo`
+  sigue siendo el camino que transpila y compila con cargo.
+- **La ventana se trae al frente** al arrancar (`EnumThreadWindows` +
+  `SetForegroundWindow`). Lanzada desde una terminal o desde `forja ejecutar`,
+  la app nacía detrás de la ventana que la lanzó.
+- **`gui-core` también tenía el debug forzado**: cada escritura de variable
+  imprimía en stderr (`⚡ [GUI State] …`) aunque la app no tuviera consola. Ahora
+  depende de `FORJA_GUI_DEBUG` / `FORJA_DEBUG` / `FORJA_GUI_PERF`, igual que
+  `gui-rt`.
+- **Tiempos de compilación de la GUI** (`plans/COMPILACION-GUI.md`):
+  `image` sin AVIF (saca `rav1e`) → build del runtime **12m11s → 8m14s**;
+  nuevo `[profile.rt]` (thin LTO + 4 unidades) → **3m37s**, mismo rendimiento de
+  frames. `forja ejecutar` GUI reusa el `.exe` temporal si el `.fa` no cambió
+  (~350 ms de arranque) y el chequeo de actualización ya no bloquea cada comando.
+  Decisión explícita: **las apps GUI son Forja interpretado, no Rust**;
+  `destino: nativo` queda como ruta avanzada.
+- **`patches/masonry_winit` cableado** en el `Cargo.toml` de la raíz (y en los
+  proyectos temporales de `destino: nativo` / `forja transpilar`): ahora
+  `FORJA_PRESENT_MODE=vsync|mailbox|immediate` elige el present mode de la
+  superficie (antes fijo en `AutoVsync`, con los fps capados por el monitor).
+  `patches/xilem`, `patches/masonry` y `patches/copypasta` siguen sin aplicarse:
+  están sincronizados a un xilem viejo.
+- **`forja transpilar` generaba un manifiesto inválido** para GUI:
+  `forja = { path = "<raíz del repo>" }` (la raíz es un workspace virtual, sin
+  paquete `forja`). Ahora apunta a `compiler/forja`, igual que `destino: nativo`.
+- **Ventana centrada** en la pantalla (`GetSystemMetrics` + DPI). Antes Windows
+  la ubicaba donde hubiera quedado la última, típicamente debajo de la consola.
+- **`salir_app()`**: las apps GUI no tenían forma de terminar. Un botón
+  `boton("Cerrar", &cerrar)` no cerraba nada (el callback sólo devuelve un texto).
+  Ahora `salir_app()` cierra la app; en la web no hace nada.
+- **Sin ventanas de consola al arrancar.** El tema del sistema se consultaba con
+  `reg.exe` dos veces (tema + chrome), y cada `reg` abría una consola que
+  aparecía y desaparecía antes de la GUI. Ahora se consulta una sola vez (cache
+  `OnceLock`) y con `CREATE_NO_WINDOW`.
+- **Ejemplos GUI con callbacks reales.** `205_gui_hola.fa` cierra con
+  `salir_app()`; `206_gui_contador.fa` incrementa/decrementa/resetea de verdad
+  (antes los callbacks eran stubs `retornar ""`, así que los botones no hacían
+  nada).
+- **`forja compilar` de una app GUI genera un ejecutable real.** El payload es el
+  fuente Forja (footer `FBG`) y lo ejecuta `forja-rt-gui` con `forja-gui-rt`:
+  no transpila a Rust ni compila Xilem por app. Antes el `.exe` era la VM de
+  consola y no dibujaba nada, sin aviso.
+- **El transpilador llama a la API que existe.** Emitía `forja_gui_rt::build_and_run`
+  (nombre viejo): ahora emite `gui_nativa::construir_y_ejecutar[_android]`, que es
+  lo que exporta `forja-gui-rt`. Con el nombre viejo la app GUI fallaba recién
+  después de compilar todo Xilem.
+- **`forja run` de un programa con `importar gui` avisa** en vez de salir con
+  código 0 sin hacer nada.
+- **Sin `forja-rt-gui` al lado, `forja compilar` falla con instrucciones** en vez
+  de usar `forja.exe` como stub (binario que no dibuja nada).
+- **El instalador y el actualizador incluyen `forja-rt-gui`** (antes el MSI sólo
+  instalaba `forja-rt`).
+- **`destino: nativo` reusa el proyecto generado** (`%TEMP%/forja_gui_<hash>`,
+  estable por app) y pasa `--locked` si hay `Cargo.lock`: deja de resolver de
+  cero la branch `main` de Xilem en cada corrida.
+- **Feature `forja/gui`** (la que prometía la doc de `library/gui`): habilita el
+  payload GUI de `selfrun`; `forja-rt --features gui` compila el runtime gráfico.
+- **`forja transpilar` compila sin sccache.** Con `sccache` como `RUSTC_WRAPPER`,
+  la línea de comandos de `forja-gui-rt` supera el límite de rutas de Windows
+  («os error 206») y el build de GUI nunca terminaba (por eso
+  `~/.cache/forja-gui-target` quedaba vacío).
+
 ### Backend ASM nativo (P2 §3.9)
 
 - **Corregidos los bugs que destapó la comparación VM vs ASM nativo.** `cqto`

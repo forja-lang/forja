@@ -371,10 +371,17 @@ fn llamadas_a_metodos() {
         c.compilar_llamada_funcion("obj.metodo", &argumentos, true);
         assert!(c.salida.contains("C.metodo"), "{t:?}");
 
-        // Nombre con punto pero objeto no resoluble: cae en la llamada normal.
+        // Nombre con punto y objeto no resoluble: se rechaza en compilación.
+        // Antes emitía un `call` a un símbolo que no existe y el error aparecía
+        // recién al enlazar con gcc («undefined reference»).
         let mut c = con_variables(t);
         c.compilar_llamada_funcion("fantasma.metodo", &[], true);
-        assert!(c.salida.contains("call") || c.salida.contains("bl "));
+        assert!(
+            c.errores
+                .iter()
+                .any(|e| e.mensaje.as_ref().contains("fantasma.metodo")),
+            "{t:?} debería rechazar la llamada no resoluble"
+        );
     }
 }
 

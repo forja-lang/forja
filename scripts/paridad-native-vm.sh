@@ -7,7 +7,7 @@
 # Uso:
 #   scripts/paridad-native-vm.sh              # informe + falla si hay diferencias nuevas
 #   scripts/paridad-native-vm.sh --verbose    # muestra también los casos que coinciden
-#   scripts/paridad-native-vm.sh --update     # regenera `scripts/paridad-exclusiones`
+#   scripts/paridad-native-vm.sh --update     # agrega a `scripts/paridad-exclusiones` lo nuevo
 #
 # Cómo leerlo:
 #   - SALTADO : el ejemplo no baja a nativo (constructo sin soporte). No es un fallo.
@@ -26,7 +26,10 @@ cd "$ROOT"
 
 FORJA="${FORJA:-$ROOT/target/release/forja$( [ "$(uname -s)" != "Linux" ] && echo .exe )}"
 TIMEOUT="${TIMEOUT:-20}"
-OUT="$ROOT/target/paridad"
+# Un directorio por corrida: dos sesiones (o un CI y uno local) midiendo a la
+# vez compartían `target/paridad` y cada `rm -rf` borraba los `.aot` de la otra
+# (aparecían como "no bajan a nativo" y `grep: ... No such file or directory`).
+OUT="${PARIDAD_OUT:-$ROOT/target/paridad}/$(date +%Y%m%d-%H%M%S)-$$"
 EXCLUSIONES="$ROOT/scripts/paridad-exclusiones"
 VERBOSE=0
 ACTUALIZAR=0
@@ -48,8 +51,25 @@ if ! command -v timeout >/dev/null 2>&1; then
     exit 2
 fi
 
-rm -rf "$OUT"
+# Cabecera de la corrida: los números sólo son comparables con el mismo árbol,
+# el mismo commit y el mismo binario. Media hora perdida una vez por medir con un
+# `forja.exe` que no era el que se creía (handoff5 §3.4).
+echo "árbol:   $(git rev-parse --short HEAD 2>/dev/null || echo '?') $(git log --oneline -1 2>/dev/null | cut -d' ' -f2- | cut -c1-60)"
+sucios="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
+echo "sucio:   $sucios archivo(s) sin commitear"
+echo "ejemplos: $(find ejemplos -name '*.fa' | wc -l | tr -d ' ')"
+
 mkdir -p "$OUT"
+
+# Copia del binario: si otra sesión corre `cargo build` mientras se mide, cargo
+# reemplaza `target/release/forja.exe` y la mitad de los ejemplos fallan con
+# "No such file or directory" (pasó: 122 de 175 "no bajan" eran esto). Se mide
+# siempre contra esta copia, que además es la que dice la cabecera.
+BIN="$OUT/forja"
+cp "$FORJA" "$BIN"
+chmod +x "$BIN" 2>/dev/null
+echo "binario: $FORJA ($(date -r "$FORJA" '+%Y-%m-%d %H:%M' 2>/dev/null || echo '?')) -> copia en $BIN"
+FORJA="$BIN"
 
 norm() { sed -e 's/\r$//' "$1"; }
 
@@ -131,18 +151,24 @@ for f in $(find ejemplos -name '*.fa' | sort); do
 done
 
 echo
+echo "informe:   $OUT"
 echo "nativo vs VM: $coinciden coinciden · $difieren difieren (sin excluir) · $saltados no bajan a nativo · $tiempos no terminan en ${TIMEOUT}s · $errores salen con error explícito · $crash revientan"
 
 if [ "$ACTUALIZAR" = 1 ]; then
-    {
-        echo "# Diferencias ACEPTADAS entre la ruta nativa y la VM."
-        echo "# Una por línea: ruta del ejemplo + motivo. Editable a mano."
-        echo "# Generado por scripts/paridad-native-vm.sh --update"
-        for f in "${fallos[@]:-}"; do
-            [ -n "$f" ] && echo "$f  sin clasificar"
-        done
-    } >"$EXCLUSIONES"
-    echo "✅ exclusiones escritas en $EXCLUSIONES (revisá los motivos)"
+    # Sólo agrega lo que falta: los motivos ya medidos de las exclusiones
+    # existentes se conservan (antes se borraban y quedaban rutas peladas).
+    [ -f "$EXCLUSIONES" ] || {
+        echo "# Diferencias ACEPTADAS entre la ruta nativa y la VM (una por línea: ruta + motivo)." >"$EXCLUSIONES"
+        echo "# Cualquier otra diferencia hace fallar a scripts/paridad-native-vm.sh." >>"$EXCLUSIONES"
+    }
+    nuevas=0
+    for f in "${fallos[@]:-}"; do
+        [ -z "$f" ] && continue
+        excluido "$f" && continue
+        echo "$f  TODO: motivo" >>"$EXCLUSIONES"
+        nuevas=$((nuevas + 1))
+    done
+    echo "✅ $nuevas exclusión(es) nueva(s) en $EXCLUSIONES (las existentes no se tocaron; completá los TODO)"
     exit 0
 fi
 

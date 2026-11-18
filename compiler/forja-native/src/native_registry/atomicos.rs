@@ -124,7 +124,7 @@ pub fn nativo_atomico_booleano_nuevo(
     let val = if args.is_empty() {
         false
     } else {
-        args[0].a_entero() != 0
+        args[0].es_verdadero()
     };
     let mut almacen = atomico_bools_mutex().lock().unwrap();
     let indice = almacen.len();
@@ -150,7 +150,7 @@ pub fn nativo_atomico_booleano_almacenar(
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let indice = obtener_entero(args[0])? as usize;
-    let val = obtener_entero(args[1])? != 0;
+    let val = args[1].es_verdadero();
     let almacen = atomico_bools_mutex().lock().unwrap();
     if let Some(a) = almacen.get(indice) {
         a.store(val, Ordering::Relaxed);

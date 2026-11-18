@@ -182,7 +182,7 @@ PS C:\forja> cargo build --release --features all
 | Comando en Consola | Comando Alternativo | Propósito |
 | :--- | :--- | :--- |
 | **`ejecutar <archivo.fa>`** | `correr` | Compila y ejecuta el script en la máquina virtual *ForjaFast* (por defecto). |
-| **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar gui`, usa `forja-rt-gui` (VM + runtime gráfico Xilem). Sin transpilación a Rust. |
+| **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar gui`, usa `forja-rt-gui` (runtime gráfico `forja-gui-rt` sobre el fuente incrustado). Sin transpilación a Rust ni Cargo. |
 | **`interactivo`** | `repl` | Inicia la consola de lectura e interpretación línea por línea. |
 | **`probar [archivo.fa]`** | `test` | Corre los módulos de prueba unitaria marcados con `@test`. |
 | **`medir [iteraciones] <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
@@ -213,7 +213,8 @@ contratos: verdadero       # requiere/asegura/invariantes
 pila: falso                # pila de llamadas en errores
 matematica_rapida: falso   # aritmética rápida
 perfil: ''                 # '' | recoger | usar
-recarga: falso             # recarga de módulos (destino: nativo)
+recarga: falso             # recarga de módulos (destino: nativo y apps GUI)
+estado: ''                  # JSON con el estado inicial de una app GUI
 permitir_red: ''           # hosts del sandbox de red (coma)
 permitir_puertos: ''       # puertos del sandbox de red (coma)
 max_archivo_mb: 10         # límite del archivo fuente
@@ -299,14 +300,21 @@ Forja genera distintos destinos a partir del mismo programa. Los dos **motores d
 
 Forja permite crear complejas aplicaciones de escritorio reactivas e interactivas gracias a la librería de interfaces gráficas (**Xilem**, sobre Masonry/Winit). Las interfaces siguen la guía de estilo de **Material Design 3 (Material You)**, con soporte automático para modo oscuro y claro según el sistema operativo.
 
-Al compilar un programa que usa GUI (`importar gui`), Forja genera un ejecutable autónomo nativo usando el stub `forja-rt-gui` (VM + runtime gráfico), sin necesidad de transpilar a Rust ni tener Cargo instalado.
+**Las apps GUI son Forja, no Rust.** El `.fa` se ejecuta tal cual: el runtime
+gráfico (`forja-gui-rt`) lo **interpreta** (`forja-interprete`) y dibuja la
+ventana con Xilem/wgpu, que es la capa de plataforma — el equivalente a la VM
+del lenguaje. No se genera código Rust a partir del programa y no hace falta
+Cargo ni Rust instalado.
+
+> `destino: nativo` en `forja.yaml` **sí** transpila a Rust y compila con cargo:
+> es una ruta avanzada, sólo para obtener un binario Rust propio o para
+> Android/web. Para ejecutar o distribuir una app GUI no hace falta.
 
 ```powershell
-# Ejecutar un script con GUI (modo nativo)
-# destino: nativo  en forja.yaml
+# Ejecutar (compila al vuelo al exe embebido y lo corre con forja-rt-gui)
 PS C:\forja> forja ejecutar ejemplos/gui.fa
 
-# Compilar a ejecutable autónomo (autocontenido, sin transpilación)
+# Ejecutable autónomo: runtime + fuente Forja incrustado (~50 ms, sin transpilar)
 PS C:\forja> forja compilar ejemplos/gui.fa miapp.exe
 ```
 
@@ -381,7 +389,7 @@ componente —hecho / en progreso / planeado— vive en el
 - **Motores de ejecución (2):** intérprete *ForjaFast* (`compiler/forja-vm/src/vm_fast/`) y JIT *tiered* (`compiler/forja-vm/src/jit_tiered.rs`).
 - **Frontend reutilizable:** crates `forja-syntax` y `forja-types` (lexer, parser, AST, tipos).
 - **Salidas:** bytecode (VM/JIT), ensamblador x86-64/ARM64, Rust, AOT, WASM, Android y GUI.
-- **Ecosistema:** `library/std` (47 módulos), 263 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
+- **Ecosistema:** `library/std` (47 módulos), 293 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
 - **En progreso:** IR real (emisión AST→IR), backend LLVM y registry remoto.
 
 ---

@@ -74,6 +74,7 @@
   <ComponentGroup Id="RtFiles">
     <Component Id="Runtime" Directory="INSTALLDIR" Guid="3d8cae44-bf5d-4a79-8c24-8e6f9d1a3c33">
       <File Id="ForjaRtExe" Source="target\release\forja-rt.exe" KeyPath="yes" />
+      <File Id="ForjaRtGuiExe" Source="target\release\forja-rt-gui.exe" />
     </Component>
   </ComponentGroup>
 

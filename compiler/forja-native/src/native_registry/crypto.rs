@@ -107,7 +107,7 @@ pub fn nativo_aes256_cbc_encrypt(
     let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let iv_arr: [u8; 16] = iv.as_bytes().try_into().unwrap();
     let resultado = crate::crypto::aes256_cbc_encrypt(&clave, &iv_arr, datos.as_bytes());
-    let s = String::from_utf8_lossy(&resultado).to_string();
+    let s = bytes_a_hex(&resultado);
     let indice = vm.reservar_texto(Arc::from(s.as_str()));
     Ok(ValorFast::texto(indice))
 }
@@ -132,7 +132,8 @@ pub fn nativo_aes256_cbc_decrypt(
     }
     let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let iv_arr: [u8; 16] = iv.as_bytes().try_into().unwrap();
-    match crate::crypto::aes256_cbc_decrypt(&clave, &iv_arr, datos.as_bytes()) {
+    let cifrado = hex_a_bytes(&datos)?;
+    match crate::crypto::aes256_cbc_decrypt(&clave, &iv_arr, &cifrado) {
         Ok(dec) => {
             let s = String::from_utf8_lossy(&dec).to_string();
             let indice = vm.reservar_texto(Arc::from(s.as_str()));
@@ -169,7 +170,7 @@ pub fn nativo_aes256_gcm_encrypt(
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
     let resultado =
         crate::crypto::aes256_gcm_encrypt(&clave, &non, datos.as_bytes(), ad.as_bytes());
-    let s = String::from_utf8_lossy(&resultado).to_string();
+    let s = bytes_a_hex(&resultado);
     let indice = vm.reservar_texto(Arc::from(s.as_str()));
     Ok(ValorFast::texto(indice))
 }
@@ -199,7 +200,8 @@ pub fn nativo_aes256_gcm_decrypt(
     }
     let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    match crate::crypto::aes256_gcm_decrypt(&clave, &non, cifrado.as_bytes(), ad.as_bytes()) {
+    let cifrado = hex_a_bytes(&cifrado)?;
+    match crate::crypto::aes256_gcm_decrypt(&clave, &non, &cifrado, ad.as_bytes()) {
         Ok(dec) => {
             let s = String::from_utf8_lossy(&dec).to_string();
             let indice = vm.reservar_texto(Arc::from(s.as_str()));
@@ -258,7 +260,7 @@ pub fn nativo_chacha20_poly1305_encrypt(
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
     let resultado =
         crate::crypto::chacha20_poly1305_encrypt(&clave, &non, datos.as_bytes(), ad.as_bytes());
-    let s = String::from_utf8_lossy(&resultado).to_string();
+    let s = bytes_a_hex(&resultado);
     let indice = vm.reservar_texto(Arc::from(s.as_str()));
     Ok(ValorFast::texto(indice))
 }
@@ -284,8 +286,8 @@ pub fn nativo_chacha20_poly1305_decrypt(
     }
     let clave: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    match crate::crypto::chacha20_poly1305_decrypt(&clave, &non, cifrado.as_bytes(), ad.as_bytes())
-    {
+    let cifrado = hex_a_bytes(&cifrado)?;
+    match crate::crypto::chacha20_poly1305_decrypt(&clave, &non, &cifrado, ad.as_bytes()) {
         Ok(dec) => {
             let s = String::from_utf8_lossy(&dec).to_string();
             let indice = vm.reservar_texto(Arc::from(s.as_str()));
@@ -311,7 +313,7 @@ pub fn nativo_pbkdf2(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Valor
         iterations,
         largo_dk,
     );
-    let s = String::from_utf8_lossy(&resultado).to_string();
+    let s = bytes_a_hex(&resultado);
     let indice = vm.reservar_texto(Arc::from(s.as_str()));
     Ok(ValorFast::texto(indice))
 }
@@ -367,7 +369,36 @@ pub fn nativo_scrypt(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<Valor
         32
     };
     let resultado = crate::crypto::scrypt(password.as_bytes(), salt.as_bytes(), n, r, 1, largo_dk);
-    let s = String::from_utf8_lossy(&resultado).to_string();
+    let s = bytes_a_hex(&resultado);
     let indice = vm.reservar_texto(Arc::from(s.as_str()));
     Ok(ValorFast::texto(indice))
+}
+
+/// Bytes → hex minúscula (representación segura para el tipo Texto).
+fn bytes_a_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(&mut s, "{:02x}", b);
+    }
+    s
+}
+
+/// Hex → bytes. Devuelve un error de tipo si no es hex válido.
+fn hex_a_bytes(hex: &str) -> Result<Vec<u8>, ErrFast> {
+    if hex.len() % 2 != 0 {
+        return Err(ErrFast::TipoInv("se esperaba un texto hexadecimal".into()));
+    }
+    let mut out = Vec::with_capacity(hex.len() / 2);
+    let bytes = hex.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let par = std::str::from_utf8(&bytes[i..i + 2])
+            .map_err(|_| ErrFast::TipoInv("hexadecimal inválido".into()))?;
+        let b = u8::from_str_radix(par, 16)
+            .map_err(|_| ErrFast::TipoInv("hexadecimal inválido".into()))?;
+        out.push(b);
+        i += 2;
+    }
+    Ok(out)
 }

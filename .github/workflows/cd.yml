@@ -239,12 +239,13 @@ jobs:
       - name: Compilar forja-rt-gui (con GUI)
         shell: bash
         run: |
-          cargo build --locked -p forja-rt --release --features gui \
+          # `--profile rt` = release con thin LTO: ~3m40s en vez de ~8m
+          cargo build --locked -p forja-rt --profile rt --features gui \
             --target ${{ matrix.target }} --target-dir target-gui --verbose
           mkdir -p "target/${{ matrix.target }}/release"
-          cp "target-gui/${{ matrix.target }}/release/forja-rt.exe" \
+          cp "target-gui/${{ matrix.target }}/rt/forja-rt.exe" \
              "target/${{ matrix.target }}/release/forja-rt-gui.exe" 2>/dev/null || \
-          cp "target-gui/${{ matrix.target }}/release/forja-rt" \
+          cp "target-gui/${{ matrix.target }}/rt/forja-rt" \
              "target/${{ matrix.target }}/release/forja-rt-gui"
       # Instalador: MSI (WiX v5, la última sin el EULA de OSMF de v6+) + bundle
       # de Burn con la UI propia (ForjaBA, WPF sobre .NET Framework 4.8).
@@ -254,7 +255,7 @@ jobs:
         run: |
           $bin = "target/${{ matrix.target }}/release"
           New-Item -ItemType Directory -Force -Path target/release | Out-Null
-          foreach ($exe in 'forja','forja-lsp','forja-dap','forja-rt') {
+          foreach ($exe in 'forja','forja-lsp','forja-dap','forja-rt','forja-rt-gui') {
             Copy-Item "$bin/$exe.exe" target/release/ -Force
           }
           dotnet tool install --global wix --version 5.0.2

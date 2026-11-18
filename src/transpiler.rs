@@ -453,9 +453,12 @@ impl Transpiler {
             // compilaba en ninguna versión de Rust.
             let ast_code = self.generar_ast_programa(&programa.declaraciones);
             self.emitir_linea("// ─── Programa Forja como datos para el runtime ───");
+            // `allow(unused_imports)`: según el programa, los tipos del AST
+            // pueden no usarse directamente y el aviso confunde al usuario.
+            self.emitir_linea("#[allow(unused_imports)]");
             self.emitir_linea("use forja::ast::*;");
             self.emitir_linea("");
-            self.emitir_linea("fn programa() -> Programa {span: None, ");
+            self.emitir_linea("fn programa() -> Programa {");
             self.emitir_linea("    Programa {spans: Vec::new(), nombres: Vec::new(), indice_nombres: std::collections::HashMap::new(), span: None, ");
             self.emitir_linea("        declaraciones: vec![");
             self.sangria();
@@ -479,7 +482,7 @@ impl Transpiler {
             self.emitir_linea("        .map(|s| s.to_string());");
             self.emitir_linea("");
             self.emitir_linea(
-                "    forja_gui_rt::build_and_run(&programa(), load_state.as_deref(), None, true)",
+                "    forja_gui_rt::gui_nativa::construir_y_ejecutar(&programa(), load_state.as_deref(), None, true)",
             );
             self.emitir_linea("}");
             self.emitir_linea("");
@@ -491,7 +494,7 @@ impl Transpiler {
                 "fn android_main(app: winit::platform::android::activity::AndroidApp) {",
             );
             self.emitir_linea(
-                "    forja_gui_rt::build_and_run_android(&programa(), None, None, true, app);",
+                "    forja_gui_rt::gui_nativa::construir_y_ejecutar_android(&programa(), None, None, true, app);",
             );
             self.emitir_linea("}");
             return Ok(self.salida.clone());
@@ -1083,25 +1086,11 @@ impl Transpiler {
                 for metodo in metodos {
                     if metodo.nombre == "nuevo" {
                         for decl_cuerpo in &metodo.cuerpo {
-                            if let Declaracion::AsignacionMiembro {
-                                objeto,
-                                miembro,
-                                valor,
-                                ..
-                            } = decl_cuerpo
-                            {
-                                // este.campo = expr → inferir tipo
-                                if let Expresion::Identificador {
-                                    nombre: ref nombre_self,
-                                    ..
-                                } = objeto.as_ref()
-                                {
-                                    if nombre_self == "self" {
-                                        let tipo_inferido =
-                                            self.inferir_tipo_expr(valor, &metodo.parametros);
-                                        tipos_campos.insert(miembro.clone(), tipo_inferido);
-                                    }
-                                }
+                            // este.campo = expr → inferir tipo
+                            if let Some((campo, valor)) = Self::asignacion_a_este(decl_cuerpo) {
+                                let tipo_inferido =
+                                    self.inferir_tipo_expr(valor, &metodo.parametros);
+                                tipos_campos.insert(campo, tipo_inferido);
                             }
                         }
                     }
@@ -1187,6 +1176,31 @@ impl Transpiler {
         }
     }
 
+/// `este.campo = valor` como `(campo, valor)`.
+///
+/// El parser emite estas asignaciones como
+/// `Declaracion::Expresion(Expresion::AsignacionCampo { .. })`; la variante
+/// `AsignacionMiembro` quedó vieja y no la produce nadie, pero se acepta por las
+/// dudas. Sin esto el constructor se generaba con `Clase { }` vacío y Rust
+/// fallaba con «missing fields in initializer».
+fn asignacion_a_este<'a>(decl: &'a Declaracion) -> Option<(String, &'a Expresion)> {
+    let es_este = |objeto: &Expresion| {
+        matches!(objeto, Expresion::Identificador { nombre, .. } if nombre == "este" || nombre == "self")
+    };
+    match decl {
+        Declaracion::Expresion(Expresion::AsignacionCampo {
+            objeto, campo, valor,
+        }) if es_este(objeto) => Some((campo.clone(), valor)),
+        Declaracion::AsignacionMiembro {
+            objeto,
+            miembro,
+            valor,
+            ..
+        } if es_este(objeto) => Some((miembro.clone(), valor)),
+        _ => None,
+    }
+}
+
     fn generar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
             if let Declaracion::Clase {
@@ -1263,7 +1277,12 @@ impl Transpiler {
     }
 
     fn inferir_tipo_campo(&self, campo: &VariableClase) -> String {
-        // Buscar el tipo inferido desde el constructor (recolectar_clases)
+        // El tipo declarado manda: `codigo: Entero` es `i64`, no `String`. Antes
+        // se ignoraba y todo caía al fallback.
+        if let Some(ref tipo) = campo.tipo {
+            return self.tipo_a_rust(tipo);
+        }
+        // Sin tipo declarado: el inferido desde el constructor (recolectar_clases)
         for informacion in self.clases.values() {
             if let Some(tipo) = informacion.tipos_campos.get(&campo.nombre) {
                 return tipo.clone();
@@ -1303,29 +1322,13 @@ impl Transpiler {
                 .cuerpo
                 .iter()
                 .filter_map(|decl| {
-                    if let Declaracion::AsignacionMiembro {
-                        objeto,
-                        miembro,
-                        valor,
-                        ..
-                    } = decl
-                    {
-                        if let Expresion::Identificador {
-                            nombre: ref nombre_self,
-                            ..
-                        } = objeto.as_ref()
-                        {
-                            if nombre_self == "self" {
-                                // El valor puede ser un identificador (param) o una expresión
-                                let val_str = match valor.as_ref() {
-                                    Expresion::Identificador { nombre: id, .. } => id.clone(),
-                                    other => self.transpilar_expresion(other),
-                                };
-                                return Some((miembro.clone(), val_str));
-                            }
-                        }
-                    }
-                    None
+                    let (campo, valor) = Self::asignacion_a_este(decl)?;
+                    // El valor puede ser un identificador (param) o una expresión
+                    let val_str = match valor {
+                        Expresion::Identificador { nombre: id, .. } => id.clone(),
+                        other => self.transpilar_expresion(other),
+                    };
+                    Some((campo, val_str))
                 })
                 .collect();
 
@@ -3505,8 +3508,16 @@ impl Transpiler {
         }
     }
 
+    /// Escapa un texto para meterlo en un literal Rust de una línea.
+    ///
+    /// Sin `\n`/`\r`/`\t`, un texto multilínea o con un `\r` literal generaba
+    /// Rust inválido: `error: bare CR not allowed in string`.
     fn esc_ast_texto(&self, s: &str) -> String {
-        s.replace('\\', "\\\\").replace('"', "\\\"")
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t")
     }
 
     #[allow(dead_code)]
@@ -3677,15 +3688,16 @@ mod tests {
         let resultado = transpilar_fuente(fuente).unwrap();
         // El programa se emite como función: `vec![…]` no es const, así que la
         // forma `static PROGRAMA` no compilaba en ninguna versión estable de Rust.
-        assert!(resultado.contains("fn programa() -> Programa {span: None, "));
+        assert!(resultado.contains("fn programa() -> Programa {"));
         assert!(resultado.contains("use forja::ast::*;"));
         assert!(
             !resultado.contains("static PROGRAMA"),
             "el AST no debe emitirse en un `static` (no es const):\n{resultado}"
         );
-        // main() usa build_and_run del runtime, tomando el programa de la función
-        assert!(resultado.contains("build_and_run(&programa(),"));
-        assert!(resultado.contains("build_and_run_android(&programa(),"));
+        // main() usa el runtime GUI, tomando el programa de la función.
+        // Nombres reales de `forja-gui-rt` (módulo gui_nativa).
+        assert!(resultado.contains("gui_nativa::construir_y_ejecutar(&programa(),"));
+        assert!(resultado.contains("gui_nativa::construir_y_ejecutar_android(&programa(),"));
     }
 
     #[test]

@@ -8,6 +8,7 @@ use super::*;
 /// La app completa (SQLite + sesión + CSRF + login) está en `demos/tareas-web`.
 fn escribir_plantilla_web(directorio: &std::path::Path, nombre: &str) {
     let principal = r#"// main.fa — app web SSR mínima
+// Creado con 'forja new' — Forja vVERSION_DE_FORJA
 //
 //   forja run main.fa        (FORJA_WEB_PUERTO=8080 por defecto)
 //
@@ -50,7 +51,8 @@ servidor_web.habilitar_salud(servidor)
 servidor_web.registrar_obtener(servidor, "/", inicio)
 servidor_web.iniciar(servidor)
 "#
-    .replace("NOMBRE_APP", nombre);
+    .replace("NOMBRE_APP", nombre)
+    .replace("VERSION_DE_FORJA", env!("CARGO_PKG_VERSION"));
 
     let css = r#":root { --tinta: #1c1c1e; --papel: #fbfbf8; }
 * { box-sizing: border-box; }
@@ -129,6 +131,21 @@ pub(crate) fn cmd_nuevo(args: &[String]) {
     }
     let nombre = &args[0];
     let directorio = std::path::Path::new(nombre);
+    // El paquete se llama como el último tramo de la ruta: `forja new /tmp/x`
+    // no tiene que generar `nombre: "/tmp/x"`. `forja iniciar` ("") usa el
+    // nombre del directorio actual.
+    let nombre_app = directorio
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty() && *n != "." && *n != "..")
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+        })
+        .unwrap_or_else(|| "app".to_string());
+    let nombre_app = nombre_app.as_str();
     // `forja iniciar` usa ".": el directorio actual ya existe y debe poder
     // inicializarse (antes fallaba siempre con "El directorio '.' ya existe").
     if directorio.exists() && nombre != "." {
@@ -144,28 +161,46 @@ pub(crate) fn cmd_nuevo(args: &[String]) {
         .map(|valor| valor.eq_ignore_ascii_case("web"))
         .unwrap_or(false);
     if plantilla_web {
-        escribir_plantilla_web(directorio, nombre);
+        escribir_plantilla_web(directorio, nombre_app);
     } else {
         let principal_fa = format!(
             "// {} — Programa en Forja (fa)
-// Creado con 'forja new'
+// Creado con 'forja new' — Forja v{}
 
 escribir(\"Hola desde {}!\")
 ",
-            nombre, nombre
+            nombre_app,
+            env!("CARGO_PKG_VERSION"),
+            nombre_app
         );
         std::fs::write(directorio.join("main.fa"), &principal_fa).unwrap_or_else(|e| {
             eprintln!("Error escribiendo main.fa: {}", e);
             process::exit(1);
         });
     }
-    // Archivo de configuración completo con ForjaConfig
-    let config = ForjaConfig::nuevo(nombre, "0.1.0");
+    // `forja.yaml` es la configuración real de la CLI (la del directorio actual
+    // se crea sola en cada arranque); se escribe acá para que el proyecto
+    // arranque con sus valores a la vista.
+    if let Err(e) = forja::config::escribir(
+        &directorio.join(forja::config::NOMBRE_ARCHIVO),
+        &forja::config::Config::default(),
+    ) {
+        eprintln!("Error escribiendo {}: {}", forja::config::NOMBRE_ARCHIVO, e);
+        process::exit(1);
+    }
+    // `forja.json` es el manifiesto del paquete (nombre, versión, módulos,
+    // dependencias): lo leen `forja add|remove|install|publish`.
+    let config = ForjaConfig::nuevo(nombre_app, "0.1.0");
     if let Err(e) = config.guardar(&directorio.join("forja.json")) {
         eprintln!("Error escribiendo forja.json: {}", e);
         process::exit(1);
     }
-    println!("✅ Proyecto '{}' creado", nombre);
+    println!("✅ Proyecto '{}' creado", nombre_app);
+    println!(
+        "   {} + {} + modulos/",
+        forja::config::NOMBRE_ARCHIVO,
+        "forja.json"
+    );
     println!("   cd {} && forja run main.fa", nombre);
 }
 

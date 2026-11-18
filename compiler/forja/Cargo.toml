@@ -13,6 +13,9 @@ autobenches = false
 default = ["parallel"]
 lsp = ["tower-lsp", "tokio"]
 parallel = ["rayon"]
+# Runtime gráfico (`importar gui`) para ejecutables autónomos: activa el payload
+# de fuente GUI en `selfrun` (lo usa `forja-rt --features gui`). Compila xilem.
+gui = ["dep:forja-gui-rt"]
 h2-tls = ["forja-vm/h2-tls", "rustls", "rustls-pki-types", "webpki-roots"]
 sqlite = ["forja-vm/sqlite"]
 all = ["lsp", "h2-tls", "parallel"]
@@ -35,6 +38,8 @@ forja-fmt = { path = "../../compiler/forja-fmt" }
 forja-lint = { path = "../../compiler/forja-lint" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Solo con la feature `gui`: runtime gráfico para ejecutables autónomos.
+forja-gui-rt = { path = "../../library/gui-rt", optional = true }
 rayon = { version = "1", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
 rustls-pki-types = { version = "1", optional = true }
@@ -95,6 +100,14 @@ name = "forja"
 doctest = false
 
 [[test]]
+name = "modulos_conflictos"
+path = "../../tests/modulos_conflictos.rs"
+
+[[test]]
+name = "backends_nativos"
+path = "../../tests/backends_nativos.rs"
+
+[[test]]
 name = "booleanos_cortos"
 path = "../../tests/booleanos_cortos.rs"
 
@@ -141,6 +154,10 @@ path = "../../tests/decimal_exacto.rs"
 [[test]]
 name = "ejemplos_parsean"
 path = "../../tests/ejemplos_parsean.rs"
+
+[[test]]
+name = "ejemplos_sin_expresiones_inutiles"
+path = "../../tests/ejemplos_sin_expresiones_inutiles.rs"
 
 [[test]]
 name = "enteros_rango"

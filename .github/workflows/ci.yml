@@ -345,6 +345,41 @@ jobs:
       - name: Medir y comparar con la baseline
         run: bash scripts/bench-competencias.sh
 
+  # Paridad nativo/VM sobre `ejemplos/`: el mismo programa compilado con el
+  # backend LLVM (`forja aot`) tiene que imprimir lo mismo que la VM
+  # (`forja ejecutar`). Falla si un ejemplo difiere sin estar en
+  # `scripts/paridad-exclusiones` o si revienta. Es la red del backend nativo:
+  # sin este job, el arnés se corría a mano.
+  #
+  # La lista de exclusiones está medida en Windows: si este runner (Linux)
+  # destapa diferencias propias de la plataforma, se agregan ahí con su motivo.
+  paridad-native-vm:
+    name: Paridad nativo vs VM
+    needs: [cambios, lint, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      - name: Instalar clang
+        run: sudo apt-get update -qq && sudo apt-get install -y clang
+      - name: Compilar la CLI (release)
+        run: cargo build --locked --release -p forja-cli
+      - name: Comparar nativo vs VM
+        run: bash scripts/paridad-native-vm.sh
+      - name: Guardar el informe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paridad-informe
+          path: target/paridad/**/*.aot
+          if-no-files-found: ignore
+
   build-and-test:
     name: Build y Test (${{ matrix.os }})
     needs: [cambios, lint, elige-runner]

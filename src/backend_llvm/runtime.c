@@ -4,15 +4,34 @@
 // primitivas sin estado global: texto (NUL-terminated, `char*`), arreglos y
 // tiempo. Todo lo que asigna memoria con `forja_alloc` vive hasta el final del
 // proceso (no hay GC en la ruta nativa todavía).
+//
+// Modelo de memoria (una sola regla): **nada se libera**.
+//   - `forja_alloc` reparte desde bloques de 1 MB (arena); los pedidos grandes
+//     van directo a `calloc`. Los bloques se encadenan en `arena_bloques` para
+//     poder decidir si un i64 apunta a memoria del programa sin desreferenciarlo
+//     (`forja_arreglo_validar`).
+//   - los textos nuevos y los arreglos se registran en `registro` (hash
+//     `ptr -> tag` con linear probing, crece por duplicado). Ese registro es la
+//     única forma de distinguir un objeto de un escalar: los dos viajan en un i64.
+//   - `registro` usa `calloc`/`malloc`, no la arena: es infraestructura del
+//     runtime, no memoria del programa Forja.
+//   - los mapas (`forja_mapa_*`) son lineales con linear probing sobre la arena.
+//   - `FORJA_DEBUG_TAGS=1` aborta si al registro entra algo que no sea texto o
+//     arreglo (ver `forja_registrar`).
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <sys/stat.h>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <direct.h>
+#define getcwd _getcwd
+#else
+#include <unistd.h>
 #endif
 
 /* ── memoria ──────────────────────────────────────────────────────────── */
@@ -98,8 +117,31 @@ static size_t forja_hash_p(const void *p) {
     return (size_t)x;
 }
 
+/* Chequeo opt-in (`FORJA_DEBUG_TAGS=1`). El resto del runtime asume que en el
+ * registro **solo** hay objetos de heap (textos y arreglos): un i64 que cae en
+ * el registro se trata como objeto (`forja_indice_dinamico`,
+ * `forja_a_texto_dinamico`, ...). Si alguien empieza a registrar escalares
+ * (decimales, booleanos) esas operaciones mienten en silencio, asi que aca se
+ * aborta con el motivo. */
+static int forja_debug_tags = -1;
+static int forja_debug_tags_activo(void) {
+    if (forja_debug_tags < 0) {
+        const char *v = getenv("FORJA_DEBUG_TAGS");
+        forja_debug_tags = (v && *v && strcmp(v, "0") != 0) ? 1 : 0;
+    }
+    return forja_debug_tags;
+}
+
 static void forja_registrar(void *p, int64_t tag) {
     if (!p) return;
+    if (forja_debug_tags_activo() && tag != FORJA_T_TEXTO && tag != FORJA_T_ARREGLO) {
+        fprintf(stderr,
+                "forja: FORJA_DEBUG_TAGS=1: se registro como objeto un valor con tag %lld "
+                "(ptr %p). El registro solo admite textos (1) y arreglos (2): los escalares "
+                "no se registran.\n",
+                (long long)tag, p);
+        abort();
+    }
     if ((registro.n + 1) * 2 > registro.cap) {
         int64_t cap = registro.cap ? registro.cap * 2 : 256;
         void **claves = (void **)calloc((size_t)cap, sizeof(void *));
@@ -128,6 +170,12 @@ static void forja_registrar(void *p, int64_t tag) {
     if (!registro.claves[j]) {
         registro.claves[j] = p;
         registro.n++;
+    } else if (registro.tags[j] != tag && forja_debug_tags_activo()) {
+        fprintf(stderr,
+                "forja: FORJA_DEBUG_TAGS=1: el ptr %p estaba registrado con tag %lld y se "
+                "registra como %lld\n",
+                p, (long long)registro.tags[j], (long long)tag);
+        abort();
     }
     registro.tags[j] = tag;
 }
@@ -268,13 +316,16 @@ int64_t forja_indice_de(const char *s, const char *sub) {
     return p ? (int64_t)(p - s) : -1;
 }
 
-char *forja_subcadena(const char *s, int64_t ini, int64_t fin) {
+/* El 3er argumento es la LONGITUD (como la VM), no el índice final:
+   `subcadena("hola mundo", 1, 9)` = "ola mundo". */
+char *forja_subcadena(const char *s, int64_t ini, int64_t cant) {
     if (!s) return forja_dup("");
     int64_t n = (int64_t)strlen(s);
     if (ini < 0) ini = 0;
-    if (fin > n) fin = n;
-    if (fin < ini) fin = ini;
-    int64_t len = fin - ini;
+    if (ini > n) ini = n;
+    if (cant < 0) cant = 0;
+    if (ini + cant > n) cant = n - ini;
+    int64_t len = cant;
     char *r = forja_texto_alloc(len + 1);
     memcpy(r, s + ini, (size_t)len);
     r[len] = '\0';
@@ -675,6 +726,23 @@ int64_t forja_mapa_obtener_texto(void *pm, const char *clave) {
     if (!m || m->len == 0) return 0;
     ForjaPar *p = forja_mapa_slot(m, forja_hash_texto(clave), -1, clave);
     return p->usado ? p->valor : 0;
+}
+
+/* Clave de mapa decidida por el **valor**, no por el slot: la VM indexa con el
+ * valor del momento. `m[partes[i][0]] = v` llega como los bits de un Texto en
+ * un slot Entero; guardarlo con `fijar_i64` dejaba la clave como número y la
+ * entrada se perdía (`fusionar` de std/colecciones, ejemplo `732`). */
+void forja_mapa_fijar_dinamico(void *pm, int64_t clave, int64_t valor, int64_t es_texto) {
+    if (forja_tag_de((void *)(intptr_t)clave) == FORJA_T_TEXTO)
+        forja_mapa_fijar_texto(pm, (const char *)(intptr_t)clave, valor, es_texto);
+    else
+        forja_mapa_fijar_i64(pm, clave, valor, es_texto);
+}
+
+int64_t forja_mapa_obtener_dinamico(void *pm, int64_t clave) {
+    if (forja_tag_de((void *)(intptr_t)clave) == FORJA_T_TEXTO)
+        return forja_mapa_obtener_texto(pm, (const char *)(intptr_t)clave);
+    return forja_mapa_obtener_i64(pm, clave);
 }
 
 /* `m[clave]` como texto: si la casilla guarda un Texto se devuelve tal cual, si
@@ -1247,4 +1315,170 @@ void *forja_mapa_pares(void *pm) {
         r->datos[i] = (int64_t)(intptr_t)fila;
     }
     return r;
+}
+
+/* ── primitivas de la stdlib (mismas que `forja-native`) ──────────────── */
+/* Los módulos `std/archivo`, `std/env` y `std/sistema` llaman a estas
+ * primitivas y esperan el **centinela -1** en vez de un aborto: un archivo
+ * inexistente es un `Error(...)` manejable, como en la VM. */
+
+/* `_archivo_leer(ruta)`: contenido, o -1. Devuelve el texto como i64 (los bits
+ * del puntero) porque el resultado puede ser `texto` o el entero -1. */
+int64_t forja_archivo_leer(const char *ruta) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "rb");
+    if (!f) return -1;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return -1;
+    }
+    long n = ftell(f);
+    if (n < 0) {
+        fclose(f);
+        return -1;
+    }
+    rewind(f);
+    char *buf = forja_texto_alloc((int64_t)n + 1);
+    size_t leido = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[leido] = '\0';
+    return (int64_t)(intptr_t)buf;
+}
+
+/* `_archivo_escribir(ruta, contenido)` → 0, o -1. */
+int64_t forja_archivo_escribir(const char *ruta, const char *contenido) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "wb");
+    if (!f) return -1;
+    size_t n = contenido ? strlen(contenido) : 0;
+    size_t escrito = n ? fwrite(contenido, 1, n, f) : 0;
+    fclose(f);
+    return escrito == n ? 0 : -1;
+}
+
+/* `_archivo_agregar(ruta, contenido)` → 0, o -1. Crea el archivo si no existe. */
+int64_t forja_archivo_agregar(const char *ruta, const char *contenido) {
+    if (!ruta || !*ruta) return -1;
+    FILE *f = fopen(ruta, "ab");
+    if (!f) return -1;
+    size_t n = contenido ? strlen(contenido) : 0;
+    size_t escrito = n ? fwrite(contenido, 1, n, f) : 0;
+    fclose(f);
+    return escrito == n ? 0 : -1;
+}
+
+/* `stat` y no `fopen`: la VM (`Path::exists`) dice que existe para directorios. */
+int64_t forja_archivo_existe(const char *ruta) {
+    struct stat st;
+    if (!ruta || !*ruta) return 0;
+    return stat(ruta, &st) == 0 ? 1 : 0;
+}
+
+/* `_archivo_eliminar(ruta)` → 0, o -1. */
+int64_t forja_archivo_eliminar(const char *ruta) {
+    if (!ruta || !*ruta) return -1;
+    return remove(ruta) == 0 ? 0 : -1;
+}
+
+/* `_archivo_tamano(ruta)` → bytes, o -1 (como `std::fs::metadata().len()`). */
+int64_t forja_archivo_tamano(const char *ruta) {
+    struct stat st;
+    if (!ruta || !*ruta) return -1;
+    if (stat(ruta, &st) != 0) return -1;
+    return (int64_t)st.st_size;
+}
+
+/* `_sistema_variable_entorno(nombre)` → texto, o `nulo` (NULL). */
+char *forja_env_obtener(const char *nombre) {
+    if (!nombre) return NULL;
+    const char *v = getenv(nombre);
+    return v ? forja_dup(v) : NULL;
+}
+
+int64_t forja_env_existe(const char *nombre) {
+    return nombre && getenv(nombre) ? 1 : 0;
+}
+
+void forja_env_establecer(const char *nombre, const char *valor) {
+    if (!nombre) return;
+#ifdef _WIN32
+    _putenv_s(nombre, valor ? valor : "");
+#else
+    setenv(nombre, valor ? valor : "", 1);
+#endif
+}
+
+/* En Windows `_putenv_s(nombre, "")` deja la variable *vacía* (definida), no
+ * ausente: `shortcut:` a diferencia de la VM, `existe_variable` da verdadero
+ * después de `eliminar`; alinear cuando Windows exponga `unsetenv`. */
+void forja_env_eliminar(const char *nombre) {
+    if (!nombre) return;
+#ifdef _WIN32
+    _putenv_s(nombre, "");
+#else
+    unsetenv(nombre);
+#endif
+}
+
+/* `_sistema_so()`: el mismo nombre que `std::env::consts::OS`. */
+char *forja_sistema_so(void) {
+#ifdef _WIN32
+    return forja_dup("windows");
+#elif defined(__APPLE__)
+    return forja_dup("macos");
+#else
+    return forja_dup("linux");
+#endif
+}
+
+char *forja_sistema_directorio_actual(void) {
+    char buf[4096];
+    if (!getcwd(buf, sizeof buf)) return forja_dup("");
+    return forja_dup(buf);
+}
+
+/* Directorio temporal sin separador final (la VM lo recorta igual). */
+char *forja_sistema_directorio_temporal(void) {
+    const char *t = getenv("TEMP");
+    if (!t || !*t) t = getenv("TMP");
+    if (!t || !*t) t = getenv("TMPDIR");
+#ifndef _WIN32
+    if (!t || !*t) t = "/tmp";
+#endif
+    if (!t || !*t) t = ".";
+    size_t n = strlen(t);
+        while (n > 1 && (t[n - 1] == '/' || t[n - 1] == (char)92)) n--;
+    char *r = forja_texto_alloc((int64_t)n + 1);
+    memcpy(r, t, n);
+    r[n] = '\0';
+    return r;
+}
+
+char *forja_sistema_hostname(void) {
+    const char *h = getenv("COMPUTERNAME");
+    if (!h || !*h) h = getenv("HOSTNAME");
+    return forja_dup(h && *h ? h : "desconocido");
+}
+
+char *forja_sistema_usuario(void) {
+    const char *u = getenv("USERNAME");
+    if (!u || !*u) u = getenv("USER");
+    return forja_dup(u ? u : "");
+}
+
+int64_t forja_sistema_cpus(void) {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int64_t)si.dwNumberOfProcessors;
+#else
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? (int64_t)n : 1;
+#endif
+}
+
+/* `_sistema_salir(codigo)`: volcar la salida antes de salir, como la VM. */
+void forja_sistema_salir(int64_t codigo) {
+    fflush(NULL);
+    exit((int)codigo);
 }

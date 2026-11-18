@@ -2,6 +2,7 @@
 
 Encolando: 30, 10, 50, 20, 40, 60
 
+  Heap: [60,40,50,10,20,30]
   Máximo: 60
 
 Desencolando (siempre el máximo):
@@ -14,6 +15,6 @@ Desencolando (siempre el máximo):
 
 Heap Sort descendente:
   Original: [15,3,8,22,1,19,7,12]
-  Ordenado: []
+  Ordenado: [22,19,15,12,8,7,3,1]
 
 El heap garantiza que el máximo sea siempre accesible en O(1).

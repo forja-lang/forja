@@ -32,6 +32,9 @@ pub struct REPL {
     /// Líneas de salida ya impresas. El source acumulado se re-ejecuta en cada
     /// entrada, así que sólo se muestran las líneas nuevas.
     salida_mostrado: usize,
+    /// Directorio contra el que se resuelven los `importar` (el del `.fa` de la
+    /// sesión, o el directorio actual en un REPL suelto).
+    dir_imports: PathBuf,
 }
 
 impl REPL {
@@ -132,6 +135,12 @@ impl REPL {
             verificar_contratos: cfg.contratos,
             matematica_rapida: cfg.matematica_rapida,
             salida_mostrado: 0,
+            dir_imports: archivo_sesion
+                .as_ref()
+                .and_then(|ruta| ruta.parent())
+                .filter(|dir| !dir.as_os_str().is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(".")),
         }
     }
 
@@ -456,7 +465,8 @@ impl REPL {
         // Antes se hacía lexer→parser→bytecode a mano: sin el type checker, el
         // REPL aceptaba `hola` o `hola = 1` sin `variable` (el lenguaje no).
         let full_fuente = format!("{}{}", self.fuente_acumulado, fuente);
-        let (bytecode, contratos_vm) = forja::compilar_pipeline_completa(&full_fuente)?;
+        let (bytecode, contratos_vm) =
+            forja::compilar_pipeline_completa_desde(&full_fuente, &self.dir_imports)?;
 
         // VM nueva por entrada: la persistencia de variables la da recompilar
         // el source acumulado. Reusar la VM dejaba índices del heap apuntando a
@@ -568,7 +578,8 @@ impl REPL {
 
         // Si el sondeo no compila o falla, al menos se listan los nombres.
         let valores = || -> Option<Vec<String>> {
-            let (bytecode, contratos) = forja::compilar_pipeline_completa(&sonda).ok()?;
+            let (bytecode, contratos) =
+                forja::compilar_pipeline_completa_desde(&sonda, &self.dir_imports).ok()?;
             let mut vm = forja_driver::vm_fast::ForjaFast::nuevo();
             vm.contratos = contratos;
             vm.verificar_contratos = self.verificar_contratos;

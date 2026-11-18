@@ -241,6 +241,34 @@ use crate::native_registry::{obtener_entero, obtener_texto};
 use forja_runtime::Anfitrion;
 use forja_runtime::{ErrFast, ValorFast};
 
+/// `_ffi_cargar_libreria(ruta)` -> Booleano.
+/// Equivale a `importar externa`, pero en runtime y desde código Forja.
+pub fn nativo_ffi_cargar_libreria(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let ruta = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
+    Ok(ValorFast::booleano(cargar_libreria(&ruta).is_ok()))
+}
+
+/// `_ffi_liberar(ruta)` -> Booleano (true si estaba cargada y se liberó).
+pub fn nativo_ffi_liberar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let ruta = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
+    Ok(ValorFast::booleano(liberar_libreria(&ruta).is_ok()))
+}
+
+/// `_ffi_esta_cargada(ruta)` -> Booleano.
+pub fn nativo_ffi_esta_cargada(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let ruta = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
+    Ok(ValorFast::booleano(esta_cargada(&ruta)))
+}
+
 /// _ffi_obtener_funcion(ruta, nombre) -> Entero (puntero a función)
 /// retorna -1 si falla
 pub fn nativo_ffi_obtener_funcion(

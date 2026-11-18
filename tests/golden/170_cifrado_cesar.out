@@ -1,1 +1,50 @@
-ERROR: función no definida: 'caracter' (¿olvidaste definirla o importarla?)
+=== CIFRADO CÉSAR ===
+
+--- Prueba básica ---
+  Original: Hola Mundo Forja 2024
+  Desplazamiento: 3
+  Cifrado:  Krod Pxqgr Irumd 2024
+  Descifrado: Hola Mundo Forja 2024
+
+--- Cifrado mejorado (con números) ---
+  Original:   Secreto 123
+  Cifrado:    Xjhwjyt 678
+  Descifrado: Secreto 678
+
+--- Probando diferentes desplazamientos ---
+  Cifrar 'ABC' con n=1: BCD
+  Cifrar 'ABC' con n=2: CDE
+  Cifrar 'ABC' con n=3: DEF
+  Cifrar 'ABC' con n=4: EFG
+  Cifrar 'ABC' con n=5: FGH
+
+  --- Ataque de fuerza bruta ---
+  Desplazamiento 1: Umvairm amkzmbw
+  Desplazamiento 2: Tluzhql zljylav
+  Desplazamiento 3: Sktygpk ykixkzu
+  Desplazamiento 4: Rjsxfoj xjhwjyt
+  Desplazamiento 5: Qirweni wigvixs
+  Desplazamiento 6: Phqvdmh vhfuhwr
+  Desplazamiento 7: Ogpuclg ugetgvq
+  Desplazamiento 8: Nfotbkf tfdsfup
+  Desplazamiento 9: Mensaje secreto
+  Desplazamiento 10: Ldmrzid rdbqdsn
+  Desplazamiento 11: Kclqyhc qcapcrm
+  Desplazamiento 12: Jbkpxgb pbzobql
+  Desplazamiento 13: Iajowfa oaynapk
+  Desplazamiento 14: Hzinvez nzxmzoj
+  Desplazamiento 15: Gyhmudy mywlyni
+  Desplazamiento 16: Fxgltcx lxvkxmh
+  Desplazamiento 17: Ewfksbw kwujwlg
+  Desplazamiento 18: Dvejrav jvtivkf
+  Desplazamiento 19: Cudiqzu iushuje
+  Desplazamiento 20: Btchpyt htrgtid
+  Desplazamiento 21: Asbgoxs gsqfshc
+  Desplazamiento 22: Zrafnwr frpergb
+  Desplazamiento 23: Yqzemvq eqodqfa
+  Desplazamiento 24: Xpydlup dpncpez
+  Desplazamiento 25: Woxckto combody
+
+El cifrado César es un cifrado de sustitución simple.
+Es fácil de romper con fuerza bruta (solo 25 desplazamientos).
+¡No lo uses para información realmente sensible!

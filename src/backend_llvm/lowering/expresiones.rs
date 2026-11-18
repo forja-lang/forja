@@ -20,6 +20,76 @@ fn lit_double(d: f64) -> String {
     }
 }
 
+/// Primitivas de la stdlib que implementa `runtime.c` con el mismo contrato que
+/// `forja-native` (`_archivo_*` devuelven -1 al fallar, `_env_obtener` devuelve
+/// `nulo`). nombre nativo → (función C, tipos de los argumentos, tipo del valor).
+const NATIVAS_STDLIB: &[(&str, &str, &[T], T)] = &[
+    ("_archivo_leer", "forja_archivo_leer", &[T::Texto], T::Int),
+    (
+        "_archivo_escribir",
+        "forja_archivo_escribir",
+        &[T::Texto, T::Texto],
+        T::Int,
+    ),
+    (
+        "_archivo_agregar",
+        "forja_archivo_agregar",
+        &[T::Texto, T::Texto],
+        T::Int,
+    ),
+    (
+        "_archivo_existe",
+        "forja_archivo_existe",
+        &[T::Texto],
+        T::Bool,
+    ),
+    (
+        "_archivo_eliminar",
+        "forja_archivo_eliminar",
+        &[T::Texto],
+        T::Int,
+    ),
+    (
+        "_archivo_tamano",
+        "forja_archivo_tamano",
+        &[T::Texto],
+        T::Int,
+    ),
+    ("_env_existe", "forja_env_existe", &[T::Texto], T::Bool),
+    (
+        "_env_establecer",
+        "forja_env_establecer",
+        &[T::Texto, T::Texto],
+        T::Nulo,
+    ),
+    ("_env_eliminar", "forja_env_eliminar", &[T::Texto], T::Nulo),
+    ("_env", "forja_env_obtener", &[T::Texto], T::Texto),
+    (
+        "_sistema_variable_entorno",
+        "forja_env_obtener",
+        &[T::Texto],
+        T::Texto,
+    ),
+    ("_sistema_so", "forja_sistema_so", &[], T::Texto),
+    (
+        "_sistema_directorio_actual",
+        "forja_sistema_directorio_actual",
+        &[],
+        T::Texto,
+    ),
+    (
+        "_sistema_directorio_temporal",
+        "forja_sistema_directorio_temporal",
+        &[],
+        T::Texto,
+    ),
+    ("_sistema_hostname", "forja_sistema_hostname", &[], T::Texto),
+    ("_sistema_usuario", "forja_sistema_usuario", &[], T::Texto),
+    ("_sistema_cpus", "forja_sistema_cpus", &[], T::Int),
+    ("_sistema_tiempo_actual_ms", "forja_tiempo_ms", &[], T::Int),
+    ("_sistema_salir", "forja_sistema_salir", &[T::Int], T::Nulo),
+];
+
 impl Lowering {
     pub(super) fn identificador(&mut self, nombre: &str) -> Result<V, String> {
         if let Some(v) = self.vars.get(nombre) {
@@ -275,9 +345,11 @@ impl Lowering {
                             r, m, ks
                         ));
                     } else {
-                        let ki = self.como(&kv, T::Int);
+                        // Los bits tal cual: la clave puede ser un Texto que
+                        // llegó por un slot Entero (el runtime decide por tag).
+                        let ki = self.como_slot(&kv);
                         self.linea(&format!(
-                            "{} = call i64 @forja_mapa_obtener_i64(ptr {}, i64 {})",
+                            "{} = call i64 @forja_mapa_obtener_dinamico(ptr {}, i64 {})",
                             r, m, ki
                         ));
                     }
@@ -467,9 +539,9 @@ impl Lowering {
                             m, ks, x, es_texto
                         ));
                     } else {
-                        let ki = self.como(&kv, T::Int);
+                        let ki = self.como_slot(&kv);
                         self.linea(&format!(
-                            "call void @forja_mapa_fijar_i64(ptr {}, i64 {}, i64 {}, i64 {})",
+                            "call void @forja_mapa_fijar_dinamico(ptr {}, i64 {}, i64 {}, i64 {})",
                             m, ki, x, es_texto
                         ));
                     }
@@ -547,8 +619,17 @@ impl Lowering {
                     Err("`resultado` sólo existe dentro de una postcondición (`asegura`)".into())
                 }
             }
-            Expresion::Anterior(_) => {
-                Err("`anterior()` es de contratos: compilá con la VM (contratos activos)".into())
+            // `anterior(expr)`: el valor que la expresión tenía al entrar al
+            // cuerpo. Los snapshots los toma `tomar_anteriores` al principio;
+            // acá sólo se lee el que corresponde a esta expresión.
+            Expresion::Anterior(inner) => {
+                let clave = format!("{inner:?}");
+                match self.anteriores.get(&clave).cloned() {
+                    Some((slot, t)) => Ok(self.cargar(&slot, &t)),
+                    None => Err(format!(
+                        "`anterior({inner:?})` no se pudo capturar al entrar al cuerpo"
+                    )),
+                }
             }
         }
     }
@@ -1098,17 +1179,33 @@ impl Lowering {
                 ));
                 let envp = self.r();
                 self.linea(&format!("{} = load ptr, ptr {}", envp, pe));
+                let firma = self.firmas_closure.get(&var.slot).cloned();
                 let mut lista = vec![format!("ptr {}", envp)];
-                for a in argumentos {
+                for (i, a) in argumentos.iter().enumerate() {
                     let v = self.expr(a)?;
-                    let x = self.como(&v, T::Int);
-                    lista.push(format!("i64 {}", x));
+                    let t = firma
+                        .as_ref()
+                        .and_then(|(ps, _)| ps.get(i).cloned())
+                        .unwrap_or(T::Int);
+                    let x = self.como(&v, t.clone());
+                    lista.push(format!("{} {}", t.llvm().to_llvm_ir(), x));
                 }
+                let ret = firma.as_ref().map(|(_, r)| r.clone()).unwrap_or(T::Int);
                 let r = self.r();
-                // shortcut: se asume retorno i64 (las closures que devuelven
-                // texto requieren guardar la firma en el objeto).
-                self.linea(&format!("{} = call i64 {}({})", r, fp, lista.join(", ")));
-                return Ok(V::Int(r));
+                if matches!(ret, T::Nulo) {
+                    self.linea(&format!("call void {}({})", fp, lista.join(", ")));
+                    return Ok(V::Nulo);
+                }
+                self.linea(&format!(
+                    "{} = call {} {}({})",
+                    r,
+                    ret.llvm().to_llvm_ir(),
+                    fp,
+                    lista.join(", ")
+                ));
+                // shortcut: sin firma registrada (closure que llega por un
+                // parámetro o por una casilla) se asume `i64(i64, …)`.
+                return Ok(valor_de(&ret, r));
             }
         }
         // Llamada indirecta: `variable op = sumador` o `ops[i]` con función.
@@ -1124,22 +1221,35 @@ impl Lowering {
                         V::Funcion(p)
                     }
                 };
+                // Si la variable salió de una función conocida (`variable op =
+                // sumar`) se usa su firma; si no, `i64(i64, …)`.
+                let firma = self.firmas_closure.get(&var.slot).cloned();
                 let mut lista = Vec::new();
-                for a in argumentos {
+                for (i, a) in argumentos.iter().enumerate() {
                     let v = self.expr(a)?;
-                    let x = self.como(&v, T::Int);
-                    lista.push(format!("i64 {}", x));
+                    let t = firma
+                        .as_ref()
+                        .and_then(|(ps, _)| ps.get(i).cloned())
+                        .unwrap_or(T::Int);
+                    let x = self.como(&v, t.clone());
+                    lista.push(format!("{} {}", t.llvm().to_llvm_ir(), x));
                 }
+                let ret = firma.as_ref().map(|(_, r)| r.clone()).unwrap_or(T::Int);
                 let r = self.r();
-                // shortcut: las llamadas indirectas asumen firma i64(i64, ...).
-                // Upgrade: guardar la firma junto al puntero cuando haya closures.
+                // shortcut: sin firma (la función llegó por un parámetro o una
+                // casilla de arreglo) se asume `i64(i64, …)`.
+                if matches!(ret, T::Nulo) {
+                    self.linea(&format!("call void {}({})", callee.r(), lista.join(", ")));
+                    return Ok(V::Nulo);
+                }
                 self.linea(&format!(
-                    "{} = call i64 {}({})",
+                    "{} = call {} {}({})",
                     r,
+                    ret.llvm().to_llvm_ir(),
                     callee.r(),
                     lista.join(", ")
                 ));
-                return Ok(V::Int(r));
+                return Ok(valor_de(&ret, r));
             }
         }
         if let Some((params, ret)) = self.externas.get(nombre).cloned() {
@@ -1243,6 +1353,23 @@ impl Lowering {
                         let m = self.como(&v, T::Mapa);
                         let r = self.r();
                         self.linea(&format!("{} = call i64 @forja_mapa_longitud(ptr {})", r, m));
+                        V::Int(r)
+                    }
+                    // Un `Entero` puede llevar un puntero a texto o a arreglo
+                    // (`variable p = partes[i]`): la longitud se decide por el
+                    // tag. Leyendo `len` a ciegas, un texto daba su primer
+                    // bloque como longitud (`envolver` de std/texto, `709`).
+                    T::Int => {
+                        // Los bits tal cual: `como(v, Texto)` convertiría un
+                        // número a texto en vez de reenviar el puntero.
+                        let bits = self.como_slot(&v);
+                        let ptr = self.r();
+                        self.linea(&format!("{} = inttoptr i64 {} to ptr", ptr, bits));
+                        let r = self.r();
+                        self.linea(&format!(
+                            "{} = call i64 @forja_longitud_dinamica(ptr {})",
+                            r, ptr
+                        ));
                         V::Int(r)
                     }
                     _ => {
@@ -1590,6 +1717,38 @@ impl Lowering {
                 self.etiqueta(&fin);
                 V::Nulo
             }
+            // Primitivas de la stdlib (`_archivo_*`, `_env_*`, `_sistema_*`)
+            // con equivalente en `runtime.c`. Se emite la llamada con los
+            // argumentos coercionados al tipo que declara la tabla.
+            _ if NATIVAS_STDLIB.iter().any(|(n, ..)| *n == nombre) => {
+                let (_, funcion, params, ret) = NATIVAS_STDLIB
+                    .iter()
+                    .find(|(n, ..)| *n == nombre)
+                    .expect("nativa en la tabla");
+                let mut lista = Vec::with_capacity(params.len());
+                for (i, t) in params.iter().enumerate() {
+                    let v = self.arg(nombre, args, i)?;
+                    lista.push(format!(
+                        "{} {}",
+                        t.llvm().to_llvm_ir(),
+                        self.como(&v, t.clone())
+                    ));
+                }
+                let lista = lista.join(", ");
+                if *ret == T::Nulo {
+                    self.linea(&format!("call void @{funcion}({lista})"));
+                    V::Nulo
+                } else {
+                    let r = self.r();
+                    let tipo = ret.llvm().to_llvm_ir();
+                    self.linea(&format!("{r} = call {tipo} @{funcion}({lista})"));
+                    match ret {
+                        T::Texto => V::Texto(r),
+                        T::Bool => V::Bool(r),
+                        _ => V::Int(r),
+                    }
+                }
+            }
             _ => return Ok(None),
         };
         Ok(Some(v))
@@ -1612,7 +1771,7 @@ impl Lowering {
             v.sort_by(|a, b| a.0.cmp(&b.0));
             v
         };
-        let tipos = self.tipos_params("", parametros, cuerpo);
+        let tipos = self.tipos_params(None, "", parametros, cuerpo);
         let ret = self
             .inferir_retorno(cuerpo, parametros, &tipos)
             .unwrap_or(T::Int);
@@ -1723,6 +1882,9 @@ impl Lowering {
             pe, obj
         ));
         self.linea(&format!("store ptr {}, ptr {}", env, pe));
+        // La firma queda asociada al registro del objeto; al guardarlo en una
+        // variable se propaga al slot (`propagar_firma_closure`).
+        self.firmas_closure.insert(obj.clone(), (tipos, ret));
         Ok(V::Closure(obj))
     }
 

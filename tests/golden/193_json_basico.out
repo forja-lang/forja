@@ -4,11 +4,11 @@ JSON original:
   {"nombre": "Ana", "edad": 30, "activo": true, "hobbies": ["leer", "correr", "codificar"]}
 
 Resultado del parseo:
-  [0]: :
-  [1]: :
-  [2]: :
-  [3]: :
-  [4]: :[,,]
+  [0]: nombre:Ana
+  [1]: edad:30
+  [2]: activo:
+  [3]: rue, :
+  [4]: obbies:[leer,correr,codificar]
 
 --- Construcción manual de JSON-like ---
   Estructura de persona:
