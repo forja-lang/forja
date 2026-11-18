@@ -805,16 +805,14 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Uop::LeerLinea => {
-                    let mut i = String::new();
+                    let mut crudo = String::new();
                     // Sin prompt: el programa decide qué escribir (la ruta de
                     // codigos tampoco lo imprime) y así las dos VM coinciden.
-                    match std::io::stdin().read_line(&mut i) {
-                        // EOF (0 bytes): Nulo, igual que `Opcode::LeerLinea`. Antes
-                        // devolvía texto vacío y un bucle interactivo sin stdin
-                        // giraba hasta agotar el límite de instrucciones.
-                        Ok(0) | Err(_) => self.empujar_valor(ValorFast::nulo()),
-                        Ok(_) => {
-                            let idx = self.reservar_texto(Arc::from(i.trim()));
+                    let leidos = std::io::stdin().read_line(&mut crudo).unwrap_or(0);
+                    match crate::vm_fast::ops_io::texto_de_lectura(leidos, &crudo) {
+                        None => self.empujar_valor(ValorFast::nulo()),
+                        Some(t) => {
+                            let idx = self.reservar_texto(Arc::from(t));
                             self.empujar_valor(ValorFast::texto(idx));
                         }
                     }

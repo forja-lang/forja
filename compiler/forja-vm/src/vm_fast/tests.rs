@@ -585,3 +585,14 @@ escribir(a_texto(r))
     let (out, _) = ejecutar_con_fast_math(src, None);
     assert_eq!(out, vec!["[1,2,3,4,5]"]);
 }
+
+/// Semántica única de `leer()` (Opcode y Uop comparten `texto_de_lectura`):
+/// sólo el fin de entrada es nulo; una línea en blanco es texto vacío.
+#[test]
+fn leer_linea_distingue_eof_de_linea_vacia() {
+    use super::ops_io::texto_de_lectura;
+    assert_eq!(texto_de_lectura(0, ""), None);
+    assert_eq!(texto_de_lectura(1, "\n"), Some(""));
+    assert_eq!(texto_de_lectura(4, "  x \n"), Some("x"));
+    assert_eq!(texto_de_lectura(5, "x\r\n"), Some("x"));
+}
