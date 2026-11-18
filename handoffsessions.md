@@ -41,8 +41,10 @@ set "PATH=C:\Program Files\Git\usr\bin;C:\Windows\System32;%PATH%" && cd /d C:\U
 
 ## Estado verificado
 
-Última medición: **2026-11-18**, `main` en `557a9981`, árbol con el WIP de las
-otras sesiones, release recién compilado.
+Última medición: **2026-11-17 21:28**, `main` en `f88595cb` (el `557a9981` de la
+primera versión de esta línea es posterior), árbol con 35 archivos sucios de las
+otras sesiones, release de las 21:27. La midió la sesión de deuda de más abajo;
+re-medir si el backend cambió después.
 
 ```
 nativo vs VM: 154 coinciden · 0 difieren · 119 no bajan · 2 no terminan · 3 error · 0 revientan
@@ -123,3 +125,83 @@ Commits: `<sha>`, `<sha>`
 - Qué dejaste abierto y dónde está explicado.
 - Qué archivos/zona tomaste (para que otro no se pise).
 ```
+
+---
+
+### 2026-11-18 — deuda de `plans/handoff5.md` + arnés de paridad (rama `main`)
+
+Commits propios: `3b720e6b`, `eafe0d98`, `fe4129e1`, `42100f17`, `57e94a84`,
+`45cf4690`, `4065ed9d`, `0bd48d7f`, `f88595cb`, `1186f3d8`, `f3413555`.
+De backend, en la rama `native/atajos` (mergeada en `bcb671f4`, no por mí):
+`a502dcfb`, `80a3cbde`, `13798a3c`, `135cc66a`, `d6824c56`.
+
+**Medido** (2026-11-17 21:28, `f88595cb`, release 21:27, 35 archivos sucios
+ajenos): `154 coinciden · 0 difieren · 119 no bajan · 2 no terminan · 3 error ·
+0 revientan`. `llvm_backend` 48/48, `lib` 129, `corpus` 299. Es el número de
+«Estado verificado»; ojo con atribuirlo al commit equivocado, el árbol se movió
+después.
+
+**Backend** (`handoff5` §2, hecho en un worktree propio para no pisar
+`src/backend_llvm/**`, que estaba tomado):
+
+- `1987`: la evidencia de tipos de los parámetros se indexa `Clase::metodo` (y
+  cae a la clave pelada si el receptor no tiene tipo estático). Dos clases con un
+  método homónimo ya no se contaminan.
+- `588`: `asegura` se verifica antes de **cada** retorno (explícito e implícito),
+  con `resultado` como local y `anterior(expr)` capturado al entrar; mismo
+  mensaje y `exit 1` que la VM. +4 tests.
+- `1108`/`1134`: la firma viaja con la closure (`firmas_closure`) y con el
+  puntero a función (`variable op = sumar`). +1 test.
+- `1.5`: `FORJA_DEBUG_TAGS=1` aborta si al registro de objetos entra algo que no
+  sea texto o arreglo. §5: el encabezado de `runtime.c` documenta el modelo de
+  memoria completo. +1 test.
+- Test que fija el estado de `nulo` vs `0` (§1.4 sigue **abierto**: un `Texto`
+  nulo concatena "nulo", pero `variable n = nulo` se tipa `Entero` e imprime
+  "0"; se cierra con valores con tag).
+
+**Arnés de paridad** (archivos míos, `scripts/` + `.github/`):
+
+- `--update` ya no reescribe `paridad-exclusiones`: agrega lo que falta con
+  `TODO: motivo` y respeta los motivos multilínea existentes.
+- Job `paridad-native-vm` en CI: falla si algo difiere fuera de exclusiones o
+  revienta.
+- `forja aot` avisa siempre por stderr que generó el fallback y, con
+  `FORJA_AOT_NATIVO_OBLIGATORIO=1`, sale con 1 en vez de caer a bytecode.
+- La corrida imprime commit, archivos sucios, ruta/fecha del binario y cantidad
+  de ejemplos antes de medir.
+
+**Trampas nuevas (esto costó dos corridas inválidas seguidas):**
+
+1. Si otra sesión corre `cargo build` mientras medís, cargo reemplaza
+   `target/release/forja.exe`: 122 de los 175 "no bajan" de una corrida eran
+   `line 86: ...forja.exe: No such file or directory`. El arnés ahora **copia**
+   el binario a `target/paridad/<fecha>-<pid>/forja` y mide contra la copia.
+2. Dos corridas simultáneas compartían `target/paridad` y cada `rm -rf` borraba
+   los `.aot` de la otra (mitad de los ejemplos como "no bajan", más
+   `grep: ... No such file or directory`). Ahora cada corrida usa su propio
+   directorio (override `PARIDAD_OUT`) y el CI sube `target/paridad/**/*.aot`.
+3. `bash` invocado desde `cmd.exe` resuelve al bash de **WSL**
+   (`C:\Windows\System32ash.exe`): ve rutas `/mnt/c/...` y `uname -s = Linux`,
+   así que el arnés busca `forja` sin `.exe` y falla con "Falta …". Para
+   `bg_run`/scripts hay que usar `"C:\Program Files\Gitinash.exe"`.
+4. `git worktree add` no trae `patches/` ni los submódulos: el build falla con
+   `patch location … does not contain packages matching masonry_winit`. Receta
+   en `plans/handoff8.md` §0.
+5. HEAD llegó a **no compilar** `forja-cli` (llamaba a `forja::compilar_a_asm_desde`,
+   que sólo existía sin commitear). Lo dejé compilando en `4065ed9d`, un
+   checkpoint de los 66 archivos que estaban sueltos. Moraleja: si tu cambio
+   hace falta para que el árbol compile, commitealo antes de cerrar la sesión.
+
+**Abierto** (no lo toqué, a propósito):
+
+- `handoff5` §5: partir `lowering.rs` (2.864 líneas) en `firmas.rs` /
+  `clases.rs` / `modulo.rs`. Es refactor grande sobre el archivo que la sesión
+  `native` está moviendo: hacerlo con el árbol quieto.
+- `handoff5` §1.4 / `handoff4` §3.1: valores con tag (decisión de producto).
+- La inferencia estática está en su techo: unificar el contagio aritmético de
+  `tipo_estatico` y `tipo_con_pistas` **cambia resultados** (medido: `176_comando`
+  pasa de `17/12/12` a `143/143/1430`). Queda un parche sólo con la tabla de
+  literales en `plans/parches/` (`handoff5-1.2-tabla-de-literales.patch`).
+
+**Zona tomada**: ninguna, la sesión terminó. El worktree `forja-shortcuts` se
+borró después del merge.
