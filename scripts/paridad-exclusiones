@@ -43,9 +43,6 @@ ejemplos/gui/201_login_gui.fa                   `leer()` en EOF: la VM imprime `
                                                 (encajado de escalares, plan §9)
 ejemplos/avanzado/109_generico_opcion.fa         un campo sin tipo (`valor`) guarda un texto y el nativo lo convierte
                                                 a entero (encajado de escalares, plan §9 bloqueado)
-ejemplos/concurrencia/216_concurrencia.fa        `tipo(canal)` da "objeto" en el nativo y "texto" en la VM, y
-                                                imprimir un `Resultado` sale como puntero. Dos bugs de backend,
-                                                anotados en handoffsessions (el resto del ejemplo coincide)
 ejemplos/ffi/185_ffi_matematicas.fa              la serie de `log` da 0 en la VM y el valor correcto en el nativo:
                                                 la VM trunca la aritmética Decimal del helper `potencia`
 ejemplos/juegos/159_generador_contraseñas.fa     la contraseña se arma con `tiempo_actual()`: distinta por

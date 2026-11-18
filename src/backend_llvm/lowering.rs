@@ -1653,6 +1653,8 @@ impl Lowering {
     /// (enum) y no una clase (el parser no distingue en la anotación).
     fn tipo_declarado(&self, t: &Option<Tipo>) -> Option<T> {
         T::de_tipo(t).map(|t| match t {
+            // `-> Resultado` / `-> Opcion` sin genéricos: son los enums del preludio
+            T::Clase(n) if n == "Resultado" || n == "Opcion" => T::Enum(n),
             T::Clase(n) if self.enums.contains_key(&n) => T::Enum(n),
             // `variable p: Par` con `Par<A, B>` monomorfizada a
             // `Par_Texto_Entero`: si hay una sola especialización, es esa.

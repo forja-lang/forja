@@ -1654,27 +1654,22 @@ impl Lowering {
             }
             // `tipo(v)`: con tipo estático conocido es una constante; si no, el
             // runtime mira el tag del valor.
+            // `tipo(v)`: la VM responde por el modelo de objetos (clase/enum →
+            // "objeto", canal → "arreglo"); si el valor no trae tipo estático, el
+            // runtime mira su tag (texto/arreglo/mapa/entero).
             "tipo" => {
-                if let Some(e) = args.first() {
-                    if !self.incierto(e) {
-                        let t = self.tipo_estatico(e);
-                        // Sólo `Booleano` y `Decimal` necesitan la vía estática: son
-                        // escalares con bits (el runtime los vería como "entero").
-                        // Todo lo demás (arreglos, textos, y sobre todo la suposición
-                        // `Entero` sobre un `arr[i]`) lo resuelve el tag del runtime:
-                        // `aplanar` y cía. dependen de esto.
-                        let etiqueta = match t {
-                            T::Bool => Some("booleano"),
-                            T::Dec => Some("flotante"),
-                            _ => None,
-                        };
-                        if let Some(etiqueta) = etiqueta {
-                            let r = self.texto_constante(etiqueta);
-                            return Ok(Some(V::Texto(r)));
-                        }
-                    }
-                }
                 let v = self.arg(nombre, args, 0)?;
+                let etiqueta = match v.t() {
+                    T::Bool => Some("booleano"),
+                    T::Dec => Some("flotante"),
+                    T::Clase(_) | T::Enum(_) => Some("objeto"),
+                    T::Canal => Some("arreglo"),
+                    _ => None,
+                };
+                if let Some(etiqueta) = etiqueta {
+                    let r = self.texto_constante(etiqueta);
+                    return Ok(Some(V::Texto(r)));
+                }
                 let dato = self.como_slot(&v);
                 let p = self.r();
                 self.linea(&format!("{} = inttoptr i64 {} to ptr", p, dato));

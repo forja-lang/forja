@@ -133,7 +133,11 @@ void *forja_alloc(int64_t bytes) {
  * como la VM, cada objeto de heap se registra con su tag (y los literales de
  * texto se registran al arrancar, ver `forja_registrar_texto`). Lo no
  * registrado es un escalar. */
-enum { FORJA_T_TEXTO = 1, FORJA_T_ARREGLO = 2, FORJA_T_MAPA = 3 };
+enum { FORJA_T_TEXTO = 1, FORJA_T_ARREGLO = 2, FORJA_T_MAPA = 3, FORJA_T_CANAL = 4 };
+
+/* Magia en la cabecera de un canal: un texto Forja (UTF-8) nunca empieza por
+ * 0xFF, asi que no puede colisionar. */
+#define FORJA_CANAL_MAGIA 0xFF43414E414C0001ULL
 
 typedef struct {
     void **claves;
@@ -224,9 +228,19 @@ static int64_t forja_tag_registrado(const void *p) {
     return 0;
 }
 
+/* Canal por su cabecera (ver `forja_canal_nuevo`). Solo se lee si el
+ * puntero esta en la arena: la cabecera es parte de la misma asignacion. */
+static int forja_es_canal(const void *p) {
+    if (!forja_en_arena(p)) return 0;
+    uint64_t magia = 0;
+    memcpy(&magia, (const char *)p - 16, sizeof magia);
+    return magia == FORJA_CANAL_MAGIA;
+}
+
 static int64_t forja_tag_de(const void *p) {
     int64_t tag = forja_tag_registrado(p);
     if (tag) return tag;
+    if (forja_es_canal(p)) return FORJA_T_CANAL;
     /* Un texto de la arena no está en el registro (serían millones de altas):
      * se reconoce por rango. Lo no registrado y fuera de la arena es escalar. */
     return forja_en_arena(p) ? FORJA_T_TEXTO : 0;
@@ -562,6 +576,9 @@ char *forja_arreglo_a_texto(void *pv);
 /* `escribir(v)` cuando el tipo del slot es una suposición. */
 void forja_imprimir_dinamico(void *v) {
     switch (forja_tag_de(v)) {
+        case FORJA_T_CANAL:
+            forja_imprimir_texto("[<CanalEmisor>,<CanalReceptor>]");
+            return;
         case FORJA_T_ARREGLO:
             forja_imprimir_arreglo(v);
             return;
@@ -646,6 +663,8 @@ char *forja_reemplazar(const char *s, const char *viejo, const char *nuevo) {
 
 char *forja_a_texto_dinamico(void *v) {
     switch (forja_tag_de(v)) {
+        case FORJA_T_CANAL:
+            return forja_dup("[<CanalEmisor>,<CanalReceptor>]");
         case FORJA_T_ARREGLO:
             return forja_arreglo_a_texto(v);
         case FORJA_T_TEXTO:
@@ -928,8 +947,14 @@ typedef struct {
     ForjaNodo *cola;
 } ForjaCanal;
 
+/* Los canales llevan una cabecera con una magia que no puede salir de un
+ * texto Forja (UTF-8 valido nunca empieza con 0xFF): asi `forja_tag_de`
+ * distingue un canal de un texto sin una tabla por instancia. */
 void *forja_canal_nuevo(void) {
-    ForjaCanal *c = (ForjaCanal *)forja_alloc((int64_t)sizeof(ForjaCanal));
+    char *base = (char *)forja_alloc((int64_t)(16 + sizeof(ForjaCanal)));
+    uint64_t magia = FORJA_CANAL_MAGIA;
+    memcpy(base, &magia, sizeof magia);
+    ForjaCanal *c = (ForjaCanal *)(base + 16);
     forja_mutex_init(&c->mutex);
     forja_cond_init(&c->cond);
     c->cabeza = NULL;
@@ -1523,6 +1548,10 @@ char *forja_tipo_de(void *v) {
             return forja_dup("arreglo");
         case FORJA_T_MAPA:
             return forja_dup("mapa");
+        case FORJA_T_CANAL:
+            /* La VM modela el canal como `[emisor, receptor]`: `tipo()` dice
+             * "objeto". */
+            return forja_dup("objeto");
         default:
             return forja_dup("entero");
     }

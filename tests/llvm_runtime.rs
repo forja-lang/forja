@@ -16,13 +16,14 @@ fn compilar_y_ejecutar(driver: &str) -> Option<String> {
     if !hay_clang() {
         return None;
     }
+    // El reloj del sistema tiene granularidad de milisegundos en Windows: dos
+    // tests en paralelo compartian directorio y se pisaban el `main.c`.
+    static CONTADOR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = CONTADOR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir: PathBuf = std::env::temp_dir().join(format!(
         "forja_rt_test_{}_{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
+        n
     ));
     std::fs::create_dir_all(&dir).expect("dir temporal");
     let rt = dir.join("forja_rt.c");
