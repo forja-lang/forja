@@ -466,3 +466,58 @@ Commits: `d5b3882f`, `29b2dc69`, `2aa53c90`, `9209305f`, `b7232880`
   registro de handles vivos. Nada de lo existente cambió de semántica (el intento
   de que `forja_a_texto_dinamico(NULL)` diera "nulo" se revirtió: el 0 entero
   también llega como puntero nulo y rompía 33 ejemplos).
+
+### 2026-11-18 14:40 — integración de los cuatro carriles (rama `integracion/final`)
+Commits: merges `10870674` (native/lowering), `c136b71d` (native/runtime), `vm/cuelgues`,
+`corpus/dorado`; `a75c0d3d`, `a93737c4`
+
+- Medido (árbol limpio, release de 14:08): `bash scripts/paridad-native-vm.sh` →
+  **178 coinciden · 0 difieren · 57 no bajan · 5 no terminan · 4 error · 0 revientan**
+  (base del plan `00614f6b`: 150 · 0 · 95 · 4 · 4 · 0; L1 solo: 171). `llvm_backend` 55,
+  `llvm_runtime` 2, `lib` 129, `corpus` 299, `runtime` 102, clippy `--lib` sin errores.
+  `cargo fmt --check -p forja` sigue con los 2 diffs previos (`src/transpiler.rs`,
+  `tests/codegen/ir_cobertura_corpus.rs`), ajenos a estos cambios.
+- Integración: `runtime.c` se resolvió **a mano**. Queda la implementación de hilo de L1
+  (`forja_hilo_lanzar` devuelve handle + registro de handles vivos) y se descartó el par
+  `forja_hilo_lanzar_unible`/`forja_hilo_unir` del carril L4, que duplicaba. Encima va el
+  fix de rendimiento de L4 (los textos de la arena no entran de a uno al registro de tags).
+  El handle de hilo se reserva con `malloc`: con el registro por rango, un handle en la
+  arena se clasificaba como texto.
+- Cambió (lo que faltaba después de L1/L2/L3):
+  - `[v] + arr` bajaba como suma de enteros (`ptrtoint`+`add`) y reventaba al
+    desreferenciar: primitiva `forja_arreglo_concat` + rama en `binaria_valores_con`
+    (sólo arreglo+arreglo; `texto + arreglo` sigue por la vía de texto). Arregla
+    `avanzado/103_generico_pila` (coincide con la VM) y los dos `revientan` que aparecían
+    al juntar los carriles (`141_lista_enlazada`, `197_dijkstra`).
+  - `forja_leer_linea` recorta los espacios como `texto_de_lectura` de la VM: `  x  ` → `x`,
+    línea en blanco → texto vacío, sólo el fin de entrada es `nulo` (era el PEDIDO L2 → L4).
+    Medido con stdin por tubería en las dos rutas.
+  - `podar_inalcanzable` no escaneaba el cuerpo de `main` si nadie la llamaba desde el nivel
+    superior: la función se conservaba pero sus clases se podaban antes del backend. Ahora
+    `main` es raíz. `forja llvm` de `71_rasgos`, `214_codificacion` y `199_forja_desde_forja`
+    ya genera IR; `71` además compila AOT y coincide (+1). Las otras dos siguen sin bajar
+    por primitivas sin equivalente (`base64_*`, y el caso de `199`), con error explícito.
+  - Ejemplos reparados (rama `corpus/ejemplos-cierre`, puntero en `ejemplos`): `156`
+    (asignaciones partidas por el formatter + `factorial` local + `absoluto`), `159`
+    (`caracter` → `a_caracter`; sigue sin bajar por el **bug de nombres no ASCII** de abajo),
+    `185` (reconstruido desde `9074678`: las asignaciones de Newton/Taylor/Mercator se habían
+    vuelto `anon(...)`), `216` (`importar "std/resultado"` + `es_ok(r1)`).
+  - `paridad-exclusiones`: `109` y `216` (encajado de escalares, ya conocido) y `185`
+    (la VM trunca la aritmética Decimal de `potencia` y da 0 en la serie de `log`; el nativo
+    da el valor correcto). Cada línea con su motivo medido.
+- **Abierto y dónde está**:
+  - `bench-competencias`: `parseo` quedó en 542-568 ms (1.05-1.11x de Rust) en tres corridas
+    con el árbol quieto, contra 2160 ms antes del fix. **`baseline.json` no se actualizó**: las
+    corridas de `dispatch`/`concurrencia`/`ffi` varían ±50 % entre corridas (42-94 ms el mismo
+    binario), así que hornear este momento era ruido. Las tres corridas dieron "ratios dentro de
+    la baseline" con la vieja.
+  - **Nombres no ASCII en el IR**: una función con `ñ` (`generar_contraseña` en `159`) emite
+    `@generar_contraseña` sin comillas y clang rechaza el `.ll` (`expected '(' in function
+    argument list`). Afecta a cualquier ejemplo con acentos en identificadores; el arreglo
+    (comillar o sanear el símbolo en todos los puntos de emisión) queda fuera de este cierre.
+  - `216`: además del encajado, `tipo(canal)` da "objeto" en el nativo y "texto" en la VM, e
+    imprimir un `Resultado` sale como puntero.
+  - `214`/`199`: primitivas nativas sin equivalente (`_base64_*` y la de `199`), grupo B del plan.
+  - `109`: campo sin tipo que guarda un texto (encajado de escalares, §9, bloqueado).
+- Zona tomada al cerrar: ninguna; las ramas de carril quedan en `origin/` (`native/lowering`,
+  `native/runtime`, `corpus/dorado`, `corpus/ejemplos-cierre`) y `vm/cuelgues` quedó local.
