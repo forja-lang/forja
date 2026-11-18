@@ -554,3 +554,31 @@ Commits: `46b210ce`, `f4f40226`
   - El árbol principal tiene 30 `.fa` sin commitear de otra sesión (`ejemplos/stdlib/*`,
     `fundamentos/720*`, `721*`) que inflan la medición de paridad hecha ahí (293 vs 263
     ejemplos): las cifras de arriba son con el corpus versionado.
+
+### 2026-11-18 17:00 — poda completa y primitivas de codificación
+Commits: `940feba3` (+ los de la entrada anterior)
+
+- Medido (release recién compilado en este worktree, `ejemplos` en `bf02c32`):
+  `scripts/paridad-native-vm.sh` → **179 coinciden · 0 difieren · 55 no bajan · 6 no terminan ·
+  4 error · 0 revientan**. `llvm_backend` 56, `llvm_runtime` 3, `lib` 129, `corpus` 299,
+  `runtime` 102, clippy sin errores.
+- Cambió:
+  - **DCE de programa incompleto** (causa real de "clase X desconocida" con la clase en el
+    mismo archivo): `podar_inalcanzable` no recorría `Expresion::ArregloFijar`, así que
+    `este.arr[0] = nuevo B()` no marcaba `B`. Faltaban también `Referencia`, `CanalNuevo`,
+    `Si` como expresión y `Seleccionar`. Repro mínimo: clase `A` con
+    `funcion llenar() { este.arr[0] = nuevo B() }`. Arregla `199_forja_desde_forja` (baja y
+    coincide con la VM).
+  - `_base64_codificar`, `_base64_decodificar` y `_hex_decodificar_nativo` con equivalente
+    nativo (`forja_base64_*`, `forja_hex_decodificar`), mismo contrato que `forja-native`
+    ("" si la entrada es inválida; `String::from_utf8_lossy` como la VM). Medido con
+    `std/codificacion` en las dos rutas: idéntico, incluido un texto con emoji y los casos
+    inválidos. Test: `llvm_runtime::base64_y_hex_como_la_vm`.
+- Abierto: `214_codificacion` ya no falla por las primitivas; ahora choca con el modelo
+  dinámico de la VM (`tipo(dec1) == "resultado_ok"`, `dec1.valor` sobre un `Resultado`,
+  `dec_err.error.mensaje`). Es la misma feature que las dos divergencias de `216`:
+  **introspección de objetos/enums/canales** (tag de objeto con nombre + acceso dinámico a
+  miembros + repr `<Clase>` / `[<CanalEmisor>,<CanalReceptor>]`). No es un bug de una línea:
+  requiere registrar el nombre por clase y decidir qué es "objeto" sin una tabla por
+  instancia (que reintroduciría el costo de `parseo`). Queda como el próximo proyecto del
+  backend nativo, con estos dos ejemplos como criterio de aceptación.
