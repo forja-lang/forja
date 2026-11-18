@@ -212,6 +212,10 @@ name = "llvm_backend"
 path = "../../tests/llvm_backend.rs"
 
 [[test]]
+name = "llvm_runtime"
+path = "../../tests/llvm_runtime.rs"
+
+[[test]]
 name = "modo_estricto"
 path = "../../tests/modo_estricto.rs"
 
