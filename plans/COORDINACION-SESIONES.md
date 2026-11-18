@@ -39,10 +39,9 @@ Worktree único, varias sesiones de Pi escribiendo a la vez. Este archivo es el
 
 - Commiteado lo de GUI: `ce431808` + `750de18a` (root) y un commit por submódulo
   (`gui-rt`, `gui-core`, `gui-theme`, `gui`, `rt`, `ejemplos/gui`).
-- **`compiler/forja-ir/src/ir_constructor.rs` no compila ahora mismo** (delimitador
-  sin cerrar en `mod tests`, línea ~1781): es de la sesión de VM/IR. El CLI
-  (`cargo test -p forja-cli`, 25 ok) sí compila; `forja-gui-rt` no, porque su
-  dev-dependency `forja` arrastra `forja-ir`.
+- **`compiler/forja-ir/src/ir_constructor.rs` no compilaba** (delimitador sin
+  cerrar en `mod tests`): lo arregló la sesión de VM/IR ese mismo día, así que la
+  nota ya es historia. Con `4065ed9d` (checkpoint) HEAD compila entero.
 
 ## Worktree separado del backend nativo (2026-11-17, sesión `native/cajas`)
 
@@ -164,12 +163,12 @@ del merge) y §4.2 versionar `plans/` (decisión, ahora hecho: ver commit).
   `recarga:` (reinicia el `.exe` al cambiar cualquier `.fa`).
 - Transpilador: constructor de clases (`este.campo = valor` llega como
   `Expresion::AsignacionCampo`), tipo declarado de los campos y escapes
-  `
-`/``/`	`; `forja transpilar` y `destino: nativo` resuelven los `importar`.
+  de `\n`, `\r` y `\t`; `forja transpilar` y `destino: nativo` resuelven
+  los `importar`.
 - `patches` pasó a **submódulo** (`github.com/forja-lang/patches`): el `[patch]`
   de la raíz apunta a `patches/masonry_winit`, que estaba en `.gitignore`. El
-  resync a xilem `9f504ae` está commiteado **local**: falta `git push` en
-  `patches/` para que el CI lo pueda clonar.
+  resync a xilem `9f504ae` ya está **pusheado** (`564658e`), así que el CI puede
+  clonarlo.
 - Tests: gui-rt click (2) + `--load-state` (1), aot std/alias (1), ejecucion
   mtime (1). Verde: forja 129, gui-rt 36+3+12, cli 25+1, driver 8, session 3,
   interprete 3+4.
@@ -179,8 +178,9 @@ del merge) y §4.2 versionar `plans/` (decisión, ahora hecho: ver commit).
 - `gui_nativa.rs` partido: 1,7k + `layout_nativo.rs` 4,1k + `vista_nativa.rs` 2,8k.
 - `patches` pusheado a origin (`da29452..564658e`): el submódulo y el CI ya pueden
   clonar el fork resincronizado a xilem `9f504ae`.
-- `target/debug` (43 GB) borrado: 22 GB → 76 GB libres. Reconstruidos
-  `target/debug/forja.exe` y `forja-rt-gui.exe`.
+- `target/debug` (43 GB) borrado: 22 GB → 76 GB libres; tras reconstruir
+  `forja.exe`, `forja-rt-gui.exe` (dev) y el runtime `rt`, quedan **67 GB**
+  libres. `target/rt` y `~/.cache/forja-gui-target` se conservaron a propósito.
 
 ## Cierre de la sesión de deuda `01a1eadf-96a3` (2026-11-17, noche)
 
@@ -225,3 +225,66 @@ Las dos corridas anteriores dieron 105 y 97 "coinciden" y 175/186 "no bajan"
 porque las dos sesiones compartían `target/paridad` y cada `rm -rf` borraba los
 `.aot` ajenos. Arreglado en `0bd48d7f` (copia del binario) y `f88595cb`
 (directorio por corrida).
+
+## Fin de la sesión GUI (`01a1eadf`) — handoff6 cerrado y todo pusheado (2026-11-18)
+
+Esta es la última entrada de esta sesión: el `plans/handoff6.md` quedó sin
+pendientes accionables y los ocho repos están al día en `origin`.
+
+### Qué quedó hecho (estado del árbol, no de memoria)
+
+| Tema | Dónde | Verificación |
+|---|---|---|
+| Payload GUI = **AST resuelto** (`FBA`) | `src/aot.rs`, `src/selfrun.rs`, `forja-driver` | app con `importar "util.fa"` y con `importar std/json` compilan y abren ventana; `aot::tests::*` (2) |
+| `forja ejecutar` GUI con `estado:` y `recarga:` | `src/tools/forja-cli/src/commands/ejecucion.rs`, `forja-session` | hot reload real (tocar `.fa` → "Cambio detectado"); `--load-state` con test en `gui-rt` |
+| Transpilador: clases, escapes, imports | `src/transpiler.rs` | `forja transpilar` de una app con `std/json` compila y linkea; `destino: nativo` corre en 25 s |
+| `gui_nativa.rs` partido por dominio | `library/gui-rt` (`layout_nativo.rs`, `vista_nativa.rs`) | 36 + 3 + 12 tests, ventana OK |
+| `patches` = submódulo, resync a `9f504ae` | `.gitmodules`, `patches/` | `git ls-remote` del remoto == gitlink; clon limpio compila la GUI |
+| wasm compila | `forja-interprete` (`Valor::Nulo()`) | `cargo check --target wasm32-unknown-unknown` en `forja-wasm`, `-wasm-gui`, `-gui-dom` |
+| Disco | `target/debug` borrado | 22 GB → 67 GB libres con los binarios ya reconstruidos |
+
+Commits raíz: `ce431808`, `750de18a`, `ca9d4384`, `845e6d23`, `178bb060`,
+`ad25f527`, `27e00d0a`, `67e61588`, `bb46e0c1`, `feb9b531`, `460fe98f`,
+`157ffe06`. Submódulos pusheados: `gui-rt` (`dbd5eb3`), `gui-core` (`9adcf07`),
+`gui-theme` (`37573a0`), `gui` (`256c194`), `rt` (`052ecf0`), `ejemplos`
+(`58b106c`), `patches` (`564658e`). Los 14 gitlinks quedan en sync.
+
+### Mi punto de vista sobre cosas que ya están escritas arriba
+
+1. **`patches/` "hay que copiarlo a mano en los worktrees" quedó obsoleto.** La
+   receta de `handoff8.md` §0 y el bloqueante 3 de la sesión `native/atajos`
+   (build falla con `patch location … does not contain packages matching
+   masonry_winit`) se resuelven con el submódulo: en un worktree o clon limpio
+   alcanza `git submodule update --init --recursive`. Si un worktree viejo sigue
+   fallando, es porque se creó antes de `67e61588`.
+2. **Overlay de `src/aot.rs` entre sesiones:** `eafe0d98` (sesión de deuda) tocó
+   el mismo archivo que yo. No hubo conflicto porque el suyo es el *fallback* de
+   bytecode y el mío la rama GUI, pero conviene mirar ahí antes de tocar el
+   payload otra vez.
+3. **`masonry_testing` no sirve para probar apps de `gui-rt`** en esta revisión
+   de xilem: su `TestHarness` monta widgets de Masonry y el árbol de la app es
+   una vista de Xilem, sin API pública para materializarla fuera del driver. Por
+   eso el test de click recorre el cableado real (`MaterialButton` →
+   `ejecutar_callback_y_actualizar` → store → re-extraer layout) y no el evento
+   del sistema. Si alguien quiere el evento real, hay que instrumentar el driver.
+4. **Android no se puede verificar en esta máquina**: no hay NDK instalado
+   (`ANDROID_NDK_HOME` vacío, sin `~/AppData/Local/Android/Sdk/ndk`) y el fallo
+   de `cargo check --target aarch64-linux-android` es de los build scripts de
+   `libsqlite3-sys`/`ring`, no del código Forja. Queda como deuda con entorno.
+5. **`plans/` está versionado pero volvió a `.gitignore`.** Consecuencia práctica:
+   hay que `git add -f plans/<archivo>` para commitear un handoff, y un
+   `git status` no lo muestra. No saqué la línea para no pisar a quien la puso;
+   si la intención es versionarlos (ya hay commits de handoffs), sacarla.
+6. **`forja ejecutar` no llama a `main()` en programas de consola**: ejecuta el
+   código de nivel superior. Un archivo de prueba con todo dentro de `main()` no
+   imprime nada y parece un bug. Las apps GUI sí usan `main()`.
+
+### Lo que dejé explícitamente afuera
+
+- **Fase 4 de B16** (widgets como valores): es B12/B15, otro plan.
+- **Reabrir las features opcionales de `gui-rt`** (`sqlite`, `image`, TLS, `qr`):
+  la decisión sigue siendo no.
+- **`destino: nativo`**: verificado que funciona (compila y corre con módulos y
+  stdlib), pero si se mantiene o se borra es decisión del dueño
+  (`handoff6.md` §5.1). Hoy `forja ejecutar` con `importar gui` va por el runtime
+  prebuilt, no por esa ruta.
