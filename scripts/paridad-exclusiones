@@ -50,3 +50,5 @@ ejemplos/ffi/185_ffi_matematicas.fa              la serie de `log` da 0 en la VM
                                                 la VM trunca la aritmética Decimal del helper `potencia`
 ejemplos/juegos/159_generador_contraseñas.fa     la contraseña se arma con `tiempo_actual()`: distinta por
                                                 definición (como 153_ahorcado)
+ejemplos/concurrencia/128_hilo_multiple.fa       idem 129: el orden en que el main recibe los mensajes de los
+                                                hilos cambia entre corridas (el contenido coincide)
