@@ -54,7 +54,8 @@ Hecho, no propuesta: `C:\Users\gaucho\forja-native`, rama `native/cajas`. El
 El único commit de esa rama es `7ec9ed22` (cierra `101/104/105`: la clave de
 `params_dinamicos`/`metodos_param` ahora lleva la clase) más `1821cbcf`
 (builtins `leer`/`escribir_linea`/`unir_elementos`/`tipo` + `_mapa_*`,
-recuperados de `stash@{2}`). Tocan sólo `src/backend_llvm/**`,
+recuperados de `stash@{2}`) y `136c92e0` (`leer()` recorta y la línea vacía es
+nulo, como la VM). Tocan sólo `src/backend_llvm/**`,
 `scripts/paridad-exclusiones` y `tests/llvm_backend.rs`, así que no chocan con
 nadie. `stash@{2}` ya se puede tirar.
 
@@ -172,3 +173,35 @@ del merge) y §4.2 versionar `plans/` (decisión, ahora hecho: ver commit).
 - Tests: gui-rt click (2) + `--load-state` (1), aot std/alias (1), ejecucion
   mtime (1). Verde: forja 129, gui-rt 36+3+12, cli 25+1, driver 8, session 3,
   interprete 3+4.
+
+### 3ra tanda (cierre)
+
+- `gui_nativa.rs` partido: 1,7k + `layout_nativo.rs` 4,1k + `vista_nativa.rs` 2,8k.
+- `patches` pusheado a origin (`da29452..564658e`): el submódulo y el CI ya pueden
+  clonar el fork resincronizado a xilem `9f504ae`.
+- `target/debug` (43 GB) borrado: 22 GB → 76 GB libres. Reconstruidos
+  `target/debug/forja.exe` y `forja-rt-gui.exe`.
+
+## Cierre de la sesión de deuda `01a1eadf-96a3` (2026-11-17, noche)
+
+- Los cambios del backend de esta sesión (`1987`, `588`, `1108`/`1134`, `1.5`,
+  modelo de memoria, test `nulo`/`0`) ya están en `main` vía `bcb671f4`.
+- `4065ed9d` es un **checkpoint** de los 66 archivos que estaban sin commitear
+  (VM, bytecode, native/ffi, asm, monomorph, HIR, CLI + 3 tests nuevos) y que
+  hacían que HEAD no compilara (`ejecucion.rs` llamaba a
+  `forja::compilar_a_asm_desde`, que sólo existía en el `lib.rs` sucio). Con eso
+  `cargo build -p forja-cli` vuelve a funcionar en un clon limpio:
+  `llvm_backend` 48/48, `--lib` 129/129, `corpus` 299/299.
+- `57e94a84`: el arnés de paridad imprime commit, archivos sucios, fecha del
+  binario y cantidad de ejemplos antes de medir.
+- `0bd48d7f`: el arnés **copia** el binario a `target/paridad/forja` y mide
+  contra la copia. Sin eso, un `cargo build` de otra sesión a mitad de corrida
+  hace desaparecer `forja.exe` y el informe miente: en una corrida real, 122 de
+  los 175 "no bajan a nativo" eran `line 86: forja.exe: No such file or
+  directory`, no falta de soporte del backend.
+- Worktree `forja-shortcuts` (rama `native/atajos`) borrado tras el merge.
+
+Queda de `handoff5` sólo §5 (partir `lowering.rs` en `firmas.rs`/`clases.rs`/
+`modulo.rs`), a propósito: es un refactor de ~2.900 líneas sobre un archivo que
+las otras sesiones están tocando. Hacerlo con el árbol quieto y el arnés como
+red.
