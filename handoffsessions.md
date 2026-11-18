@@ -521,3 +521,36 @@ Commits: merges `10870674` (native/lowering), `c136b71d` (native/runtime), `vm/c
   - `109`: campo sin tipo que guarda un texto (encajado de escalares, §9, bloqueado).
 - Zona tomada al cerrar: ninguna; las ramas de carril quedan en `origin/` (`native/lowering`,
   `native/runtime`, `corpus/dorado`, `corpus/ejemplos-cierre`) y `vm/cuelgues` quedó local.
+
+### 2026-11-18 16:10 — cierre de lo que la primera integración dejó abierto
+Commits: `46b210ce`, `f4f40226`
+
+- Medido (árbol limpio, `ejemplos` en `bf02c32`): `scripts/paridad-native-vm.sh` →
+  **177 coinciden · 0 difieren · 56 no bajan · 6 no terminan · 4 error · 0 revientan**.
+  `llvm_backend` 56 (55 + el nuevo), `llvm_runtime` 2, `lib` 129, `corpus` 299, `runtime` 102,
+  clippy sin errores. `bench-competencias` (máquina quieta, sin otros carriles):
+  `parseo` **562 ms · 1.05x** de Rust (baseline 546 ms · 1.03), resto dentro de ±10 % de la
+  baseline y el script da "✅ ratios dentro de la baseline".
+- Cambió:
+  - **Identificadores con acento** (bug real, no un ejemplo roto): `variable año` emitía
+    `%año.0 = alloca i64` y clang rechazaba el `.ll`; igual `funcion generar_contraseña`.
+    `sanear_identificadores` (en las dos entradas del backend LLVM) cambia cada carácter no
+    ASCII **de un identificador** por `_` antes de parsear, dejando intactas cadenas y
+    comentarios (los emojis y acentos de los mensajes se imprimen igual). Test:
+    `llvm_backend::identificadores_con_acento_bajan_a_nativo`. Con esto `159_generador_contraseñas`
+    baja a nativo (queda excluido de paridad: arma la clave con `tiempo_actual()`).
+  - `128_hilo_multiple` a exclusiones con motivo medido (intercalado de hilos, como 129/130/173;
+    el contenido coincide y el diff cambia entre corridas).
+- **`baseline.json` sigue sin actualizar, a propósito**: el `--update` midió `rust` de `parseo`
+  en 630 ms (corrida contaminada) y dejaba un ratio 0.89 que no es el real; la referencia
+  `2026-11-09` (546 ms · 1.03) sigue siendo válida y el árbol actual pasa contra ella.
+- Abierto (con repro y sin dueño todavía):
+  - `tipo(objeto)` y la repr de objetos/enums: la VM devuelve `"objeto"` y imprime `<Caja>` /
+    `<Resultado>` / `[<CanalEmisor>,<CanalReceptor>]`; el nativo devuelve `"entero"` y el
+    puntero. Es una feature de introspección (tag de objeto + tabla de nombres), no un bug de
+    una línea. Afecta las dos divergencias de `216`.
+  - `214`/`199`: primitivas nativas sin equivalente (`_base64_*` y la de `199`), grupo B del plan.
+  - `109`: campo sin tipo que guarda un texto (encajado de escalares, §9, bloqueado por producto).
+  - El árbol principal tiene 30 `.fa` sin commitear de otra sesión (`ejemplos/stdlib/*`,
+    `fundamentos/720*`, `721*`) que inflan la medición de paridad hecha ahí (293 vs 263
+    ejemplos): las cifras de arriba son con el corpus versionado.
